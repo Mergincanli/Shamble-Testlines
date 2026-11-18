@@ -134,11 +134,14 @@ export function rayWorld(
   return { x: ox + dx * best, y: oy + dy * best, z: oz + dz * best };
 }
 
-/** The highest surface at (x, z) at or just below height y: the ground, a block's top or the ramp (for effects). */
-export function floorBelow(x: number, z: number, y: number): number {
+/**
+ * The highest surface at (x, z) at or just below height y: the ground, a block's top or the ramp (for effects).
+ * `margin` widens the blocks (a grenade's size, so one resting on a top's very edge is on that top).
+ */
+export function floorBelow(x: number, z: number, y: number, margin = 0): number {
   let f = 0;
   for (const b of BLOCKS) {
-    if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+    if (x < b.minX - margin || x > b.maxX + margin || z < b.minZ - margin || z > b.maxZ + margin) continue;
     const h = b.ramp ? rampHeight(b, x, z) : b.top;
     if (h <= y + 0.05 && h > f) f = h;
   }

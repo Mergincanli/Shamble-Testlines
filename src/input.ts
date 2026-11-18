@@ -25,6 +25,7 @@ export class Input {
   private rightReleased = false;
   private onKeyHandlers: ((code: string, key: string) => void)[] = [];
   private onFocusLossHandlers: (() => void)[] = [];
+  private onMenuHandlers: (() => void)[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     const typing = () => {
@@ -64,6 +65,14 @@ export class Input {
       const t = e.target;
       if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
       e.preventDefault();
+      // Firefox opens its own menu on Shift + right click whatever the page does, and the menu swallows the
+      // let-go: the right button is dropped (with no let-go), so nothing fires or throws later by itself.
+      if (e.shiftKey && /firefox/i.test(navigator.userAgent)) {
+        this.buttons &= ~2;
+        this.rightPressed = false;
+        this.rightReleased = false;
+        for (const h of this.onMenuHandlers) h();
+      }
     });
 
     canvas.addEventListener('pointermove', (e) => {
@@ -100,7 +109,8 @@ export class Input {
       if (!this.buttons) this.over = false;
     });
     canvas.addEventListener('pointerup', (e) => this.setButtons(e.buttons));
-    canvas.addEventListener('pointercancel', () => this.setButtons(0));
+    // A cancelled pointer lets go of everything without counting as a let-go (so an aimed throw is dropped).
+    canvas.addEventListener('pointercancel', letGo);
     // A release outside the view (or one the view misses at its very edge) still counts.
     window.addEventListener('pointerup', (e) => this.setButtons(e.buttons));
     window.addEventListener('mouseup', (e) => this.setButtons(e.buttons));
@@ -151,6 +161,11 @@ export class Input {
   /** Called when the page loses focus or is hidden. */
   onFocusLoss(fn: () => void) {
     this.onFocusLossHandlers.push(fn);
+  }
+
+  /** Called when the browser forces its own menu open over the page (Firefox, Shift + right click). */
+  onForcedMenu(fn: () => void) {
+    this.onMenuHandlers.push(fn);
   }
 
   /** True if the right button went down since the last call (consumes it). */

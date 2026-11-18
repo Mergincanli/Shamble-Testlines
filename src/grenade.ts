@@ -38,10 +38,11 @@ export interface Blast {
 
 /**
  * The throw that lands on a target point (its centre one grenade size above it): toward the target on the ground,
- * at the launch angle (raised for a target above the hand, by half its elevation), at the speed that reaches it,
- * but no faster than the longest throw; a target out of reach falls short. If that arc would hit something before
- * the target (the edge of a ledge, cover in the way), it is lobbed higher, 5° at a time up to 80°, and the first arc
- * that lands at the target is taken; if none does, the plain arc stays and the preview shows where it hits.
+ * at the launch angle (raised for a target above the hand in step with its elevation, up to straight up for a
+ * target straight above), at the speed that reaches it, but no faster than the longest throw; a target out of reach
+ * falls short. That plain arc is kept whenever it first lands at the target before the fuse runs out. Otherwise (it
+ * hits the edge of a ledge or cover first, or goes off in the air) lobs 5° at a time up to 80° are tried, and the
+ * one that goes off closest to the target is taken, if it goes off at least 0.5 m closer than the plain arc does.
  * `yaw` gives the direction when the target is straight below the hand.
  */
 export function aimedThrow(
@@ -53,16 +54,36 @@ export function aimedThrow(
   const d = Math.hypot(target.x - o[0], target.z - o[2]);
   const elev = Math.atan2(target.y + GRENADE_R - o[1], d);
   let a = (P.num('nadeAngle') * Math.PI) / 180;
-  if (elev > 0) a = Math.max(a + elev / 2, (elev + Math.PI / 2) / 2);
+  if (elev > 0) a += (elev * (Math.PI / 2 - a)) / (Math.PI / 2);
   a = Math.min(a, (89 * Math.PI) / 180);
-  const plain = throwAt(o, target, yaw, a, P);
+  const aim = { x: target.x, y: target.y + GRENADE_R, z: target.z };
   const near = Math.max(0.5, 0.03 * d);
-  if (landsNear(o, plain, target, near, P)) return plain;
-  for (let lob = a + (5 * Math.PI) / 180; lob <= (80.001 * Math.PI) / 180; lob += (5 * Math.PI) / 180) {
-    const v = throwAt(o, target, yaw, lob, P);
-    if (landsNear(o, v, target, near, P)) return v;
+  const plain = throwAt(o, target, yaw, a, P);
+  const pf = trial(o, plain, P);
+  if (pf.first && dist(pf.first, aim) < near) return plain;
+  let best = plain;
+  let bestMiss = dist(pf.end, aim) - 0.5;
+  const top = (80 * Math.PI) / 180;
+  const step = (5 * Math.PI) / 180;
+  for (let lob = a + step; lob < top + step - 1e-9; lob += step) {
+    const v = throwAt(o, target, yaw, Math.min(lob, top), P);
+    const miss = dist(trial(o, v, P).end, aim);
+    if (miss < bestMiss) {
+      best = v;
+      bestMiss = miss;
+    }
   }
-  return plain;
+  return best;
+}
+
+const dist = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) =>
+  Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
+/** A trial flight of a throw, with the real fuse: where it first touches anything (if before the fuse) and where it goes off. */
+function trial(o: [number, number, number], v: [number, number, number], P: Store) {
+  const g = newGrenade(o[0], o[1], o[2], v, P);
+  while (!spent(g)) stepGrenade(g, SUB_DT, P);
+  return { first: g.firstContact, end: { x: g.x, y: g.y, z: g.z } };
 }
 
 /** The throw that reaches the target at launch angle a (capped at the longest throw's speed). */
@@ -86,21 +107,6 @@ function throwAt(
   if (!Number.isFinite(sp)) sp = 0;
   sp = Math.min(sp, P.num('nadeSpeedMax'));
   return [ux * c * sp, Math.sin(a) * sp, uz * c * sp];
-}
-
-/** Whether this throw first touches anything within `near` of the target. */
-function landsNear(
-  o: [number, number, number],
-  v: [number, number, number],
-  target: { x: number; y: number; z: number },
-  near: number,
-  P: Store,
-): boolean {
-  const g = newGrenade(o[0], o[1], o[2], v, P);
-  g.fuse = 4;
-  while (!spent(g) && !g.firstContact) stepGrenade(g, SUB_DT, P);
-  const c = g.firstContact;
-  return !!c && Math.hypot(c.x - target.x, c.y - (target.y + GRENADE_R), c.z - target.z) < near;
 }
 
 export function newGrenade(x: number, y: number, z: number, v: [number, number, number], P: Store): Grenade {

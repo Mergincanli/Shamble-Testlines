@@ -88,6 +88,9 @@ let nadesHeld = store.num('nadeCount');
 let nadeRefillT = 0;
 /** A throw is being aimed (the button is held and the arc shows). */
 let nadeAiming = false;
+/** The arc drawn for this aim at the last frame: the throw launches exactly this (from this place, at this velocity). */
+let nadeArc: { o: [number, number, number]; v: [number, number, number]; flight: Flight; target: { x: number; y: number; z: number } } | null =
+  null;
 /** The point under the cursor (ground, block or ramp), found at each frame: where the next throw is aimed. */
 let nadeTarget: { x: number; y: number; z: number } | null = null;
 let nadesThrown = 0;
@@ -144,7 +147,7 @@ store.onChange((key) => {
     lastAdsMode = store.get('adsMode');
     lastRightButton = store.get('rightButton');
     aiming = false;
-    nadeAiming = false;
+    endNadeAim();
   }
   if (key === null || key === 'camTurn') camera.resetTurn();
   if (key === null || key === 'dummyHealth') for (const t of targets) if (t.downFor <= 0) t.health = store.num('dummyHealth');
@@ -167,8 +170,16 @@ let lastRightButton = store.get('rightButton');
 input.onFocusLoss(() => {
   aiming = false;
   // A throw being aimed is dropped, not thrown, when the page loses focus.
-  nadeAiming = false;
+  endNadeAim();
 });
+input.onForcedMenu(() => endNadeAim());
+
+/** Stop aiming a throw (thrown or dropped): the arc goes. */
+function endNadeAim() {
+  nadeAiming = false;
+  nadeArc = null;
+  lastPreview = null;
+}
 
 /** The right button aims a grenade (the start) or aims down sights. */
 const rightIsGrenade = () => store.get('rightButton') !== 'aim';
@@ -205,7 +216,8 @@ function readMoveInput(rightPress: boolean) {
   moveInput.speedMult = aiming ? store.num('adsMoveMult') : 1;
   // Firing stops the sprint, and so do a press waiting for the gun to come up (after the gun's sprint-to-fire
   // delay) and aiming down sights.
-  moveInput.sprint = (input.down('ShiftLeft') || input.down('ShiftRight')) && !input.fireHeld() && !W.queued && !aiming;
+  moveInput.sprint =
+    (input.down('ShiftLeft') || input.down('ShiftRight')) && (!input.fireHeld() || nadeAiming) && !W.queued && !aiming;
   // Held Space keeps jumping on landing, as the old game; a tap between two steps is not lost.
   moveInput.jump = input.takePress('Space') || input.down('Space');
 }
@@ -288,16 +300,25 @@ function nadeInput(rightPress: boolean, rightRelease: boolean) {
   const released = input.takeRelease('KeyG') || (right && rightRelease);
   const held = input.down('KeyG') || (right && input.rightHeld());
   if (nadeAiming && (released || !held)) {
+    // The arc drawn at the last frame, if it was drawn from here; with none drawn yet (a click within one frame),
+    // the throw is worked out now for the target under the cursor; with no target at all, it is dropped.
     const o = throwOrigin();
-    const target = nadeTarget ?? { x: aimPoint.x, y: 0, z: aimPoint.z };
-    grenades.push(newGrenade(o[0], o[1], o[2], aimedThrow(o, target, aimYaw, store), store));
-    lastThrow = { preview: lastPreview, target };
-    lastPreview = null;
-    nadesHeld--;
-    nadesThrown++;
-    nadeAiming = false;
+    const arc = nadeArc && nadeArc.o[0] === o[0] && nadeArc.o[1] === o[1] && nadeArc.o[2] === o[2] ? nadeArc : null;
+    const target = arc ? arc.target : nadeTarget;
+    if (target) {
+      const v = arc ? arc.v : aimedThrow(o, target, aimYaw, store);
+      grenades.push(newGrenade(o[0], o[1], o[2], v, store));
+      lastThrow = { preview: arc ? arc.flight : null, target };
+      nadesHeld--;
+      nadesThrown++;
+    }
+    endNadeAim();
   }
-  if (pressed && !nadeAiming && nadesHeld > 0) nadeAiming = true;
+  if (pressed && !nadeAiming && nadesHeld > 0) {
+    nadeAiming = true;
+    // A shot waiting for the gun to come up is let go: the gun is held while the throw is aimed.
+    W.queued = false;
+  }
 }
 
 /** Advance a damped spring (x'' = -k x - c x') by dt exactly: stable at any step rate, and the same swing at 30 or 60. */
@@ -326,7 +347,7 @@ function springStep(x: number, v: number, k: number, c: number, dt: number): [nu
   return [(x + q * dt) * e, (v - g * q * dt) * e];
 }
 
-/** One step of the grenades: the charge, the refill, the flights, the blasts, the camera kick. */
+/** One step of the grenades: the refill, the flights, the blasts, the camera kick. */
 function stepNades(dt: number) {
   const max = Math.round(store.num('nadeCount'));
   if (nadesHeld > max) nadesHeld = max;
@@ -459,9 +480,17 @@ function frame(now: number) {
   // While a throw is aimed: its whole flight, bounces and burst included, exactly as the grenade will fly it.
   if (nadeAiming && nadeTarget) {
     const o = throwOrigin();
-    lastPreview = previewFlight(o, aimedThrow(o, nadeTarget, aimYaw, store), store);
+    const v = aimedThrow(o, nadeTarget, aimYaw, store);
+    lastPreview = previewFlight(o, v, store);
+    nadeArc = { o, v, flight: lastPreview, target: { ...nadeTarget } };
     nadeFx.preview(lastPreview, store.num('nadeRadius'));
-  } else nadeFx.preview(null, 0);
+  } else {
+    if (nadeAiming) {
+      nadeArc = null;
+      lastPreview = null;
+    }
+    nadeFx.preview(null, 0);
+  }
   if (events.length) {
     soldier.muzzleWorld(muzzle);
     for (const e of events) {

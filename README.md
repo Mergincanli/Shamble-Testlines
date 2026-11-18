@@ -23,18 +23,21 @@ the rifle.
 
 The grenade (the owner's design): hold the right button (or G) and an arc shows the whole flight to the point
 under the cursor (the ground, a block's top or side, the ramp): dots along the path, a bigger dot at each bounce,
-and where it goes off a small ring with the blast's reach round it on the floor. Let go and it throws; the grenade
+and where it goes off a small ring with the blast's reach round it on the floor (smaller for a burst in the air, as
+damage is measured to the feet; none if it goes off higher than the blast radius). Let go and it throws; the grenade
 flies exactly that arc, bounces exactly there and goes off exactly there (the arc runs the very step function the
-grenade flies by, with the same target and place). Aim at a wall's face and it bounces off it; aim at a ledge top or
-the ground behind cover and the throw lobs higher (5° at a time, up to 80°) until it lands there, or keeps its plain
-arc, shown hitting whatever is in the way. No charge (the old game shared one charge with the Torque Bow; the
-grenade has none now): the throw leaves at 41.3° above level (raised for a target above the hand), from the
+grenade flies by, with the same target and place). Aim at a wall's face and it bounces off it. The plain arc is kept
+whenever it lands at the cursor before the fuse runs out; if it would hit something first (the edge of a ledge,
+cover), lobs 5° at a time up to 80° are tried and the one that goes off closest to the cursor is taken (a ledge top
+from beside it), but only if it goes off at least 0.5 m closer than the plain arc, which otherwise stays, shown
+hitting whatever is in the way. No charge (the old game shared one charge with the Torque Bow; the
+grenade has none now): the throw leaves at 41.3° above level (raised for a target above the hand, in step with its elevation), from the
 soldier's middle at 1.5 m (a lob from right behind the cover wall clears it), at the speed that reaches the target,
 up to 26 m/s, about 35 m on flat ground; a target further away falls short. While the arc is up the gun is held
-(the left button does nothing). From the old game: the launch angle and top speed, gravity 20, a 1.5 s fuse from
+(the left button does nothing). A click within one frame still throws, at the cursor. From the old game: the launch angle and top speed, gravity 20, a 1.5 s fuse from
 the throw, a 6.5 m blast doing 140 damage at the centre, falling off evenly to nothing at the edge and needing a
 clear line from the blast, and the view lurching away from a blast (strength 24, reach 34 m, spring 110, damping 12).
-With the 1.5 s fuse, a throw beyond about 27 m goes off in the air before it lands, and a short one bounces and
+With the 1.5 s fuse, a throw beyond about 24 m goes off in the air before it lands, and a short one bounces and
 rolls on past the cursor before it goes off; the arc shows both. Three grenades in hand, one back every 5 s.
 Differences from the old game: grenades bounce off blocks and the ramp (the old one only bounced off the ground),
 and are swept so they never pass through the thin cover wall or into a block; a real impact bounces with the old
@@ -79,8 +82,8 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
   brief's soldier), push strength and push radius, the sprint-to-fire delays (0.15 s SMG, 0.25 s rifle, 0.3 s
   shotgun), the active-reload window (40 % to 60 %), the shotgun's falloff (none), the press rule below
   (0.15 s, no slider), the grenade refill (5 s), the grenade's rolling slowdown (3 per second, no slider), where a
-  throw starts (the soldier's middle at 1.5 m, no slider) and how an aimed throw picks its angle (raised by half a
-  higher target's elevation; lobbed up to 80° to land on the target; no slider). Every slider has its own reset (↺, lit when the value has moved);
+  throw starts (the soldier's middle at 1.5 m, no slider) and how an aimed throw picks its angle (raised in step
+  with a higher target's elevation; lobs up to 80° when the plain arc is blocked; no slider). Every slider has its own reset (↺, lit when the value has moved);
   hover a name to see where its start value comes from. The Export names the camera profile in use.
 - **Export** copies every value as JSON with the date and time, the build it came from, units in the names and
   the old game's own names beside them. The JSON also appears in a box, in case the browser blocks copying.

@@ -5,7 +5,7 @@
 // here is the old game's look.
 import * as THREE from 'three';
 import { PAL, toon, UNIFORM, type Faction } from './look';
-import type { Blast, Flight, Grenade } from './grenade';
+import { GRENADE_R, type Blast, type Flight, type Grenade } from './grenade';
 import { floorBelow } from './yard';
 
 const FRAGMENTS = 22;
@@ -159,12 +159,16 @@ export class NadeFx {
     (bgeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     this.bounceDots.visible = nb > 0;
     const end = flight.end;
-    const floor = floorBelow(end.x, end.z, end.y) + 0.02;
-    this.ring.position.set(end.x, floor, end.z);
+    const floor = floorBelow(end.x, end.z, end.y, GRENADE_R);
+    this.ring.position.set(end.x, floor + 0.02, end.z);
     this.ring.visible = true;
-    this.reach.position.set(end.x, floor, end.z);
-    this.reach.scale.setScalar(Math.max(0.1, radius));
-    this.reach.visible = true;
+    // The blast's reach at floor level: the radius shrinks with the burst's height (damage is measured to the
+    // feet), and nothing on the floor is reached by a burst higher than the radius.
+    const h = end.y - floor;
+    const reach = Math.sqrt(Math.max(0, radius * radius - h * h));
+    this.reach.position.set(end.x, floor + 0.02, end.z);
+    this.reach.scale.setScalar(Math.max(0.01, reach));
+    this.reach.visible = reach > 0.05;
   }
 
   /** A blast: flash, a ring on the floor under it, fragments. */
@@ -173,7 +177,7 @@ export class NadeFx {
     fx.flash.position.set(b.x, b.y, b.z);
     fx.flash.scale.setScalar(0.9);
     fx.flash.visible = true;
-    fx.wave.position.set(b.x, floorBelow(b.x, b.z, b.y) + 0.03, b.z);
+    fx.wave.position.set(b.x, floorBelow(b.x, b.z, b.y, GRENADE_R) + 0.03, b.z);
     fx.wave.scale.setScalar(0.05);
     fx.wave.visible = true;
     fx.radius = radius;
