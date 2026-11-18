@@ -8,9 +8,17 @@ Nothing here is the game, and no value here is a decision.
 `play/testlines.html` is the whole sandbox in one file. Save it and double-click it: it opens in your browser
 with no install, no server and no internet.
 
-Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, R
-reloads, hold the middle button to turn the camera, 1 and 2 change guns (SMG, rifle), the backquote key (`) hides
-the panel.
+Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, the
+right button aims down sights, R reloads, hold the middle button to turn the camera, 1 and 2 change guns (SMG,
+rifle), the backquote key (`) hides the panel.
+
+Aim down sights (the old game's rules): hold the right button (or switch it to click-to-toggle). While aiming
+the soldier walks at 0.55 of his speed and cannot sprint, each gun's spread rests at its sights value, and the
+screen dead zone shrinks to 0.45. The camera reacts in one of three ways: Flatten (the view tips toward the
+cursor, no flatter than 28.5°), Slide (the camera slides toward the cursor, keeping the soldier on screen; the
+old Foxhole style) or Still. One difference from the old game: Flatten tips toward the point the cursor marks in
+the resting view, so the view settles instead of creeping on while the cursor is still. The camera profiles carry
+the reaction and the Slide reach (scaled like the look-ahead).
 
 Active reload (simplified, as Slice 1 has it): during a reload, tap R while the bar is inside the gold window and
 the reload ends at once. A miss is a normal reload, with no jam; one try per reload. The window's start and width

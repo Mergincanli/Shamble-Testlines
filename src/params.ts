@@ -11,6 +11,7 @@ export type GroupId =
   | 'push'
   | 'smg'
   | 'rifle'
+  | 'ads'
   | 'camera'
   | 'framing'
   | 'mouse';
@@ -24,6 +25,7 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'push', title: 'Dummies and soft pushing', open: true, exportName: 'pushing' },
   { id: 'smg', title: 'SMG (key 1)', open: true, exportName: 'smg' },
   { id: 'rifle', title: 'Rifle (key 2)', open: false, exportName: 'rifle' },
+  { id: 'ads', title: 'Aim down sights (right button)', open: true, exportName: 'aim_down_sights' },
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
   { id: 'mouse', title: 'Mouse', open: true, exportName: 'mouse' },
@@ -94,6 +96,7 @@ interface GunStart {
   reload: number;
   recoil: number;
   spreadHip: number;
+  spreadAds: number;
   spreadPerShot: number;
   spreadMax: number;
   spreadRecover: number;
@@ -138,6 +141,13 @@ function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
       min: 0, max: 0.3, step: 0.001, start: g.spreadHip, digits: 3,
       note: (v) => `±${deg(v[k('SpreadHip')] as number)}° to each side`,
       source: `Old game ${g.legacy}.spreadHip: each shot leaves up to this angle to either side of the aim.`, legacy: `${g.legacy}.spreadHip`,
+    },
+    {
+      kind: 'range', key: k('SpreadAds'), group: id, label: 'Spread at rest, aiming down sights', exportKey: 'spread_rest_ads_rad', unit: 'rad',
+      min: 0, max: 0.3, step: 0.001, start: g.spreadAds, digits: 3,
+      note: (v) => `±${deg(v[k('SpreadAds')] as number)}° to each side`,
+      source: `Old game ${g.legacy}.spreadADS: while aiming down sights the spread rests here instead (it recovers down to it, and jumps back up on letting go).`,
+      legacy: `${g.legacy}.spreadADS`,
     },
     {
       kind: 'range', key: k('SpreadPerShot'), group: id, label: 'Spread added per shot', exportKey: 'spread_per_shot_rad', unit: 'rad',
@@ -210,14 +220,14 @@ function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
 export const GUN_PARAMS: Param[] = [
   ...gunParams('smg', {
     name: 'SMG', legacy: 'WEAPONS.shabzon', interval: 0.072, damage: 8, mag: 36, reload: 1.9, recoil: 0.3,
-    spreadHip: 0.075, spreadPerShot: 0.005, spreadMax: 0.16, spreadRecover: 0.7, range: 55, sprintDelay: 0.15,
+    spreadHip: 0.075, spreadAds: 0.06, spreadPerShot: 0.005, spreadMax: 0.16, spreadRecover: 0.7, range: 55, sprintDelay: 0.15,
   }),
   { kind: 'range', key: 'smgFalloffStart', group: 'smg', label: 'Damage falls off from', exportKey: 'falloff_start_m', unit: 'm', min: 0, max: 150, step: 1, start: 15, digits: 0, source: 'Old game WEAPONS.shabzon.falloffStart.', legacy: 'WEAPONS.shabzon.falloffStart' },
   { kind: 'range', key: 'smgFalloffEnd', group: 'smg', label: 'Damage falls off to', exportKey: 'falloff_end_m', unit: 'm', min: 1, max: 300, step: 1, start: 35, digits: 0, source: 'Old game WEAPONS.shabzon.falloffEnd.', legacy: 'WEAPONS.shabzon.falloffEnd' },
   { kind: 'range', key: 'smgFalloffMin', group: 'smg', label: 'Damage left at the far end', exportKey: 'falloff_min_share', unit: '×', min: 0, max: 1, step: 0.01, start: 0.2, digits: 2, source: 'Old game WEAPONS.shabzon.falloffMin.', legacy: 'WEAPONS.shabzon.falloffMin' },
   ...gunParams('rifle', {
     name: 'Rifle', legacy: 'WEAPONS.amk', interval: 0.2, damage: 34, mag: 1, reload: 3.5, recoil: 2,
-    spreadHip: 0.022, spreadPerShot: 0, spreadMax: 0.05, spreadRecover: 0.3, range: 300, sprintDelay: 0.25,
+    spreadHip: 0.022, spreadAds: 0.006, spreadPerShot: 0, spreadMax: 0.05, spreadRecover: 0.3, range: 300, sprintDelay: 0.25,
   }),
 ];
 
@@ -547,6 +557,110 @@ export const PARAMS: Param[] = [
   // The guns
   ...GUN_PARAMS,
 
+  // Aim down sights
+  {
+    kind: 'choice',
+    key: 'adsMode',
+    group: 'ads',
+    label: 'Right button',
+    exportKey: 'ads_button',
+    options: [
+      { value: 'hold', label: 'Hold to aim' },
+      { value: 'toggle', label: 'Click to toggle' },
+    ],
+    start: 'hold',
+    source: "Old game adsMode = 'hold' (its pause menu offered toggle as well).",
+  },
+  {
+    kind: 'range',
+    key: 'adsMoveMult',
+    group: 'ads',
+    label: 'Speed while aiming',
+    exportKey: 'ads_speed_multiplier',
+    unit: '×',
+    min: 0.1,
+    max: 1,
+    step: 0.01,
+    start: 0.55,
+    digits: 2,
+    note: (v) => `= ${((v.walkSpeed as number) * (v.adsMoveMult as number)).toFixed(2)} m/s; no sprint while aiming`,
+    source: 'Old game T.adsMoveMult. Aiming also blocks the sprint, as in the old game.',
+    legacy: 'T.adsMoveMult',
+  },
+  {
+    kind: 'choice',
+    key: 'adsCam',
+    group: 'ads',
+    label: 'Camera while aiming',
+    exportKey: 'ads_camera',
+    options: [
+      { value: 'pitch', label: 'Flatten' },
+      { value: 'pan', label: 'Slide' },
+      { value: 'off', label: 'Still' },
+    ],
+    start: 'pitch',
+    source:
+      "Old game T.adsCam. Flatten ('pitch'): the view tips toward the cursor, no flatter than the angle below. Slide ('pan'): the camera slides toward the cursor, keeping the soldier on screen (the old Foxhole style). Still: no reaction.",
+    legacy: 'T.adsCam',
+  },
+  {
+    kind: 'range',
+    key: 'adsPitchFloor',
+    group: 'ads',
+    label: 'Flatten: no flatter than',
+    exportKey: 'ads_flatten_floor_deg',
+    unit: '°',
+    min: 5,
+    max: 89,
+    step: 0.5,
+    start: 28.5,
+    digits: 1,
+    source: "Old game: the 'pitch' reaction never went below 28.5°.",
+  },
+  {
+    kind: 'range',
+    key: 'adsPanMax',
+    group: 'ads',
+    label: 'Slide: reach at the screen edge',
+    exportKey: 'ads_slide_reach_m',
+    unit: 'm',
+    min: 0,
+    max: 40,
+    step: 0.1,
+    start: 16,
+    digits: 1,
+    source: "Old game T.foxPanMax = 16 m, at its own soldier scale; the camera profiles scale it like the look-ahead.",
+    legacy: 'T.foxPanMax',
+  },
+  {
+    kind: 'range',
+    key: 'adsDeadScale',
+    group: 'ads',
+    label: 'Dead zone while aiming',
+    exportKey: 'ads_dead_zone_scale',
+    unit: '×',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    start: 0.45,
+    digits: 2,
+    source: 'Old game: while aiming the screen dead zone shrank to 0.45 of its size, so the view follows the cursor sooner.',
+  },
+  {
+    kind: 'range',
+    key: 'adsEase',
+    group: 'ads',
+    label: 'Camera eases into aiming at',
+    exportKey: 'ads_camera_ease_per_s',
+    unit: '/s',
+    min: 1,
+    max: 30,
+    step: 0.5,
+    start: 7,
+    digits: 1,
+    source: 'Old game: the aiming camera eased in and out at 7 per second.',
+  },
+
   // Camera
   {
     kind: 'range',
@@ -703,6 +817,8 @@ export const ORIGINAL_PROFILE: Values = {
   camTurn: 64,
   camAngle: null,
   ...framingScaled(ORIGINAL_K),
+  adsCam: 'pitch',
+  adsPanMax: Math.round(16 * ORIGINAL_K * 10) / 10,
 };
 
 /**
@@ -718,6 +834,8 @@ export const INDIE_PROFILE: Values = {
   camTurn: 0,
   camAngle: null,
   ...framingScaled(INDIE_DIST / Math.hypot(40, 56.6)),
+  adsCam: 'pitch',
+  adsPanMax: Math.round(16 * (INDIE_DIST / Math.hypot(40, 56.6)) * 10) / 10,
 };
 
 /** The two profiles, the first being the default. */
@@ -737,11 +855,11 @@ export const CAMERA_PROFILES: { name: string; title: string; values: Values }[] 
 
 /** The old game's five camera presets (CAM_STYLES), with its own framing, at its own soldier scale. */
 export const CAMERA_PRESETS: { name: string; values: Values }[] = [
-  { name: 'Classic', values: { camHeight: 24, camBack: 16, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING } },
-  { name: 'Tactical', values: { camHeight: 15.5, camBack: 10.5, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING } },
-  { name: 'Iso', values: { camHeight: 40, camBack: 56.6, camLens: 15, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
-  { name: 'Iso+', values: { camHeight: 41.5, camBack: 65.5, camLens: 12, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
-  { name: 'Foxhole', values: { camHeight: 52, camBack: 42, camLens: 18, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Classic', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 24, camBack: 16, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Tactical', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 15.5, camBack: 10.5, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Iso', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 40, camBack: 56.6, camLens: 15, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Iso+', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 41.5, camBack: 65.5, camLens: 12, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Foxhole', values: { adsCam: 'pan', adsPanMax: 16, camHeight: 52, camBack: 42, camLens: 18, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
 ];
 
 // The camera starts on the Original profile: its values become the start values (and so the resets).
@@ -756,7 +874,7 @@ for (const [key, v] of Object.entries(ORIGINAL_PROFILE)) {
 export function profileActive(values: Values, current: Values): boolean {
   return Object.entries(values).every(([k, v]) => {
     const c = current[k];
-    return v === null || c === null ? v === c : Math.abs((c as number) - (v as number)) < 1e-6;
+    return typeof v === 'number' && typeof c === 'number' ? Math.abs(c - v) < 1e-6 : v === c;
   });
 }
 
@@ -784,7 +902,14 @@ const STORE_KEY = 'shamble-testlines.values.v2';
 /** The first builds saved every value under this key. */
 const OLD_STORE_KEY = 'shamble-testlines.values.v1';
 /** Camera start values of those builds: a saved value equal to one of these was never moved by hand. */
-const OLD_CAMERA_STARTS: Record<string, number> = { camHeight: 40, camBack: 56.6, camTurn: 45, ...OLD_FRAMING };
+const OLD_CAMERA_STARTS: Record<string, Value> = {
+  camHeight: 40,
+  camBack: 56.6,
+  camLens: 15,
+  camTurn: 45,
+  camAngle: null,
+  ...OLD_FRAMING,
+};
 
 function same(a: Value, b: Value): boolean {
   return typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) < 1e-9 : a === b;
@@ -806,10 +931,18 @@ export class Store {
         const old = window.localStorage.getItem(OLD_STORE_KEY);
         if (old) {
           const saved = JSON.parse(old) as Record<string, unknown>;
+          // The camera is one group: if any of it was moved, all of it is kept as saved (so a chosen preset comes
+          // back whole); if none of it was, the camera starts on the Original profile.
+          const cameraMoved = Object.keys(OLD_CAMERA_STARTS).some(
+            (k) => k in saved && !same(saved[k] as Value, OLD_CAMERA_STARTS[k]),
+          );
           for (const p of PARAMS) {
-            if (!(p.key in saved)) continue;
-            if (p.key in OLD_CAMERA_STARTS && same(saved[p.key] as Value, OLD_CAMERA_STARTS[p.key])) continue;
-            this.values[p.key] = sanitize(p, saved[p.key]);
+            if (p.key in OLD_CAMERA_STARTS) {
+              if (!cameraMoved) continue;
+              this.values[p.key] = sanitize(p, p.key in saved ? saved[p.key] : OLD_CAMERA_STARTS[p.key]);
+              continue;
+            }
+            if (p.key in saved) this.values[p.key] = sanitize(p, saved[p.key]);
           }
           this.save();
           window.localStorage.removeItem(OLD_STORE_KEY);

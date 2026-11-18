@@ -16,6 +16,7 @@ export class Input {
   private turnDX = 0;
   private lastX: number | null = null;
   private firePressed = false;
+  private aimPressed = false;
   private onKeyHandlers: ((code: string, key: string) => void)[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
@@ -52,6 +53,7 @@ export class Input {
       this.ndcY = -((e.clientY - r.top) / r.height) * 2 + 1;
       // Chorded buttons (a second button pressed while one is held) arrive as moves, not downs.
       if (e.buttons & 1 && !(this.buttons & 1)) this.firePressed = true;
+      if (e.buttons & 2 && !(this.buttons & 2)) this.aimPressed = true;
       this.buttons = e.buttons;
       // The turn is measured from the cursor's own positions, which every browser reports the same way.
       if (this.buttons & 4 && this.lastX !== null) this.turnDX += e.clientX - this.lastX;
@@ -64,6 +66,7 @@ export class Input {
       this.buttons = e.buttons;
       this.lastX = e.clientX;
       if (e.button === 0) this.firePressed = true;
+      if (e.button === 2) this.aimPressed = true;
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
@@ -82,6 +85,13 @@ export class Input {
     });
     canvas.addEventListener('pointercancel', () => {
       this.buttons = 0;
+    });
+    // A release outside the view (or one the view misses at its very edge) still counts.
+    window.addEventListener('pointerup', (e) => {
+      this.buttons = e.buttons;
+    });
+    window.addEventListener('mouseup', (e) => {
+      this.buttons = e.buttons;
     });
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 1) e.preventDefault();
@@ -111,6 +121,18 @@ export class Input {
   takeFirePress(): boolean {
     const p = this.firePressed;
     this.firePressed = false;
+    return p;
+  }
+
+  /** The right button is held on the view. */
+  aimHeld(): boolean {
+    return (this.buttons & 2) !== 0;
+  }
+
+  /** True if the right button went down since the last call (consumes it). */
+  takeAimPress(): boolean {
+    const p = this.aimPressed;
+    this.aimPressed = false;
     return p;
   }
 

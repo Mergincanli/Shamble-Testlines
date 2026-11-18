@@ -27,6 +27,8 @@ export interface MoveInput {
   wishZ: number;
   sprint: boolean;
   jump: boolean;
+  /** Speed multiplier from the player's own state (aiming down sights); the dummies leave it out. */
+  speedMult?: number;
 }
 
 export function newMover(x = 0, z = 0): MoverState {
@@ -79,7 +81,7 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
   }
 
   // Horizontal speed eases toward the wanted speed.
-  const speed = P.num('walkSpeed') * (s.sprinting ? P.num('sprintMult') : 1);
+  const speed = P.num('walkSpeed') * (s.sprinting ? P.num('sprintMult') : 1) * (inp.speedMult ?? 1);
   const tx = inp.wishX * speed;
   const tz = inp.wishZ * speed;
   let rate = LN10 / (moving ? P.num('accelTime') : P.num('stopTime'));

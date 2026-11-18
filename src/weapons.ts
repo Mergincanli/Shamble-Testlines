@@ -192,6 +192,8 @@ export interface TriggerInput {
   reload: boolean;
   /** Direction of aim on the ground (the soldier faces it). */
   aimYaw: number;
+  /** Aiming down sights: the spread rests at the gun's sights value. */
+  ads: boolean;
 }
 
 /**
@@ -214,8 +216,8 @@ export function stepWeapons(
   if (g.ammo > mag) g.ammo = mag;
   const auto = GUN_KEYS[gun].auto;
 
-  // Spread recovers toward its resting value.
-  const base = v('SpreadHip');
+  // Spread recovers toward its resting value (the sights value while aiming; letting go jumps it back up).
+  const base = inp.ads ? v('SpreadAds') : v('SpreadHip');
   g.spread = Math.max(base, Math.min(v('SpreadMax'), g.spread - v('SpreadRecover') * dt));
 
   // Reload in progress. The active reload (LOOP_V2 7, simplified for Slice 1): the first tap of R during a reload

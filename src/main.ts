@@ -112,6 +112,7 @@ store.onChange((key) => {
     switchGun(W, g, store);
   }
   if (key === null || key === 'tickRate') acc = 0;
+  if (key === null || key === 'adsMode') aiming = false;
   if (key === null || key === 'camTurn') camera.resetTurn();
   if (key === null || key === 'dummyHealth') for (const t of targets) if (t.downFor <= 0) t.health = store.num('dummyHealth');
 });
@@ -124,7 +125,9 @@ input.onKey((code, key) => {
 });
 renderer.domElement.addEventListener('pointerdown', () => unlockAudio());
 
-const moveInput: MoveInput = { wishX: 0, wishZ: 0, sprint: false, jump: false };
+const moveInput: MoveInput = { wishX: 0, wishZ: 0, sprint: false, jump: false, speedMult: 1 };
+/** Aiming down sights, decided at each simulation step from the right button (hold or toggle). */
+let aiming = false;
 
 function readMoveInput() {
   const ax = camera.axes(store);
@@ -149,9 +152,15 @@ function readMoveInput() {
   const l = Math.hypot(x, z);
   moveInput.wishX = l > 1e-6 ? x / l : 0;
   moveInput.wishZ = l > 1e-6 ? z / l : 0;
-  // Firing stops the sprint, and so does a rifle press waiting for the gun to come up (after the gun's
-  // sprint-to-fire delay).
-  moveInput.sprint = (input.down('ShiftLeft') || input.down('ShiftRight')) && !input.fireHeld() && !W.queued;
+  // Aiming down sights: the right button, held or toggled.
+  const aimPress = input.takeAimPress();
+  if (store.get('adsMode') === 'toggle') {
+    if (aimPress) aiming = !aiming;
+  } else aiming = input.aimHeld();
+  moveInput.speedMult = aiming ? store.num('adsMoveMult') : 1;
+  // Firing stops the sprint, and so do a press waiting for the gun to come up (after the gun's sprint-to-fire
+  // delay) and aiming down sights.
+  moveInput.sprint = (input.down('ShiftLeft') || input.down('ShiftRight')) && !input.fireHeld() && !W.queued && !aiming;
   // Held Space keeps jumping on landing, as the old game; a tap between two steps is not lost.
   moveInput.jump = input.takePress('Space') || input.down('Space');
 }
@@ -176,7 +185,7 @@ function simStep(dt: number) {
   stepWeapons(
     W,
     cur,
-    { held: input.fireHeld(), pressed: input.takeFirePress(), reload: input.takePress('KeyR'), aimYaw },
+    { held: input.fireHeld(), pressed: input.takeFirePress(), reload: input.takePress('KeyR'), aimYaw, ads: aiming },
     targets,
     dt,
     store,
@@ -234,7 +243,7 @@ function frame(now: number) {
   const turn = input.takeTurn();
   if (turn) camera.turnBy(turn, store);
   // Off the view (on the panel, outside the window) the cursor stops pushing the camera; the aim stays.
-  camera.update(dt, renderPos, input.over ? input.ndcX : 0, input.over ? input.ndcY : 0, store);
+  camera.update(dt, renderPos, input.over ? input.ndcX : 0, input.over ? input.ndcY : 0, store, aiming);
 
   // Face the cursor (cast through the steady camera, before the shake is added).
   camera.cam.updateMatrixWorld();
@@ -338,7 +347,7 @@ function frame(now: number) {
   const winFrom = gunValue(store, W.gun, 'ActiveStart') / 100;
   hud.updateGun(
     dt,
-    GUN_KEYS[W.gun].name,
+    GUN_KEYS[W.gun].name + (aiming ? '  · aiming' : ''),
     g.ammo,
     Math.max(1, Math.round(gunValue(store, W.gun, 'Mag'))),
     g.reloadLeft > 0 ? 1 - g.reloadLeft / g.reloadTotal : -1,
@@ -386,7 +395,20 @@ requestAnimationFrame(frame);
     if (pr) store.setMany(pr.values);
   },
   dummies: () =>
-    dummies.map((d, i) => ({ x: d.state.x, y: d.state.y, z: d.state.z, health: targets[i].health, down: targets[i].downFor > 0 })),
+    dummies.map((d, i) => ({
+      x: d.state.x,
+      y: d.state.y,
+      z: d.state.z,
+      speed: Math.hypot(d.state.vx, d.state.vz),
+      health: targets[i].health,
+      down: targets[i].downFor > 0,
+    })),
+  /** The camera as drawn: its position and its angle below the horizon, in degrees. */
+  cam: () => {
+    const d = new THREE.Vector3();
+    camera.cam.getWorldDirection(d);
+    return { x: camera.cam.position.x, y: camera.cam.position.y, z: camera.cam.position.z, pitch: (Math.asin(-d.y) * 180) / Math.PI };
+  },
   /** Put a dummy somewhere, at rest and at full health (for the scripted checks only). */
   placeDummy: (i: number, x: number, z: number) => {
     Object.assign(dummies[i].state, newMover(x, z));
@@ -401,6 +423,8 @@ requestAnimationFrame(frame);
     peakY = y;
   },
   audio: () => ({ state: audioState(), clicks: clicksPlayed }),
+  aiming: () => aiming,
+  aimPoint: () => ({ x: aimPoint.x, y: aimPoint.y, z: aimPoint.z }),
   gun: () => ({
     gun: W.gun,
     ...W.guns[W.gun],

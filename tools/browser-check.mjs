@@ -448,6 +448,69 @@ async function run(browserName) {
     ok('the gun is not ready while sprinting', g1.readyIn > 0.1, `ready in ${g1.readyIn.toFixed(2)} s`);
     await T(() => window.__testlines.set('dummiesWalk', true));
 
+    // Aiming down sights (right button). Walk while aiming: 0.55 of the walk speed; Shift does not sprint.
+    await T(() => window.__testlines.place(30, 30));
+    await sleep(300);
+    const aimSpot = await T(() => window.__testlines.screenOf(30, 1.36, 24));
+    await page.mouse.move(aimSpot.x, aimSpot.y);
+    await page.mouse.down({ button: 'right' });
+    await page.keyboard.down('ShiftLeft');
+    await page.keyboard.down('KeyS');
+    await sleep(1200);
+    const sa = await T(() => window.__testlines.state());
+    const dsWalk = (await T(() => window.__testlines.dummies())).map((d) => d.speed);
+    await page.keyboard.up('KeyS');
+    await page.keyboard.up('ShiftLeft');
+    // (Flatten creeps toward its floor when the cursor is beyond the look point, as the old game's did; give
+    // it time to settle before the settle check.)
+    ok('aiming slows the soldier to 0.55 and blocks the sprint', Math.abs(Math.hypot(sa.vx, sa.vz) - 6.3 * 0.55) < 0.05 && !sa.sprinting, `${Math.hypot(sa.vx, sa.vz).toFixed(3)} m/s`);
+    ok('the dummies keep their walk speed while you aim', dsWalk.filter((v) => Math.abs(v - 6.3) < 0.05).length >= 6, dsWalk.map((v) => v.toFixed(1)).join(' '));
+    await sleep(600);
+    let ga = await T(() => window.__testlines.gun());
+    ok('aiming rests the SMG spread at its sights value (0.06)', Math.abs(ga.spread - 0.06) < 1e-6 && (await T(() => window.__testlines.aiming())), ga.spread.toFixed(4));
+    // Flatten (the default reaction): with the cursor well ahead of the soldier the view tips toward it, and
+    // with the cursor still it settles.
+    const viewA = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
+    await page.mouse.move(viewA.l + viewA.w * 0.5, viewA.t + viewA.h * 0.15);
+    await sleep(2500);
+    const p1 = await T(() => window.__testlines.aimPoint());
+    const c1 = await T(() => window.__testlines.cam());
+    await sleep(1000);
+    const p2 = await T(() => window.__testlines.aimPoint());
+    ok('with the cursor still, the aim settles while aiming', Math.hypot(p2.x - p1.x, p2.z - p1.z) < 0.05, `moved ${Math.hypot(p2.x - p1.x, p2.z - p1.z).toFixed(3)} m in 1 s`);
+    await page.mouse.up({ button: 'right' });
+    await sleep(1500);
+    const c0 = await T(() => window.__testlines.cam());
+    ga = await T(() => window.__testlines.gun());
+    ok('letting go puts the spread back to rest (0.075)', Math.abs(ga.spread - 0.075) < 1e-6, ga.spread.toFixed(4));
+    ok('Flatten tips the view while aiming', c1.pitch < c0.pitch - 0.3, `${c0.pitch.toFixed(2)}° at rest, ${c1.pitch.toFixed(2)}° aiming`);
+    // Slide: the camera moves toward the cursor, and the soldier stays on screen.
+    await T(() => window.__testlines.set('adsCam', 'pan'));
+    const view = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
+    await page.mouse.move(view.l + view.w * 0.5, view.t + 5);
+    await sleep(800);
+    const cs0 = await T(() => window.__testlines.cam());
+    await page.mouse.down({ button: 'right' });
+    await sleep(1500);
+    const cs1 = await T(() => window.__testlines.cam());
+    const me5 = await T(() => window.__testlines.state());
+    const onScreen = await T((x, y, z) => window.__testlines.screenOf(x, y + 0.2, z), me5.x, me5.y, me5.z);
+    await page.mouse.up({ button: 'right' });
+    ok('Slide moves the camera toward the cursor', Math.hypot(cs1.x - cs0.x, cs1.z - cs0.z) > 1, `${Math.hypot(cs1.x - cs0.x, cs1.z - cs0.z).toFixed(2)} m`);
+    ok('Slide keeps the soldier on screen', onScreen.x > view.l && onScreen.x < view.l + view.w && onScreen.y > view.t && onScreen.y < view.t + view.h, `${onScreen.x.toFixed(0)}, ${onScreen.y.toFixed(0)}`);
+    await T(() => window.__testlines.set('adsCam', 'pitch'));
+    // Toggle mode: one click aims, the next lets go.
+    await T(() => window.__testlines.set('adsMode', 'toggle'));
+    await page.mouse.move(aimSpot.x, aimSpot.y);
+    await page.mouse.click(aimSpot.x, aimSpot.y, { button: 'right' });
+    await sleep(400);
+    const tg1 = await T(() => window.__testlines.aiming());
+    await page.mouse.click(aimSpot.x, aimSpot.y, { button: 'right' });
+    await sleep(400);
+    const tg2 = await T(() => window.__testlines.aiming());
+    ok('toggle mode: a click aims, the next click lets go', tg1 === true && tg2 === false, `${tg1}, ${tg2}`);
+    await T(() => window.__testlines.set('adsMode', 'hold'));
+
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
     const b60 = (await page.$$('#panel .p-segbtn'))[seg.indexOf('60')];
@@ -505,6 +568,23 @@ async function run(browserName) {
       cv.camHeight === 24.5 && cv.camTurn === 64 && cv.lookBase === 3.4 && cv.walkSpeed === 7.2,
       `height ${cv.camHeight}, turn ${cv.camTurn}, look ${cv.lookBase}, walk ${cv.walkSpeed}`,
     );
+    // A camera moved by hand in the first builds (here the old Iso+ preset) comes back whole, not mixed.
+    await T(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        'shamble-testlines.values.v1',
+        JSON.stringify({ camHeight: 41.5, camBack: 65.5, camLens: 12, camTurn: 45, camAngle: null, lookBase: 5.5, lookMin: 3.5, lookMax: 8, lookFwdRange: 26, lookBackRange: 16, lookSideMax: 6, posFwdMax: 3.2, posBackMax: 2.2, posSideMax: 2 }),
+      );
+    });
+    await page.reload();
+    await sleep(2000);
+    cv = await T(() => window.__testlines.values());
+    ok(
+      'a camera moved in the first builds comes back whole (Iso+)',
+      cv.camHeight === 41.5 && cv.camLens === 12 && cv.camTurn === 45 && cv.lookBase === 5.5,
+      `height ${cv.camHeight}, lens ${cv.camLens}, turn ${cv.camTurn}, look ${cv.lookBase}`,
+    );
+    await T(() => window.__testlines.preset('Original'));
     await T(() => window.__testlines.set('walkSpeed', 6.3));
 
     // Pictures for the eye: walk near the blocks, both guns.
