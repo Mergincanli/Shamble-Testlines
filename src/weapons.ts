@@ -12,6 +12,13 @@ export const SHOT_HEIGHT = 1.36;
 /** The dummies' hit volume: an upright cylinder from the feet. */
 export const HIT_RADIUS = 0.3;
 export const HIT_HEIGHT = 1.8;
+/**
+ * A level shot still counts this far above a dummy's head or below its feet, so a soldier on the 0.55 m step or
+ * a little way up the ramp can hit dummies on the ground. How aiming at height works is open in the game.
+ */
+export const HEIGHT_GRACE = 0.6;
+/** The last part of a dummy's down time is it getting up: not hittable, not walking yet. */
+export const RISE_TIME = 0.35;
 
 /** Per gun: the panel keys that hold its values, and what the old game had that is not a slider. */
 export const GUN_KEYS: Record<GunId, { prefix: string; auto: boolean; name: string; falloff: boolean }> = {
@@ -25,15 +32,15 @@ export interface GunState {
   spread: number;
   reloadLeft: number;
   reloadTotal: number;
-  /** Time until the gun is ready after a sprint (the sprint-to-fire delay). */
-  readyIn: number;
 }
 
 export interface WeaponsState {
   gun: GunId;
   guns: Record<GunId, GunState>;
-  /** A press of a once-per-press gun that came during the gap between shots fires as soon as it can. */
+  /** A press of a once-per-press gun that waits for the gap between shots, a gun change or a sprint to end. */
   queued: boolean;
+  /** Seconds since the soldier last sprinted (0 while sprinting), compared with each gun's sprint-to-fire delay. */
+  sinceSprint: number;
 }
 
 export interface ShotEvent {
@@ -54,7 +61,7 @@ export interface ShotEvent {
 export interface Target {
   state: MoverState;
   health: number;
-  /** Seconds until it stands again; above 0 while it is down. */
+  /** Seconds until it stands again; above 0 while it is down (the last RISE_TIME of it is getting up). */
   downFor: number;
 }
 
@@ -69,10 +76,12 @@ export function newWeapons(P: Store, gun: GunId): WeaponsState {
     spread: gunValue(P, g, 'SpreadHip'),
     reloadLeft: 0,
     reloadTotal: 0,
-    readyIn: 0,
   });
-  return { gun, guns: { smg: mk('smg'), rifle: mk('rifle') }, queued: false };
+  return { gun, guns: { smg: mk('smg'), rifle: mk('rifle') }, queued: false, sinceSprint: 1e9 };
 }
+
+/** The old game's pause after a gun change before the first shot. */
+const SWITCH_TIME = 0.12;
 
 /** Change guns: a reload in progress stops, the spread rests, and the gun comes up after a short moment. */
 export function switchGun(W: WeaponsState, gun: GunId, P: Store) {
@@ -85,8 +94,10 @@ export function switchGun(W: WeaponsState, gun: GunId, P: Store) {
   W.queued = false;
 }
 
-/** The old game's pause after a gun change before the first shot. */
-const SWITCH_TIME = 0.12;
+/** Time until the gun in hand is ready after a sprint. */
+export function readyIn(W: WeaponsState, P: Store): number {
+  return Math.max(0, gunValue(P, W.gun, 'SprintDelay') - W.sinceSprint);
+}
 
 /** A small seeded random source for spread, so a recording would play back the same. */
 let seed = 12345;
@@ -103,15 +114,13 @@ function rayBlocks(ox: number, oz: number, dx: number, dz: number, y: number, ma
     // Slab test in x and z.
     let t0 = 0;
     let t1 = max;
+    let miss = false;
     for (const [o, d, lo, hi] of [
       [ox, dx, b.minX, b.maxX],
       [oz, dz, b.minZ, b.maxZ],
     ] as const) {
       if (Math.abs(d) < 1e-9) {
-        if (o < lo || o > hi) {
-          t0 = Infinity;
-          break;
-        }
+        if (o < lo || o > hi) miss = true;
       } else {
         let a = (lo - o) / d;
         let c = (hi - o) / d;
@@ -120,18 +129,14 @@ function rayBlocks(ox: number, oz: number, dx: number, dz: number, y: number, ma
         t1 = Math.min(t1, c);
       }
     }
-    if (t0 > t1 || t0 === Infinity) continue;
+    if (miss || t0 > t1) continue;
     if (b.ramp) {
-      // A ramp stops the shot only where its surface is above the shot.
-      const steps = 8;
+      // The ramp's height changes evenly along the ray: find where it rises past the shot.
+      const hA = rampHeight(b, ox + dx * t0, oz + dz * t0);
+      const hB = rampHeight(b, ox + dx * t1, oz + dz * t1);
       let tHit = Infinity;
-      for (let i = 0; i <= steps; i++) {
-        const t = t0 + ((t1 - t0) * i) / steps;
-        if (rampHeight(b, ox + dx * t, oz + dz * t) > y) {
-          tHit = t;
-          break;
-        }
-      }
+      if (hA > y) tHit = t0;
+      else if (hB > y) tHit = t0 + ((y - hA) / (hB - hA)) * (t1 - t0);
       if (tHit < best) best = tHit;
     } else if (t0 < best) best = t0;
   }
@@ -142,19 +147,21 @@ function rayBlocks(ox: number, oz: number, dx: number, dz: number, y: number, ma
 function rayTargets(ox: number, oz: number, dx: number, dz: number, y: number, targets: Target[], max: number): [number, number] {
   let best = Infinity;
   let idx = -1;
+  const r2 = HIT_RADIUS * HIT_RADIUS;
   targets.forEach((t, i) => {
     if (t.downFor > 0) return;
     const s = t.state;
-    if (y < s.y || y > s.y + HIT_HEIGHT) return;
+    if (y < s.y - HEIGHT_GRACE || y > s.y + HIT_HEIGHT + HEIGHT_GRACE) return;
     const fx = s.x - ox;
     const fz = s.z - oz;
     const along = fx * dx + fz * dz;
-    if (along < 0) return;
     const side2 = fx * fx + fz * fz - along * along;
-    const r2 = HIT_RADIUS * HIT_RADIUS;
     if (side2 > r2) return;
-    const d = along - Math.sqrt(r2 - side2);
-    if (d >= 0 && d < best && d <= max) {
+    // From inside the cylinder (point blank) it is a hit at once.
+    const inside = fx * fx + fz * fz <= r2;
+    if (!inside && along < 0) return;
+    const d = inside ? 0 : along - Math.sqrt(r2 - side2);
+    if (d < best && d <= max) {
       best = d;
       idx = i;
     }
@@ -165,7 +172,7 @@ function rayTargets(ox: number, oz: number, dx: number, dz: number, y: number, t
 export interface TriggerInput {
   /** The trigger is held this step. */
   held: boolean;
-  /** The trigger went down since the last step (for guns that fire once per press). */
+  /** The trigger went down since the last step. */
   pressed: boolean;
   reload: boolean;
   /** Direction of aim on the ground (the soldier faces it). */
@@ -190,6 +197,7 @@ export function stepWeapons(
   const v = (k: string) => gunValue(P, gun, k);
   const mag = Math.max(1, Math.round(v('Mag')));
   if (g.ammo > mag) g.ammo = mag;
+  const auto = GUN_KEYS[gun].auto;
 
   // Spread recovers toward its resting value.
   const base = v('SpreadHip');
@@ -204,32 +212,33 @@ export function stepWeapons(
     }
   }
 
-  // Sprint-to-fire: the gun is not ready while sprinting, and for a short delay after.
-  if (me.sprinting) g.readyIn = v('SprintDelay');
-  else g.readyIn = Math.max(0, g.readyIn - dt);
+  // Sprint-to-fire: the gun is ready once the sprint has been over for the gun's delay.
+  W.sinceSprint = me.sprinting ? 0 : W.sinceSprint + dt;
+  const sprintReady = W.sinceSprint >= v('SprintDelay') - 1e-9;
 
-  g.cooldown -= dt;
-  const canFire = g.reloadLeft <= 0 && g.readyIn <= 0;
-  if (!GUN_KEYS[gun].auto) {
-    // Only a press during the gap between shots waits; a press during a reload or a sprint is dropped.
-    if (inp.pressed) W.queued = canFire;
-    else if (!canFire) W.queued = false;
-  }
-  const wants = GUN_KEYS[gun].auto ? inp.held : W.queued;
-  if (!wants || !canFire || g.ammo <= 0) g.cooldown = Math.max(0, g.cooldown);
+  // A once-per-press gun keeps a press until it can fire: through the gap between shots, a gun change and the
+  // sprint-to-fire delay. A press during a reload, or with nothing in the magazine, is dropped.
+  if (!auto && inp.pressed) W.queued = g.reloadLeft <= 0 && g.ammo > 0;
+  if (!auto && (g.reloadLeft > 0 || g.ammo <= 0)) W.queued = false;
+  // An automatic gun fires while held, and a tap shorter than one step still fires once.
+  const wants = auto ? inp.held || inp.pressed : W.queued;
+  const canFire = g.reloadLeft <= 0 && sprintReady && g.ammo > 0;
 
   if (wants && canFire) {
-    // The remainder of the interval carries over, so the rate holds at either step rate.
+    // Fire whenever the gap since the last shot has passed; the remainder carries, so the rate holds at either
+    // step rate, and the first gap after a pause is never short.
     let guard = 0;
     while (g.cooldown <= 1e-9 && g.ammo > 0 && guard++ < 16) {
       fireOne(W, me, inp.aimYaw, targets, P, events);
       g.cooldown += Math.max(0.01, v('Interval'));
-      if (!GUN_KEYS[gun].auto) {
+      if (!auto) {
         W.queued = false;
         break;
       }
     }
   }
+  g.cooldown -= dt;
+  if (!(wants && canFire)) g.cooldown = Math.max(0, g.cooldown);
 
   // Reload on R, or by itself when the magazine runs dry.
   if (g.reloadLeft <= 0 && g.ammo < mag && (inp.reload || g.ammo <= 0)) startReload(g, v('Reload'));
@@ -268,13 +277,10 @@ function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Targe
     }
     const target = targets[idx];
     target.health -= damage;
-    // A small shove along the shot: the target reacts.
-    target.state.vx += dx * 1.2;
-    target.state.vz += dz * 1.2;
     if (target.health <= 0) {
       killed = true;
       target.health = 0;
-      target.downFor = P.num('dummyDownTime');
+      target.downFor = Math.max(RISE_TIME + 0.05, P.num('dummyDownTime'));
     }
   }
   events.push({

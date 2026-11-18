@@ -271,6 +271,7 @@ async function run(browserName) {
     ok('with the old numbers the SMG spread stays at rest', g1.spread <= 0.075 + 0.0051, g1.spread.toFixed(4));
     let dmy = (await T(() => window.__testlines.dummies()))[0];
     ok('hits hurt the dummy', dmy.health < 100, `health ${dmy.health.toFixed(0)}`);
+    ok('a hit dummy stays on its spot (the knockback is drawn only)', Math.hypot(dmy.x - 20, dmy.z - 13) < 0.01, `${dmy.x.toFixed(2)}, ${dmy.z.toFixed(2)}`);
     // Keep firing until it drops, then it stands again after 4 s with full health.
     await page.mouse.down();
     for (let i = 0; i < 30 && !(await T(() => window.__testlines.dummies()))[0].down; i++) await sleep(100);
@@ -308,6 +309,20 @@ async function run(browserName) {
     await sleep(3600);
     g1 = await T(() => window.__testlines.gun());
     ok('the rifle is loaded again after its reload', g1.ammo === 1, `${g1.ammo} rounds`);
+    // A rifle click while sprinting waits out the sprint-to-fire delay, then fires.
+    await page.keyboard.down('ShiftLeft');
+    await page.keyboard.down('KeyS');
+    await sleep(600);
+    g0 = await T(() => window.__testlines.gun());
+    await page.mouse.down();
+    await sleep(30);
+    await page.mouse.up();
+    await sleep(900);
+    g1 = await T(() => window.__testlines.gun());
+    await page.keyboard.up('KeyS');
+    await page.keyboard.up('ShiftLeft');
+    ok('a rifle click while sprinting fires after the delay', g1.shots - g0.shots === 1, `${g1.shots - g0.shots} shots`);
+    await sleep(3700);
     await page.keyboard.press('Digit1');
     // Sprinting: the gun is not ready while sprinting.
     await page.keyboard.down('ShiftLeft');

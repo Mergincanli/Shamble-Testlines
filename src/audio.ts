@@ -30,13 +30,17 @@ export function unlockAudio() {
 export function click(volume = 0.25) {
   const c = ensure();
   if (!c || !noise || c.state !== 'running') return;
-  const src = c.createBufferSource();
-  src.buffer = noise;
-  const hp = c.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 1800;
-  const g = c.createGain();
-  g.gain.value = volume;
-  src.connect(hp).connect(g).connect(c.destination);
-  src.start();
+  try {
+    const src = c.createBufferSource();
+    src.buffer = noise;
+    const hp = c.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1800;
+    const g = c.createGain();
+    g.gain.value = volume;
+    src.connect(hp).connect(g).connect(c.destination);
+    src.start();
+  } catch {
+    // No sound is better than a stopped page.
+  }
 }

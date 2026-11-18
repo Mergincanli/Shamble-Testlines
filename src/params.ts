@@ -274,7 +274,7 @@ export const PARAMS: Param[] = [
     digits: 3,
     note: (v) => `rate ${(LN10 / (v.accelTime as number)).toFixed(1)}/s`,
     source: 'Old game T.accel = 14/s: speed eases toward the target, 90 % of the way in 0.164 s.',
-    legacy: 'T.accel',
+    legacy: 'T.accel (speed-up)',
   },
   {
     kind: 'range',
@@ -290,7 +290,7 @@ export const PARAMS: Param[] = [
     digits: 3,
     note: (v) => `rate ${(LN10 / (v.stopTime as number)).toFixed(1)}/s`,
     source: 'Old game: the same T.accel = 14/s eases the stop.',
-    legacy: 'T.accel',
+    legacy: 'T.accel (stop)',
   },
   {
     kind: 'range',

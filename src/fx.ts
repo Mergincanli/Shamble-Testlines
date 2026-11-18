@@ -12,8 +12,6 @@ interface Pooled {
   mesh: THREE.Mesh;
   life: number;
   max: number;
-  /** Spawned this frame: shown for at least one drawn frame, however slow the frames are. */
-  fresh: boolean;
 }
 
 function unlit(hex: string, transparent = false) {
@@ -27,7 +25,6 @@ export class Fx {
   private next = { tracer: 0, flash: 0, spark: 0 };
   private marker: HTMLDivElement;
   private markerLife = 0;
-  private markerFresh = false;
   private bars: { group: THREE.Group; fill: THREE.Mesh; shownFor: number }[] = [];
   shake = 0;
   fovPunch = 0;
@@ -41,20 +38,20 @@ export class Fx {
       m.visible = false;
       m.renderOrder = 5;
       scene.add(m);
-      this.tracers.push({ mesh: m, life: 0, max: TRACER_LIFE, fresh: false });
+      this.tracers.push({ mesh: m, life: 0, max: TRACER_LIFE });
     }
     const star = new THREE.OctahedronGeometry(0.5, 0);
     for (let i = 0; i < 6; i++) {
       const m = new THREE.Mesh(star, unlit('#FFF8DC'));
       m.visible = false;
       scene.add(m);
-      this.flashes.push({ mesh: m, life: 0, max: FLASH_LIFE, fresh: false });
+      this.flashes.push({ mesh: m, life: 0, max: FLASH_LIFE });
     }
     for (let i = 0; i < 24; i++) {
       const m = new THREE.Mesh(star, unlit('#FFE6A0'));
       m.visible = false;
       scene.add(m);
-      this.sparks.push({ mesh: m, life: 0, max: SPARK_LIFE, fresh: false });
+      this.sparks.push({ mesh: m, life: 0, max: SPARK_LIFE });
     }
     // Health bars over the dummies: a dark back and a fill, always facing the camera.
     const plane = new THREE.PlaneGeometry(1, 1);
@@ -83,19 +80,23 @@ export class Fx {
     const p = pool[this.next[key] % pool.length];
     this.next[key]++;
     p.life = p.max;
-    p.fresh = true;
     p.mesh.visible = true;
     return p;
   }
 
-  /** A shot leaves the muzzle: tracer, flash and view kick, all at once. */
-  shot(from: THREE.Vector3, to: THREE.Vector3, recoil: number, lens: number, hitSomething: boolean) {
-    const t = this.take(this.tracers, 'tracer');
-    const len = from.distanceTo(to);
-    t.mesh.position.copy(from);
-    t.mesh.lookAt(to);
-    t.mesh.scale.set(0.05, 0.05, Math.max(0.01, len));
-    (t.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
+  /**
+   * A shot leaves the muzzle: tracer, flash and view kick, all at once. Called after update(), so everything it
+   * starts is drawn this frame at full strength, whatever the frame rate. No tracer at point blank.
+   */
+  shot(from: THREE.Vector3, to: THREE.Vector3, recoil: number, lens: number, hitSomething: boolean, tracer: boolean) {
+    if (tracer) {
+      const t = this.take(this.tracers, 'tracer');
+      const len = from.distanceTo(to);
+      t.mesh.position.copy(from);
+      t.mesh.lookAt(to);
+      t.mesh.scale.set(0.05, 0.05, Math.max(0.01, len));
+      (t.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
+    }
     const f = this.take(this.flashes, 'flash');
     f.mesh.position.copy(from);
     f.mesh.scale.setScalar(0.32);
@@ -113,9 +114,9 @@ export class Fx {
   }
 
   /** The hit is confirmed: the marker at the cursor, bigger and red on a kill; the target's bar shows. */
-  hit(dummy: number, killed: boolean) {
+  hit(dummy: number, killed: boolean, mouseX: number, mouseY: number) {
     this.markerLife = killed ? 0.3 : 0.12;
-    this.markerFresh = true;
+    this.marker.style.transform = `translate(${mouseX}px, ${mouseY}px)`;
     this.marker.classList.toggle('kill', killed);
     this.marker.classList.add('show');
     if (dummy >= 0) this.bars[dummy].shownFor = 3;
@@ -125,10 +126,6 @@ export class Fx {
     const age = (pool: Pooled[], fade: boolean) => {
       for (const p of pool) {
         if (p.life <= 0) continue;
-        if (p.fresh) {
-          p.fresh = false;
-          continue;
-        }
         p.life -= dt;
         if (p.life <= 0) p.mesh.visible = false;
         else if (fade) (p.mesh.material as THREE.MeshBasicMaterial).opacity = p.life / p.max;
@@ -141,8 +138,7 @@ export class Fx {
     this.fovPunch = Math.max(0, this.fovPunch - dt * 15);
     this.gunKick = Math.max(0, this.gunKick - dt * 8);
     if (this.markerLife > 0) {
-      if (this.markerFresh) this.markerFresh = false;
-      else this.markerLife -= dt;
+      this.markerLife -= dt;
       this.marker.style.transform = `translate(${mouseX}px, ${mouseY}px)`;
       if (this.markerLife <= 0) this.marker.classList.remove('show');
     }

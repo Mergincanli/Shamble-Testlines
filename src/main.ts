@@ -14,7 +14,17 @@ import { Panel } from './panel';
 import { Store } from './params';
 import { softPush } from './push';
 import { Soldier } from './soldier';
-import { GUN_KEYS, gunValue, newWeapons, stepWeapons, switchGun, type ShotEvent, type Target } from './weapons';
+import {
+  GUN_KEYS,
+  gunValue,
+  newWeapons,
+  readyIn,
+  RISE_TIME,
+  stepWeapons,
+  switchGun,
+  type ShotEvent,
+  type Target,
+} from './weapons';
 import { buildYard } from './yard';
 
 const store = new Store();
@@ -55,6 +65,8 @@ const targets: Target[] = dummies.map((d) => ({ state: d.state, health: store.nu
 const dummyYaw = dummies.map(() => 0);
 const dummyFall = dummies.map(() => 0);
 const dummyFlinch = dummies.map(() => 0);
+/** Knockback on a hit: drawn only, so it never moves a dummy off its loop. */
+const dummyKnock = dummies.map(() => new THREE.Vector2());
 function dressDummies() {
   const other = otherFactions(store.get('faction') as Faction);
   dummies.forEach((d, i) => dummySoldiers[i].setFaction(other[d.side]));
@@ -134,8 +146,9 @@ function readMoveInput() {
   const l = Math.hypot(x, z);
   moveInput.wishX = l > 1e-6 ? x / l : 0;
   moveInput.wishZ = l > 1e-6 ? z / l : 0;
-  // Firing stops the sprint (the gun then comes up after its sprint-to-fire delay).
-  moveInput.sprint = (input.down('ShiftLeft') || input.down('ShiftRight')) && !input.fireHeld();
+  // Firing stops the sprint, and so does a rifle press waiting for the gun to come up (after the gun's
+  // sprint-to-fire delay).
+  moveInput.sprint = (input.down('ShiftLeft') || input.down('ShiftRight')) && !input.fireHeld() && !W.queued;
   // Held Space keeps jumping on landing, as the old game; a tap between two steps is not lost.
   moveInput.jump = input.takePress('Space') || input.down('Space');
 }
@@ -231,22 +244,30 @@ function frame(now: number) {
     if (dx * dx + dz * dz > 0.09) aimYaw = Math.atan2(dx, dz);
   }
 
-  // Shots of this frame: the tracer leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
+  // Effects age first; then this frame's shots start theirs, so they are drawn at full strength. The tracer
+  // leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
+  fx.update(dt, input.mouseX, input.mouseY);
   if (events.length) {
     soldier.muzzleWorld(muzzle);
     for (const e of events) {
       hitPoint.set(e.ex, e.ey, e.ez);
-      fx.shot(muzzle, hitPoint, gunValue(store, e.gun, 'Recoil'), store.num('camLens'), e.hit >= 0 || e.hitBlock);
+      const len = Math.hypot(e.ex - e.ox, e.ez - e.oz);
+      fx.shot(muzzle, hitPoint, gunValue(store, e.gun, 'Recoil'), store.num('camLens'), e.hit >= 0 || e.hitBlock, len > 1);
       click();
       if (e.hit >= 0) {
-        fx.hit(e.hit, e.killed);
+        fx.hit(e.hit, e.killed, input.mouseX, input.mouseY);
         dummyFlinch[e.hit] = 1;
+        if (len > 1e-6) {
+          const k = dummyKnock[e.hit];
+          k.x += ((e.ex - e.ox) / len) * 0.12;
+          k.y += ((e.ez - e.oz) / len) * 0.12;
+          if (k.length() > 0.35) k.setLength(0.35);
+        }
       }
     }
     shotsFired += events.length;
     events.length = 0;
   }
-  fx.update(dt, input.mouseX, input.mouseY);
 
   // The sprint pose comes in quickly; going back to aiming takes the gun's sprint-to-fire delay.
   const sprintTarget = cur.sprinting ? 1 : 0;
@@ -260,10 +281,12 @@ function frame(now: number) {
   dummies.forEach((d, i) => {
     const s = dummySoldiers[i];
     const t = targets[i];
+    const knock = dummyKnock[i];
+    knock.multiplyScalar(Math.exp(-6 * dt));
     s.root.position.set(
-      d.prev.x + (d.state.x - d.prev.x) * alpha,
+      d.prev.x + (d.state.x - d.prev.x) * alpha + knock.x,
       d.prev.y + (d.state.y - d.prev.y) * alpha,
-      d.prev.z + (d.state.z - d.prev.z) * alpha,
+      d.prev.z + (d.state.z - d.prev.z) * alpha + knock.y,
     );
     // Face the way they walk, turning smoothly.
     const sp = Math.hypot(d.state.vx, d.state.vz);
@@ -273,9 +296,10 @@ function frame(now: number) {
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       dummyYaw[i] += diff * (1 - Math.exp(-10 * dt));
     }
-    // Flinch on a hit; fall over backwards when dropped, and get up again.
-    const down = t.downFor > 0;
-    dummyFall[i] = down ? Math.min(1, dummyFall[i] + dt / 0.25) : Math.max(0, dummyFall[i] - dt / 0.35);
+    // Flinch on a hit; fall over backwards when dropped, and get up over the last part of the down time.
+    if (t.downFor > RISE_TIME) dummyFall[i] = Math.min(1, dummyFall[i] + dt / 0.25);
+    else if (t.downFor > 0) dummyFall[i] = Math.min(dummyFall[i], t.downFor / RISE_TIME);
+    else dummyFall[i] = 0;
     dummyFlinch[i] = Math.max(0, dummyFlinch[i] - dt * 8);
     const f = dummyFall[i];
     s.root.rotation.y = dummyYaw[i];
@@ -310,7 +334,7 @@ function frame(now: number) {
     g.ammo,
     Math.max(1, Math.round(gunValue(store, W.gun, 'Mag'))),
     g.reloadLeft > 0 ? 1 - g.reloadLeft / g.reloadTotal : -1,
-    g.readyIn <= 0,
+    readyIn(W, store) <= 0,
   );
 
   // The view kick goes on last, so it never moves the aim.
@@ -356,7 +380,7 @@ requestAnimationFrame(frame);
     prev = { ...cur };
     peakY = y;
   },
-  gun: () => ({ gun: W.gun, ...W.guns[W.gun], shots: shotsFired }),
+  gun: () => ({ gun: W.gun, ...W.guns[W.gun], shots: shotsFired, readyIn: readyIn(W, store), queued: W.queued }),
   /** Where a world point is on the page, in CSS pixels. */
   screenOf: (x: number, y: number, z: number) => {
     const v = new THREE.Vector3(x, y, z).project(camera.cam);

@@ -51,6 +51,7 @@ export class Input {
       this.ndcX = ((e.clientX - r.left) / r.width) * 2 - 1;
       this.ndcY = -((e.clientY - r.top) / r.height) * 2 + 1;
       // Chorded buttons (a second button pressed while one is held) arrive as moves, not downs.
+      if (e.buttons & 1 && !(this.buttons & 1)) this.firePressed = true;
       this.buttons = e.buttons;
       // The turn is measured from the cursor's own positions, which every browser reports the same way.
       if (this.buttons & 4 && this.lastX !== null) this.turnDX += e.clientX - this.lastX;
