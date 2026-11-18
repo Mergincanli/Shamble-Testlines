@@ -60,6 +60,17 @@ export function rampHeight(b: Block, x: number, z: number): number {
   return t * b.top;
 }
 
+/** The highest surface at (x, z) at or just below height y: the ground, a block's top or the ramp (for effects). */
+export function floorBelow(x: number, z: number, y: number): number {
+  let f = 0;
+  for (const b of BLOCKS) {
+    if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+    const h = b.ramp ? rampHeight(b, x, z) : b.top;
+    if (h <= y + 0.05 && h > f) f = h;
+  }
+  return f;
+}
+
 /** Height of a block's surface at the point of its footprint nearest to (x, z). */
 function heightNear(b: Block, x: number, z: number): number {
   if (!b.ramp) return b.top;

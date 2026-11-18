@@ -5,7 +5,7 @@ import { audioState, click, clicksPlayed, unlockAudio } from './audio';
 import { FollowCamera } from './camera';
 import { makeDummies, otherFactions, steerDummy } from './dummies';
 import { Fx } from './fx';
-import { blastDamage, newGrenade, previewPath, stepGrenade, THROW_HEIGHT, throwVelocity, type Blast, type Grenade } from './grenade';
+import { blastDamage, newGrenade, previewPath, spent, stepGrenade, throwStart, throwVelocity, type Blast, type Grenade } from './grenade';
 import { NadeFx } from './nadefx';
 import type { GunId } from './guns';
 import { Hud } from './hud';
@@ -90,14 +90,17 @@ let chargeT = 0;
 let nadesThrown = 0;
 let blastsDone = 0;
 let lastFirstContact: { x: number; y: number; z: number } | null = null;
-/** The blast's camera kick: a spring, stepped with the simulation (stable at any frame rate). */
+/** The blast's camera kick: a spring, solved exactly at each simulation step, and its offset at the step before. */
 const kick = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
+const kickPrev = { x: 0, y: 0, z: 0 };
 const W = newWeapons(store, store.get('gun') as GunId);
 const events: ShotEvent[] = [];
 let shotsFired = 0;
 let lastShotSpread = 0;
 let lastShotRays = 0;
 let lastPreview: { x: number; y: number; z: number }[] | null = null;
+/** The last throw: its charge, and where the preview drawn just before it landed (for the scripted checks). */
+let lastThrow: { charge: number; previewEnd: { x: number; y: number; z: number } | null } | null = null;
 
 function resize() {
   const canvas = renderer.domElement;
@@ -211,6 +214,7 @@ const shake = new THREE.Vector3();
 function simStep(dt: number) {
   prev = { ...cur };
   readMoveInput();
+  nadeInput();
   stepMover(cur, moveInput, dt, store);
   stepWeapons(
     W,
@@ -251,12 +255,62 @@ function simStep(dt: number) {
   if (cur.y > peakY) peakY = cur.y;
 }
 
-/** Where a throw leaves the hand: a little in front of the soldier, at throwing height. */
+/** Where a throw leaves the hand: a little in front of the soldier, at throwing height, short of any block. */
 function throwOrigin(): [number, number, number] {
-  return [cur.x + Math.sin(aimYaw) * 0.4, cur.y + THROW_HEIGHT, cur.z + Math.cos(aimYaw) * 0.4];
+  return throwStart(cur.x, cur.y, cur.z, aimYaw);
 }
 
-/** One step of the grenades: the G key's charge and throw, the refill, the flights, the blasts, the camera kick. */
+/**
+ * The G key, first thing in a step, so a throw leaves with exactly the charge, place and aim the preview showed
+ * at the last frame. A release throws, then a press starts the next charge (so a quick double tap throws two).
+ * G down starts the charge (with a grenade in hand); G up throws, at a speed set by how long it was held: a tap
+ * within one step is the slowest throw.
+ */
+function nadeInput() {
+  const released = input.takeRelease('KeyG');
+  if (charging && (released || !input.down('KeyG'))) {
+    const [ox, oy, oz] = throwOrigin();
+    const charge = chargeT / store.num('nadeChargeTime');
+    grenades.push(newGrenade(ox, oy, oz, throwVelocity(aimYaw, charge, store), store));
+    lastThrow = { charge, previewEnd: lastPreview ? lastPreview[lastPreview.length - 1] : null };
+    lastPreview = null;
+    nadesHeld--;
+    nadesThrown++;
+    charging = false;
+  }
+  if (input.takePress('KeyG') && !charging && nadesHeld > 0) {
+    charging = true;
+    chargeT = 0;
+  }
+}
+
+/** Advance a damped spring (x'' = -k x - c x') by dt exactly: stable at any step rate, and the same swing at 30 or 60. */
+function springStep(x: number, v: number, k: number, c: number, dt: number): [number, number] {
+  const g = c / 2;
+  const w2 = k - g * g;
+  if (w2 > 1e-9) {
+    const w = Math.sqrt(w2);
+    const e = Math.exp(-g * dt);
+    const cs = Math.cos(w * dt);
+    const sn = Math.sin(w * dt);
+    return [e * (x * cs + ((v + g * x) / w) * sn), e * (v * cs - ((g * v + k * x) / w) * sn)];
+  }
+  if (w2 < -1e-9) {
+    const s = Math.sqrt(-w2);
+    const r1 = -g + s;
+    const r2 = -g - s;
+    const a = (v - r2 * x) / (r1 - r2);
+    const b = x - a;
+    const e1 = Math.exp(r1 * dt);
+    const e2 = Math.exp(r2 * dt);
+    return [a * e1 + b * e2, r1 * a * e1 + r2 * b * e2];
+  }
+  const e = Math.exp(-g * dt);
+  const q = v + g * x;
+  return [(x + q * dt) * e, (v - g * q * dt) * e];
+}
+
+/** One step of the grenades: the charge, the refill, the flights, the blasts, the camera kick. */
 function stepNades(dt: number) {
   const max = Math.round(store.num('nadeCount'));
   if (nadesHeld > max) nadesHeld = max;
@@ -267,27 +321,13 @@ function stepNades(dt: number) {
       nadeRefillT = 0;
     }
   } else nadeRefillT = 0;
-  // G down starts the charge (with a grenade in hand); G up throws, at a speed set by how long it was held. A tap
-  // shorter than one step still throws (the slowest throw).
-  if (input.takePress('KeyG') && !charging && nadesHeld > 0) {
-    charging = true;
-    chargeT = 0;
-  }
-  if (charging) {
-    chargeT = Math.min(chargeT + dt, store.num('nadeChargeTime'));
-    if (input.takeRelease('KeyG') || !input.down('KeyG')) {
-      const [ox, oy, oz] = throwOrigin();
-      grenades.push(newGrenade(ox, oy, oz, throwVelocity(aimYaw, chargeT / store.num('nadeChargeTime'), store), store));
-      nadesHeld--;
-      nadesThrown++;
-      charging = false;
-    }
-  } else input.takeRelease('KeyG');
+  // The charge grows while G stays down (the throw itself is at the start of the next step, in nadeInput).
+  if (charging && input.down('KeyG')) chargeT = Math.min(chargeT + dt, store.num('nadeChargeTime'));
   for (let i = grenades.length - 1; i >= 0; i--) {
     const g = grenades[i];
     stepGrenade(g, dt, store);
     if (g.firstContact) lastFirstContact = g.firstContact;
-    if (g.fuse > 0) continue;
+    if (!spent(g)) continue;
     grenades.splice(i, 1);
     const at: Blast = { x: g.x, y: g.y, z: g.z };
     const hits: number[] = [];
@@ -326,13 +366,13 @@ function stepNades(dt: number) {
     blasts.push({ at, hits, killed });
     blastsDone++;
   }
-  // The kick's spring, stepped here so it stays stable whatever the frame rate.
+  // The kick's spring, solved here at each step; the picture is smoothed between steps.
   const k = store.num('nadeKickStiff');
   const c = store.num('nadeKickDamp');
   for (const ax of ['x', 'y', 'z'] as const) {
     const v = ('v' + ax) as 'vx' | 'vy' | 'vz';
-    kick[v] += (-k * kick[ax] - c * kick[v]) * dt;
-    kick[ax] += kick[v] * dt;
+    kickPrev[ax] = kick[ax];
+    [kick[ax], kick[v]] = springStep(kick[ax], kick[v], k, c, dt);
   }
 }
 
@@ -400,7 +440,7 @@ function frame(now: number) {
   if (charging) {
     const [ox, oy, oz] = throwOrigin();
     const charge = chargeT / store.num('nadeChargeTime');
-    lastPreview = previewPath(ox, oy, oz, throwVelocity(aimYaw, charge, store), stepDt, store);
+    lastPreview = previewPath(ox, oy, oz, throwVelocity(aimYaw, charge, store), store);
     nadeFx.preview(lastPreview, charge);
   } else nadeFx.preview(null, 0);
   if (events.length) {
@@ -520,9 +560,9 @@ function frame(now: number) {
 
   hud.updateNade(nadesHeld, Math.round(store.num('nadeCount')), charging ? chargeT / store.num('nadeChargeTime') : -1);
   // The view kick goes on last, so it never moves the aim (and the blast's kick with it).
-  camera.cam.position.x += kick.x;
-  camera.cam.position.y += kick.y;
-  camera.cam.position.z += kick.z;
+  camera.cam.position.x += kickPrev.x + (kick.x - kickPrev.x) * alpha;
+  camera.cam.position.y += kickPrev.y + (kick.y - kickPrev.y) * alpha;
+  camera.cam.position.z += kickPrev.z + (kick.z - kickPrev.z) * alpha;
   fx.shakeOffset(shake);
   camera.cam.translateX(shake.x);
   camera.cam.translateY(shake.y);
@@ -595,6 +635,7 @@ requestAnimationFrame(frame);
     flying: grenades.map((g) => ({ x: g.x, y: g.y, z: g.z })),
     firstContact: lastFirstContact,
     previewEnd: lastPreview ? lastPreview[lastPreview.length - 1] : null,
+    lastThrow,
     kick: Math.hypot(kick.x, kick.y, kick.z),
   }),
   gun: () => ({

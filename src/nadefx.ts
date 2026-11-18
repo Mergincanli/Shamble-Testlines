@@ -5,8 +5,11 @@
 import * as THREE from 'three';
 import { PAL, toon, UNIFORM, type Faction } from './look';
 import type { Blast, Grenade } from './grenade';
+import { floorBelow } from './yard';
 
 const FRAGMENTS = 22;
+/** Blasts drawn at once (each with its flash and ring); a fourth reuses the oldest. */
+const BLASTS = 3;
 
 interface Fragment {
   mesh: THREE.Mesh;
@@ -16,28 +19,27 @@ interface Fragment {
   life: number;
 }
 
+interface BlastFx {
+  flash: THREE.Mesh;
+  wave: THREE.Mesh;
+  life: number;
+  radius: number;
+}
+
 export class NadeFx {
+  private scene: THREE.Scene;
+  private body = new THREE.CylinderGeometry(0.08, 0.08, 0.16, 8);
   private grenades: THREE.Mesh[] = [];
   private dots: THREE.Points;
   private dotPos: Float32Array;
   private ring: THREE.Mesh;
-  private flash: THREE.Mesh;
-  private flashLife = 0;
-  private wave: THREE.Mesh;
-  private waveLife = 0;
-  private waveR = 6.5;
+  private blasts: BlastFx[] = [];
+  private nextBlast = 0;
   private frags: Fragment[] = [];
   private nextFrag = 0;
 
   constructor(scene: THREE.Scene) {
-    const body = new THREE.CylinderGeometry(0.08, 0.08, 0.16, 8);
-    for (let i = 0; i < 8; i++) {
-      const m = new THREE.Mesh(body, toon(UNIFORM.soviets.dark));
-      m.castShadow = true;
-      m.visible = false;
-      scene.add(m);
-      this.grenades.push(m);
-    }
+    this.scene = scene;
     this.dotPos = new Float32Array(400 * 3);
     const dg = new THREE.BufferGeometry();
     dg.setAttribute('position', new THREE.BufferAttribute(this.dotPos, 3));
@@ -50,13 +52,18 @@ export class NadeFx {
     this.ring = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthWrite: false }));
     this.ring.visible = false;
     this.ring.renderOrder = 6;
-    this.flash = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshBasicMaterial({ color: PAL.sun, transparent: true }));
-    this.flash.visible = false;
+    const fl = new THREE.IcosahedronGeometry(1, 1);
     const wg = new THREE.RingGeometry(0.85, 1, 48);
     wg.rotateX(-Math.PI / 2);
-    this.wave = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({ color: UNIFORM.soviets.dark, transparent: true, depthWrite: false }));
-    this.wave.visible = false;
-    this.wave.renderOrder = 5;
+    for (let i = 0; i < BLASTS; i++) {
+      const flash = new THREE.Mesh(fl, new THREE.MeshBasicMaterial({ color: PAL.sun, transparent: true }));
+      flash.visible = false;
+      const wave = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({ color: UNIFORM.soviets.dark, transparent: true, depthWrite: false }));
+      wave.visible = false;
+      wave.renderOrder = 5;
+      scene.add(flash, wave);
+      this.blasts.push({ flash, wave, life: 0, radius: 6.5 });
+    }
     const fg = new THREE.BoxGeometry(0.07, 0.05, 0.09);
     for (let i = 0; i < FRAGMENTS * 3; i++) {
       const m = new THREE.Mesh(fg, toon(UNIFORM.soviets.dark));
@@ -64,7 +71,7 @@ export class NadeFx {
       scene.add(m);
       this.frags.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0 });
     }
-    scene.add(this.dots, this.ring, this.flash, this.wave);
+    scene.add(this.dots, this.ring);
   }
 
   /** The preview's colour follows the player's faction (its Top colour). */
@@ -75,6 +82,13 @@ export class NadeFx {
 
   /** Draw the grenades in flight, between their last two steps. */
   showGrenades(list: Grenade[], alpha: number) {
+    // One mesh per grenade in flight, made as needed.
+    while (this.grenades.length < list.length) {
+      const m = new THREE.Mesh(this.body, toon(UNIFORM.soviets.dark));
+      m.castShadow = true;
+      this.scene.add(m);
+      this.grenades.push(m);
+    }
     this.grenades.forEach((m, i) => {
       const g = list[i];
       m.visible = !!g;
@@ -118,16 +132,17 @@ export class NadeFx {
     this.ring.visible = true;
   }
 
-  /** A blast: flash, ground ring, fragments. */
+  /** A blast: flash, a ring on the floor under it, fragments. */
   blast(b: Blast, radius: number) {
-    this.flash.position.set(b.x, b.y, b.z);
-    this.flash.scale.setScalar(0.9);
-    this.flash.visible = true;
-    this.flashLife = 0.08;
-    this.wave.position.set(b.x, 0.03, b.z);
-    this.waveR = radius;
-    this.waveLife = 0.3;
-    this.wave.visible = true;
+    const fx = this.blasts[this.nextBlast++ % BLASTS];
+    fx.flash.position.set(b.x, b.y, b.z);
+    fx.flash.scale.setScalar(0.9);
+    fx.flash.visible = true;
+    fx.wave.position.set(b.x, floorBelow(b.x, b.z, b.y) + 0.03, b.z);
+    fx.wave.scale.setScalar(0.05);
+    fx.wave.visible = true;
+    fx.radius = radius;
+    fx.life = 0.3;
     for (let i = 0; i < FRAGMENTS; i++) {
       const f = this.frags[this.nextFrag++ % this.frags.length];
       const a = Math.random() * Math.PI * 2;
@@ -142,27 +157,28 @@ export class NadeFx {
   }
 
   update(dt: number) {
-    if (this.flashLife > 0) {
-      this.flashLife -= dt;
-      this.flash.scale.multiplyScalar(1 + dt * 6);
-      if (this.flashLife <= 0) this.flash.visible = false;
-    }
-    if (this.waveLife > 0) {
-      this.waveLife -= dt;
-      const k = 1 - Math.max(0, this.waveLife) / 0.3;
-      this.wave.scale.setScalar(Math.max(0.05, k * this.waveR));
-      (this.wave.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - k);
-      if (this.waveLife <= 0) this.wave.visible = false;
+    for (const b of this.blasts) {
+      if (b.life <= 0) continue;
+      b.life -= dt;
+      // The flash shows for the first 0.08 s, growing; the ring spreads to the blast's radius over 0.3 s.
+      b.flash.scale.multiplyScalar(1 + dt * 6);
+      if (b.life <= 0.22) b.flash.visible = false;
+      const k = 1 - Math.max(0, b.life) / 0.3;
+      b.wave.scale.setScalar(Math.max(0.05, k * b.radius));
+      (b.wave.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - k);
+      if (b.life <= 0) b.wave.visible = false;
     }
     for (const f of this.frags) {
       if (f.life <= 0) continue;
       f.life -= dt;
       f.vy -= 20 * dt;
+      // Land on whatever is under the fragment: the ground, a block's top or the ramp.
+      const floor = floorBelow(f.mesh.position.x, f.mesh.position.z, f.mesh.position.y) + 0.03;
       f.mesh.position.x += f.vx * dt;
       f.mesh.position.y += f.vy * dt;
       f.mesh.position.z += f.vz * dt;
-      if (f.mesh.position.y < 0.03) {
-        f.mesh.position.y = 0.03;
+      if (f.mesh.position.y < floor) {
+        f.mesh.position.y = floor;
         f.vy *= -0.3;
         f.vx *= 0.5;
         f.vz *= 0.5;

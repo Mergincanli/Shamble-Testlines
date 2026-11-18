@@ -24,12 +24,16 @@ always at 41.3° above level toward the cursor; gravity 20; a 1.5 s fuse from th
 damage at the centre, falling off evenly to nothing at the edge and needing a clear line from the blast; and the
 view lurches away from a blast (the old camera kick: strength 24, reach 34 m, spring 110, damping 12). While G is
 held, dots in the faction's Top colour show the arc to where it first lands; the preview runs the very step
-function the grenade flies by, so it lands exactly there. Three grenades in hand. A full charge takes longer to
-land than the fuse, so it bursts in the air around 30 m, as the old game's did. Differences from the old game:
-grenades bounce off blocks and the ramp (the old one only bounced off the ground), and are swept so they never
-pass through the thin cover wall; a real impact bounces with the old game's shares (0.4 into, 0.6 along the
-surface), while rolling along a surface slows at a steady 3 per second (the old game lost speed per frame); one
-grenade comes back every 5 s. The soldier has no health, so blasts do not hurt him.
+function the grenade flies by, and the throw leaves with exactly the charge, place and aim the preview last
+showed, so it lands exactly there. Three grenades in hand. A full charge takes longer to land than the fuse, so it
+bursts in the air about 29 m out and 4.7 m up, as the old game's did, short of the preview's ring (35 m), which
+shows where it would land. Differences from the old game: grenades bounce off blocks and the ramp (the old one
+only bounced off the ground), and are swept so they never pass through the thin cover wall or into a block; a
+real impact bounces with the old game's shares (0.4 into, 0.6 along the surface), while rolling along a surface
+slows at a steady 3 per second (the old game lost speed per frame); a grenade comes to rest only on level ground
+(on the ramp it rolls back down); the flight and the fuse run in steps of 1/120 s at either step rate, so a throw
+flies and goes off the same at 30 or 60; one grenade comes back every 5 s. The soldier has no health, so blasts do
+not hurt him.
 
 Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
 Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q there. While aiming

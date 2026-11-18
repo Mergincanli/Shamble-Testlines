@@ -632,15 +632,47 @@ async function run(browserName) {
     await page.keyboard.down('KeyG');
     await sleep(1400);
     const ndc = await T(() => window.__testlines.nades());
-    const land = ndc.previewEnd;
-    nd0 = await T(() => window.__testlines.nades());
     await page.keyboard.up('KeyG');
     await sleep(2600);
     nd1 = await T(() => window.__testlines.nades());
-    const fc = nd1.firstContact;
+    let fc = nd1.firstContact;
+    let land = nd1.lastThrow?.previewEnd;
     ok('holding G charges the throw', ndc.charging && ndc.chargeT > 0.9, `charge ${ndc.chargeT.toFixed(2)} s`);
-    ok('the preview lands where the grenade first touches', !!fc && Math.hypot(fc.x - land.x, fc.z - land.z) < 0.05, fc ? `${Math.hypot(fc.x - land.x, fc.z - land.z).toFixed(3)} m apart` : 'no contact');
+    ok('the preview lands where the grenade first touches', !!fc && !!land && Math.hypot(fc.x - land.x, fc.y - land.y, fc.z - land.z) < 1e-6, fc && land ? `${Math.hypot(fc.x - land.x, fc.z - land.z).toFixed(4)} m apart` : 'no contact');
     await sleep(1800);
+    // A part charge lands exactly on the preview drawn just before the throw (the throw uses the very charge, place
+    // and aim the preview showed), with the soldier walking.
+    await T(() => window.__testlines.set('nadeChargeTime', 4));
+    await page.keyboard.down('KeyG');
+    await sleep(700);
+    await page.keyboard.down('KeyD');
+    await sleep(500);
+    await page.keyboard.up('KeyG');
+    await sleep(300);
+    await page.keyboard.up('KeyD');
+    await sleep(2600);
+    nd1 = await T(() => window.__testlines.nades());
+    fc = nd1.firstContact;
+    land = nd1.lastThrow?.previewEnd;
+    const pc = nd1.lastThrow?.charge ?? -1;
+    ok('a part charge lands exactly on its preview, walking', pc > 0.05 && pc < 0.9 && !!fc && !!land && Math.hypot(fc.x - land.x, fc.y - land.y, fc.z - land.z) < 1e-6, `charge ${pc.toFixed(2)}, ${fc && land ? Math.hypot(fc.x - land.x, fc.z - land.z).toFixed(4) : '?'} m apart`);
+    await T(() => window.__testlines.set('nadeChargeTime', 1));
+    await sleep(1800);
+    // A quick let-go and press again (both between two steps) throws the first grenade and starts the second.
+    await T(() => window.__testlines.place(30, 30));
+    await T(() => window.__testlines.set('nadeRefill', 0.5));
+    await sleep(2000);
+    await T(() => window.__testlines.set('nadeRefill', 5));
+    nd0 = await T(() => window.__testlines.nades());
+    await page.keyboard.down('KeyG');
+    await sleep(400);
+    await page.keyboard.up('KeyG');
+    await page.keyboard.down('KeyG');
+    await page.keyboard.up('KeyG');
+    await sleep(600);
+    nd1 = await T(() => window.__testlines.nades());
+    ok('a quick double tap throws two grenades', nd1.thrown - nd0.thrown === 2, `${nd1.thrown - nd0.thrown} thrown, held ${nd0.held} -> ${nd1.held}`);
+    await sleep(2000);
     await T(() => window.__testlines.set('nadeFuse', 1.5));
     // A short slow throw beside a dummy: the blast drops it, leaves one far away alone, and kicks the camera.
     await T(() => window.__testlines.set('nadeSpeedMin', 3));
@@ -669,7 +701,7 @@ async function run(browserName) {
     await T(() => window.__testlines.set('nadeSpeedMax', 26));
     // One grenade comes back after the refill time.
     await T(() => window.__testlines.set('nadeRefill', 1));
-    await sleep(2500);
+    await sleep(3500);
     nd1 = await T(() => window.__testlines.nades());
     ok('grenades come back after the refill time', nd1.held === 3, `held ${nd1.held}`);
     await T(() => window.__testlines.set('nadeRefill', 5));

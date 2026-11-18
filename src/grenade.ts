@@ -1,6 +1,7 @@
 // The frag grenade, run at the fixed simulation step: a held charge sets the throw speed (the old game's G key:
-// fixed launch angle, speed from slow to fast over the charge), the flight follows its exact arc each step and is
-// swept against the blocks so a fast grenade cannot pass through the thin cover wall, it bounces off the ground,
+// fixed launch angle, speed from slow to fast over the charge), the flight follows its exact arc in fixed
+// sub-steps (the same path at either step rate) and is swept against the blocks so a fast grenade cannot pass
+// through the thin cover wall, it bounces off the ground,
 // blocks and the ramp, and goes off when its fuse runs out: damage falls off with distance and needs a clear line
 // from the blast. The same step function draws the throw preview, so the preview lands where the grenade does.
 // Numbers from the old game (T.grenade*, T_CHARGE.nade); written fresh.
@@ -94,72 +95,135 @@ function bounce(g: Grenade, nx: number, ny: number, nz: number, P: Store) {
   g.vz = tz * keep - vn * e * nz;
 }
 
+type V3 = [number, number, number];
+
+/** The grenade flies in fixed sub-steps of this length, so its path is the same at 30 or 60 steps a second. */
+export const SUB_DT = 1 / 120;
+/** Within this of a block's top edge, a grenade counts as on top of the block, not against its side. */
+const EDGE = 0.05;
+
+interface Hit {
+  t: number;
+  n: V3;
+}
+
 /**
- * One fixed step of a grenade's flight. Returns true when it stops at its first contact (for the preview, which
- * only needs where the throw first lands); the flight itself carries on bouncing until the fuse runs out.
+ * The first block surface the segment p0 -> p0 + d meets: a block's side, a ramp's side below its slope, or a
+ * block's top entered from above (a floor). Null if none. Floors the end point sinks into are found separately.
+ */
+function sweep(p0: V3, d: V3): Hit | null {
+  const R = GRENADE_R;
+  let best: Hit | null = null;
+  for (const b of BLOCKS) {
+    const hit = segBox(p0, d, [b.minX - R, -1, b.minZ - R], [b.maxX + R, b.top + R, b.maxZ + R]);
+    if (!hit || (best && hit[0] >= best.t)) continue;
+    const [t, axis, sign] = hit;
+    const hy = p0[1] + d[1] * t;
+    if (axis === 1) {
+      // A block's top, entered from above, is a floor (so a steep fall cannot clip through a top edge). The
+      // top of a ramp's box is not its surface: the slope is found as a floor after the move.
+      if (sign !== 1 || b.ramp) continue;
+      best = { t, n: [0, 1, 0] };
+      continue;
+    }
+    if (b.ramp) {
+      const r = b.ramp;
+      const along = r.axis === 'x' ? 0 : 2;
+      if (axis === along) {
+        // The low end has no height; the high end meets the platform, so it is a wall only well below the top.
+        if (sign === (r.low < r.high ? -1 : 1)) continue;
+        if (hy - R > b.top - 0.2) continue;
+      } else {
+        // A side counts only below the slope's height there.
+        const qx = Math.min(b.maxX, Math.max(b.minX, p0[0] + d[0] * t));
+        const qz = Math.min(b.maxZ, Math.max(b.minZ, p0[2] + d[2] * t));
+        if (hy - R > rampHeight(b, qx, qz) - EDGE) continue;
+      }
+    } else if (hy > b.top + R - EDGE) continue;
+    const n: V3 = [0, 0, 0];
+    n[axis] = sign;
+    best = { t, n };
+  }
+  return best;
+}
+
+/**
+ * Where a throw leaves the hand: 0.4 m in front of the soldier at throwing height, pulled back toward his middle
+ * if a block is in the way (so a throw against a tall block never starts inside it).
+ */
+export function throwStart(x: number, y: number, z: number, aimYaw: number): V3 {
+  const from: V3 = [x, y + THROW_HEIGHT, z];
+  const d: V3 = [Math.sin(aimYaw) * 0.4, 0, Math.cos(aimYaw) * 0.4];
+  const hit = sweep(from, d);
+  const t = hit ? Math.max(0, hit.t - 0.05) : 1;
+  return [from[0] + d[0] * t, from[1], from[2] + d[2] * t];
+}
+
+/**
+ * One fixed step of a grenade's flight, run as sub-steps of SUB_DT. Returns true when it stops at its first
+ * contact (for the preview, which only needs where the throw first lands); the flight itself carries on bouncing
+ * until the fuse runs out.
  */
 export function stepGrenade(g: Grenade, dt: number, P: Store, stopAtContact = false): boolean {
   g.prev = { x: g.x, y: g.y, z: g.z };
-  g.fuse -= dt;
-  if (g.resting) return true;
-  const grav = P.num('nadeGravity');
-  // The exact arc for this step, swept as a straight segment (short at either step rate).
-  const d: [number, number, number] = [g.vx * dt, g.vy * dt - 0.5 * grav * dt * dt, g.vz * dt];
-  g.vy -= grav * dt;
-  const p0: [number, number, number] = [g.x, g.y, g.z];
-  // Upright faces (block sides, the ramp's sides and high end) are swept, so a fast grenade cannot pass through a
-  // thin wall; floors (the ground, block tops, the ramp's slope) are handled after the move.
-  let tHit = 1;
-  let normal: [number, number, number] | null = null;
-  for (const b of BLOCKS) {
-    const hit = segBox(p0, d, [b.minX - GRENADE_R, -1, b.minZ - GRENADE_R], [b.maxX + GRENADE_R, b.top + GRENADE_R, b.maxZ + GRENADE_R]);
-    if (!hit || hit[0] >= tHit || hit[1] === 1) continue;
-    if (b.ramp) {
-      // A ramp's sides count only below the slope's height there, and its low end has no height at all.
-      const r = b.ramp;
-      const lowFace =
-        (r.axis === 'x' && hit[1] === 0 && hit[2] === (r.low < r.high ? -1 : 1)) ||
-        (r.axis === 'z' && hit[1] === 2 && hit[2] === (r.low < r.high ? -1 : 1));
-      if (lowFace) continue;
-      const hx = p0[0] + d[0] * hit[0];
-      const hy = p0[1] + d[1] * hit[0];
-      const hz = p0[2] + d[2] * hit[0];
-      const qx = Math.min(b.maxX, Math.max(b.minX, hx));
-      const qz = Math.min(b.maxZ, Math.max(b.minZ, hz));
-      if (hy - GRENADE_R > rampHeight(b, qx, qz)) continue;
-    } else if (p0[1] + d[1] * hit[0] > b.top + GRENADE_R - 1e-6) continue;
-    tHit = hit[0];
-    normal = [0, 0, 0];
-    normal[hit[1]] = hit[2];
+  const n = Math.max(1, Math.round(dt / SUB_DT));
+  for (let i = 0; i < n; i++) {
+    // The fuse runs in the same sub-steps, so the grenade goes off at the same place at either step rate.
+    if (spent(g)) break;
+    g.fuse -= SUB_DT;
+    if (g.resting) continue;
+    if (subStep(g, P) && stopAtContact) return true;
   }
-  const t = normal ? Math.max(0, tHit - 1e-4) : 1;
+  return g.resting;
+}
+
+/** True once the fuse has run out (the blast follows at the end of that step). */
+export function spent(g: Grenade): boolean {
+  return g.fuse <= 1e-9;
+}
+
+function subStep(g: Grenade, P: Store): boolean {
+  const h = SUB_DT;
+  const grav = P.num('nadeGravity');
+  // The exact arc for this sub-step, swept as a straight segment (at most 0.22 m at the fastest throw).
+  const d: V3 = [g.vx * h, g.vy * h - 0.5 * grav * h * h, g.vz * h];
+  g.vy -= grav * h;
+  const p0: V3 = [g.x, g.y, g.z];
+  const hit = sweep(p0, d);
+  const t = hit ? Math.max(0, hit.t - 1e-4) : 1;
   g.x = p0[0] + d[0] * t;
   g.y = p0[1] + d[1] * t;
   g.z = p0[2] + d[2] * t;
   let contact = false;
-  if (normal) {
-    surface(g, normal[0], normal[1], normal[2], dt, P);
+  /** Whether it touched a level floor this sub-step (the only place it may come to rest). */
+  let level = false;
+  if (hit) {
+    surface(g, hit.n[0], hit.n[1], hit.n[2], h, P);
     contact = true;
+    level = hit.n[1] > 0.99;
   }
-  // Floors: the ground, the top of a block it came down onto, the ramp's slope.
+  // Floors: the ground, the top of a block it is over (from above, or within EDGE of the top), the ramp's slope.
+  const high = Math.max(p0[1], g.y);
   let floorY = GRENADE_R;
-  let floorN: [number, number, number] = [0, 1, 0];
+  let floorN: V3 = [0, 1, 0];
   for (const b of BLOCKS) {
     if (g.x < b.minX - GRENADE_R || g.x > b.maxX + GRENADE_R || g.z < b.minZ - GRENADE_R || g.z > b.maxZ + GRENADE_R) continue;
     if (b.ramp) {
-      if (g.x < b.minX || g.x > b.maxX || g.z < b.minZ || g.z > b.maxZ) continue;
-      const h = rampHeight(b, g.x, g.z) + GRENADE_R;
-      if (h > floorY && p0[1] >= h - 0.6) {
-        floorY = h;
-        const r = b.ramp;
+      // The slope reaches out by the grenade's size on the ramp's two sides (so it rolls clear of a side before it
+      // drops, as off a block's top), but not past its ends: the low end has no height, the high end meets the platform.
+      const r = b.ramp;
+      if (r.axis === 'x' ? g.x < b.minX || g.x > b.maxX : g.z < b.minZ || g.z > b.maxZ) continue;
+      const fy = rampHeight(b, g.x, g.z) + GRENADE_R;
+      if (fy > floorY && high >= fy - 0.6) {
+        floorY = fy;
         const slope = b.top / (r.high - r.low);
-        const n: [number, number, number] = r.axis === 'x' ? [-slope, 1, 0] : [0, 1, -slope];
-        const l = Math.hypot(n[0], n[1], n[2]);
-        floorN = [n[0] / l, n[1] / l, n[2] / l];
+        const nn: V3 = r.axis === 'x' ? [-slope, 1, 0] : [0, 1, -slope];
+        const l = Math.hypot(nn[0], nn[1], nn[2]);
+        floorN = [nn[0] / l, nn[1] / l, nn[2] / l];
       }
     } else {
       const top = b.top + GRENADE_R;
-      if (top > floorY && p0[1] >= top - 1e-6) {
+      if (top > floorY && high >= top - EDGE) {
         floorY = top;
         floorN = [0, 1, 0];
       }
@@ -167,16 +231,17 @@ export function stepGrenade(g: Grenade, dt: number, P: Store, stopAtContact = fa
   }
   if (g.y < floorY) {
     g.y = floorY;
-    surface(g, floorN[0], floorN[1], floorN[2], dt, P);
+    surface(g, floorN[0], floorN[1], floorN[2], h, P);
     contact = true;
+    level = floorN[1] > 0.99;
   }
   if (contact && !g.firstContact) g.firstContact = { x: g.x, y: g.y, z: g.z };
-  // Come to rest when barely moving on a surface.
-  if (contact && Math.hypot(g.vx, g.vy, g.vz) < REST_SPEED) {
+  // Come to rest when barely moving on a level floor (on the slope it rolls back down instead).
+  if (level && Math.hypot(g.vx, g.vy, g.vz) < REST_SPEED) {
     g.vx = g.vy = g.vz = 0;
     g.resting = true;
   }
-  return stopAtContact && contact;
+  return contact;
 }
 
 /** Below this speed into a surface it is not a bounce but rolling or sliding along it. */
@@ -203,12 +268,13 @@ function surface(g: Grenade, nx: number, ny: number, nz: number, dt: number, P: 
   g.vz *= k;
 }
 
-/** The throw's path up to its first contact, by the same step function and step rate as the flight. */
-export function previewPath(x: number, y: number, z: number, v: [number, number, number], dt: number, P: Store): { x: number; y: number; z: number }[] {
+/** The throw's path up to its first contact, by the same sub-steps as the flight, so it lands exactly there. */
+export function previewPath(x: number, y: number, z: number, v: [number, number, number], P: Store): { x: number; y: number; z: number }[] {
   const g = newGrenade(x, y, z, v, P);
+  g.fuse = Infinity; // the preview shows where the throw lands, whatever the fuse
   const pts = [{ x, y, z }];
-  for (let i = 0; i < 400; i++) {
-    const stop = stepGrenade(g, dt, P, true);
+  for (let i = 0; i < 800; i++) {
+    const stop = stepGrenade(g, SUB_DT, P, true);
     pts.push({ x: g.x, y: g.y, z: g.z });
     if (stop) break;
   }
