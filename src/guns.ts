@@ -96,6 +96,33 @@ function rifle(): GunModel {
   };
 }
 
+/**
+ * The shotgun (the Peacekeeper's): the sandbox's own minimal shape, since no Art text covers it yet. A pump gun
+ * about 1.02 m long: a stock that drops below the bore, a boxy receiver, the barrel with the magazine tube under
+ * it, and the pump round the tube, where the left hand holds it. Same gun frame and Dark colour as the others.
+ */
+export function shotgunModel(): GunModel {
+  const bore = 0.075;
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(alongZ(-0.26, -0.03, { w: 0.05, h: 0.12, cy: -0.03 }, { w: 0.048, h: 0.07, cy: 0.005 }));
+  parts.push(alongZ(-0.03, 0.05, { w: 0.048, h: 0.07, cy: 0.005 }, { w: 0.05, h: 0.07, cy: 0.04 }));
+  parts.push(alongZ(0.05, 0.25, { w: 0.055, h: 0.075, cy: 0.055 }, { w: 0.055, h: 0.075, cy: 0.055 }));
+  parts.push(alongZ(0.25, 0.76, { w: 0.032, h: 0.032, cy: bore }, { w: 0.032, h: 0.032, cy: bore }, true));
+  parts.push(alongZ(0.25, 0.66, { w: 0.028, h: 0.028, cy: 0.04 }, { w: 0.028, h: 0.028, cy: 0.04 }, true));
+  parts.push(alongZ(0.36, 0.56, { w: 0.05, h: 0.048, cy: 0.04 }, { w: 0.05, h: 0.048, cy: 0.04 }));
+  parts.push(box(0, bore + 0.022, 0.745, 0.01, 0.012, 0.01));
+  return {
+    id: 'smg' as GunId,
+    geometry: merge(parts),
+    hull: hullOf(parts),
+    sockets: {
+      grip: new THREE.Vector3(0, 0, 0),
+      support: new THREE.Vector3(0, 0.02, 0.46),
+      muzzle: new THREE.Vector3(0, bore, 0.76),
+    },
+  };
+}
+
 let cache: Record<GunId, GunModel> | null = null;
 export function gunModels(): Record<GunId, GunModel> {
   if (!cache) cache = { smg: smg(), rifle: rifle() };
