@@ -23,9 +23,10 @@ export const AUTO_RELOAD_GRACE = 0.25;
 export const RISE_TIME = 0.35;
 
 /** Per gun: the panel keys that hold its values, and what the old game had that is not a slider. */
-export const GUN_KEYS: Record<GunId, { prefix: string; auto: boolean; name: string; falloff: boolean }> = {
-  smg: { prefix: 'smg', auto: true, name: 'SMG', falloff: true },
-  rifle: { prefix: 'rifle', auto: false, name: 'Rifle', falloff: false },
+export const GUN_KEYS: Record<GunId, { prefix: string; auto: boolean; name: string; falloff: boolean; pellets: boolean }> = {
+  smg: { prefix: 'smg', auto: true, name: 'SMG', falloff: true, pellets: false },
+  rifle: { prefix: 'rifle', auto: false, name: 'Rifle', falloff: false, pellets: false },
+  shotgun: { prefix: 'shotgun', auto: false, name: 'Shotgun', falloff: true, pellets: true },
 };
 
 export interface GunState {
@@ -53,17 +54,25 @@ export interface WeaponsState {
   activeNote: '' | 'perfect' | 'miss';
 }
 
-export interface ShotEvent {
-  gun: GunId;
-  ox: number;
-  oy: number;
-  oz: number;
+/** One ray of a shot (a gun with pellets sends several). */
+export interface ShotRay {
   ex: number;
   ey: number;
   ez: number;
   /** Index of the dummy hit, or -1 (a block or nothing). */
   hit: number;
   hitBlock: boolean;
+}
+
+export interface ShotEvent {
+  gun: GunId;
+  ox: number;
+  oy: number;
+  oz: number;
+  rays: ShotRay[];
+  /** Every dummy this shot hit, once each. */
+  hits: number[];
+  /** Total damage of the shot. */
   damage: number;
   killed: boolean;
   /** The spread this shot was fired with (its sideways scatter limit), in radians. */
@@ -92,7 +101,13 @@ export function newWeapons(P: Store, gun: GunId): WeaponsState {
     graceLeft: 0,
     activeAt: 0,
   });
-  return { gun, guns: { smg: mk('smg'), rifle: mk('rifle') }, queued: false, sinceSprint: 1e9, activeNote: '' };
+  return {
+    gun,
+    guns: { smg: mk('smg'), rifle: mk('rifle'), shotgun: mk('shotgun') },
+    queued: false,
+    sinceSprint: 1e9,
+    activeNote: '',
+  };
 }
 
 /** The old game's pause after a gun change before the first shot. */
@@ -288,47 +303,41 @@ function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Targe
   const v = (k: string) => gunValue(P, gun, k);
   g.ammo--;
   const firedSpread = g.spread;
-  const yaw = aimYaw + (rand() * 2 - 1) * g.spread;
-  g.spread = Math.min(v('SpreadMax'), g.spread + v('SpreadPerShot'));
-  const dx = Math.sin(yaw);
-  const dz = Math.cos(yaw);
   const oy = me.y + SHOT_HEIGHT;
   const range = v('Range');
-  const tb = rayBlocks(me.x, me.z, dx, dz, oy, range);
-  const [tt, idx] = rayTargets(me.x, me.z, dx, dz, oy, targets, Math.min(range, tb));
-  const hitDummy = idx >= 0;
-  const t = hitDummy ? tt : Math.min(tb, range);
+  // One pull, one round: a gun with pellets sends several rays, each with its own scatter inside the spread.
+  const pellets = GUN_KEYS[gun].pellets ? Math.max(1, Math.round(v('Pellets'))) : 1;
+  const rays: ShotRay[] = [];
+  const hit = new Set<number>();
   let damage = 0;
   let killed = false;
-  if (hitDummy) {
-    damage = v('Damage');
-    if (GUN_KEYS[gun].falloff) {
-      const a = v('FalloffStart');
-      const b = Math.max(a + 0.01, v('FalloffEnd'));
-      const m = v('FalloffMin');
-      const k = t <= a ? 1 : t >= b ? m : 1 + ((m - 1) * (t - a)) / (b - a);
-      damage *= k;
+  for (let i = 0; i < pellets; i++) {
+    const yaw = aimYaw + (rand() * 2 - 1) * firedSpread;
+    const dx = Math.sin(yaw);
+    const dz = Math.cos(yaw);
+    const tb = rayBlocks(me.x, me.z, dx, dz, oy, range);
+    const [tt, idx] = rayTargets(me.x, me.z, dx, dz, oy, targets, Math.min(range, tb));
+    const t = idx >= 0 ? tt : Math.min(tb, range);
+    if (idx >= 0) {
+      let dmg = v('Damage');
+      if (GUN_KEYS[gun].falloff) {
+        const a = v('FalloffStart');
+        const b = Math.max(a + 0.01, v('FalloffEnd'));
+        const m = v('FalloffMin');
+        dmg *= t <= a ? 1 : t >= b ? m : 1 + ((m - 1) * (t - a)) / (b - a);
+      }
+      const target = targets[idx];
+      target.health -= dmg;
+      damage += dmg;
+      hit.add(idx);
+      if (target.health <= 0) {
+        killed = true;
+        target.health = 0;
+        target.downFor = Math.max(RISE_TIME + 0.05, P.num('dummyDownTime'));
+      }
     }
-    const target = targets[idx];
-    target.health -= damage;
-    if (target.health <= 0) {
-      killed = true;
-      target.health = 0;
-      target.downFor = Math.max(RISE_TIME + 0.05, P.num('dummyDownTime'));
-    }
+    rays.push({ ex: me.x + dx * t, ey: oy, ez: me.z + dz * t, hit: idx, hitBlock: idx < 0 && tb <= range });
   }
-  events.push({
-    gun,
-    ox: me.x,
-    oy,
-    oz: me.z,
-    ex: me.x + dx * t,
-    ey: oy,
-    ez: me.z + dz * t,
-    hit: idx,
-    hitBlock: !hitDummy && tb <= range,
-    damage,
-    killed,
-    spread: firedSpread,
-  });
+  g.spread = Math.min(v('SpreadMax'), g.spread + v('SpreadPerShot'));
+  events.push({ gun, ox: me.x, oy, oz: me.z, rays, hits: [...hit], damage, killed, spread: firedSpread });
 }

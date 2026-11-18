@@ -11,6 +11,7 @@ export type GroupId =
   | 'push'
   | 'smg'
   | 'rifle'
+  | 'shotgun'
   | 'ads'
   | 'camera'
   | 'framing'
@@ -25,6 +26,7 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'push', title: 'Dummies and soft pushing', open: true, exportName: 'pushing' },
   { id: 'smg', title: 'SMG (key 1)', open: true, exportName: 'smg' },
   { id: 'rifle', title: 'Rifle (key 2)', open: false, exportName: 'rifle' },
+  { id: 'shotgun', title: 'Shotgun (key 3)', open: false, exportName: 'shotgun' },
   { id: 'ads', title: 'Aim down sights (right button)', open: true, exportName: 'aim_down_sights' },
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
@@ -104,7 +106,7 @@ interface GunStart {
   sprintDelay: number;
 }
 
-function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
+function gunParams(id: 'smg' | 'rifle' | 'shotgun', g: GunStart): Param[] {
   const deg = (rad: number) => ((rad * 180) / Math.PI).toFixed(2);
   const k = (s: string) => id + s;
   const out: Param[] = [
@@ -117,7 +119,10 @@ function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
     {
       kind: 'range', key: k('Damage'), group: id, label: 'Damage per hit', exportKey: 'damage', unit: '',
       min: 1, max: 150, step: 1, start: g.damage, digits: 0,
-      note: (v) => `${Math.ceil((v.dummyHealth as number) / (v[k('Damage')] as number))} hits to drop a dummy (up close)`,
+      note: (v) =>
+        id === 'shotgun'
+          ? `${Math.ceil((v.dummyHealth as number) / (v[k('Damage')] as number))} of ${Math.round(v.shotgunPellets as number)} pellets drop a dummy (up close)`
+          : `${Math.ceil((v.dummyHealth as number) / (v[k('Damage')] as number))} hits to drop a dummy (up close)`,
       source: `Old game ${g.legacy}.damage.`, legacy: `${g.legacy}.damage`,
     },
     {
@@ -229,6 +234,15 @@ export const GUN_PARAMS: Param[] = [
     name: 'Rifle', legacy: 'WEAPONS.amk', interval: 0.2, damage: 34, mag: 1, reload: 3.5, recoil: 2,
     spreadHip: 0.022, spreadAds: 0.006, spreadPerShot: 0, spreadMax: 0.05, spreadRecover: 0.3, range: 300, sprintDelay: 0.25,
   }),
+  // The shotgun (the Peacekeeper's): the old game's Bagpipe.
+  ...gunParams('shotgun', {
+    name: 'Shotgun', legacy: 'WEAPONS.bagpipe', interval: 0.85, damage: 11, mag: 2, reload: 2.6, recoil: 4.5,
+    spreadHip: 0.1, spreadAds: 0.05, spreadPerShot: 0, spreadMax: 0.16, spreadRecover: 0.5, range: 34, sprintDelay: 0.3,
+  }),
+  { kind: 'range', key: 'shotgunPellets', group: 'shotgun', label: 'Pellets per shot', exportKey: 'pellets', unit: '', min: 1, max: 20, step: 1, start: 8, digits: 0, source: 'Old game WEAPONS.bagpipe.pellets. One pull is one round, one click, one view kick and one hit marker; each pellet scatters inside the spread on its own.', legacy: 'WEAPONS.bagpipe.pellets' },
+  { kind: 'range', key: 'shotgunFalloffStart', group: 'shotgun', label: 'Damage falls off from', exportKey: 'falloff_start_m', unit: 'm', min: 0, max: 150, step: 1, start: 15, digits: 0, source: 'No old number: the old Bagpipe had no falloff, only its 34 m range. It starts off: the share left at the far end starts at 1.' },
+  { kind: 'range', key: 'shotgunFalloffEnd', group: 'shotgun', label: 'Damage falls off to', exportKey: 'falloff_end_m', unit: 'm', min: 1, max: 300, step: 1, start: 34, digits: 0, source: 'No old number (the old range, 34 m). Has an effect once the share below is under 1.' },
+  { kind: 'range', key: 'shotgunFalloffMin', group: 'shotgun', label: 'Damage left at the far end', exportKey: 'falloff_min_share', unit: '×', min: 0, max: 1, step: 0.01, start: 1, digits: 2, note: (v) => ((v.shotgunFalloffMin as number) >= 1 ? 'no falloff (as the old Bagpipe)' : ''), source: 'No old number: 1 means no falloff, as the old Bagpipe had none. The game\'s Throw card names pellets with their falloff.' },
 ];
 
 export const PARAMS: Param[] = [
@@ -266,11 +280,12 @@ export const PARAMS: Param[] = [
     kind: 'choice',
     key: 'gun',
     group: 'soldier',
-    label: 'Gun (keys 1 and 2)',
+    label: 'Gun (keys 1, 2 and 3)',
     exportKey: 'gun',
     options: [
       { value: 'smg', label: 'SMG' },
       { value: 'rifle', label: 'Rifle' },
+      { value: 'shotgun', label: 'Shotgun' },
     ],
     start: 'smg',
     source: 'The SMG is judged first (build plan, FIRST-SOLDIER).',

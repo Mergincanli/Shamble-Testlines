@@ -542,6 +542,49 @@ async function run(browserName) {
     ok('Flatten keeps the soldier\'s feet on screen', feet.y < viewF.t + viewF.h, `feet at ${feet.y.toFixed(0)} of ${(viewF.t + viewF.h).toFixed(0)}`);
     await T(() => window.__testlines.preset('Iso'));
 
+    // The shotgun (key 3): one pull is one round, one click and eight pellet rays.
+    await T(() => window.__testlines.set('dummiesWalk', false));
+    await T(() => window.__testlines.place(40, 40));
+    await T(() => window.__testlines.placeDummy(0, 40, 35));
+    await page.keyboard.press('Digit3');
+    await sleep(1500);
+    for (let k = 0; k < 2; k++) {
+      const p = await T(() => window.__testlines.screenOf(40, 1.36, 35));
+      await page.mouse.move(p.x, p.y);
+      await sleep(600);
+    }
+    let gsg = await T(() => window.__testlines.gun());
+    const au0 = await T(() => window.__testlines.audio());
+    await page.mouse.down();
+    await sleep(60);
+    await page.mouse.up();
+    await sleep(400);
+    let gsg1 = await T(() => window.__testlines.gun());
+    const au1 = await T(() => window.__testlines.audio());
+    const dsg = (await T(() => window.__testlines.dummies()))[0];
+    ok('key 3 takes the shotgun; one pull is one round and eight rays', gsg1.gun === 'shotgun' && gsg1.shots - gsg.shots === 1 && gsg1.lastShotRays === 8 && gsg.ammo - gsg1.ammo === 1, `${gsg1.gun}, ${gsg1.shots - gsg.shots} shot, ${gsg1.lastShotRays} rays, ammo ${gsg.ammo} -> ${gsg1.ammo}`);
+    ok('several pellets hit a dummy 5 m away', 100 - dsg.health >= 22, `${(100 - dsg.health).toFixed(0)} damage`);
+    if (au0.state === 'running') ok('one shotgun pull plays one click', au1.clicks - au0.clicks === 1, `${au1.clicks - au0.clicks} clicks`);
+    else skip('one shotgun pull plays one click', `audio ${au0.state}`);
+    await sleep(700);
+    await page.mouse.down();
+    await sleep(60);
+    await page.mouse.up();
+    await sleep(400);
+    gsg1 = await T(() => window.__testlines.gun());
+    ok('two shells, then it reloads by itself', gsg1.ammo === 0 && gsg1.reloadLeft > 0, `${gsg1.ammo} shells, ${gsg1.reloadLeft.toFixed(2)} s left`);
+    await T(() => window.__testlines.set('shotgunPellets', 3));
+    await sleep(2600);
+    await page.mouse.down();
+    await sleep(60);
+    await page.mouse.up();
+    await sleep(400);
+    gsg1 = await T(() => window.__testlines.gun());
+    ok('the pellet slider sets the rays per shot', gsg1.lastShotRays === 3, `${gsg1.lastShotRays} rays`);
+    await T(() => window.__testlines.set('shotgunPellets', 8));
+    await page.keyboard.press('Digit1');
+    await T(() => window.__testlines.set('dummiesWalk', true));
+
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
     const b60 = (await page.$$('#panel .p-segbtn'))[seg.indexOf('60')];

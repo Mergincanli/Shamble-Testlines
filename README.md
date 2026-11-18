@@ -9,8 +9,13 @@ Nothing here is the game, and no value here is a decision.
 with no install, no server and no internet.
 
 Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, the
-right button aims down sights, R reloads, hold the middle button to turn the camera, 1 and 2 change guns (SMG,
-rifle), the backquote key (`) hides the panel.
+right button aims down sights, R reloads, hold the middle button to turn the camera, 1, 2 and 3 change guns (SMG,
+rifle, shotgun), the backquote key (`) hides the panel.
+
+The shotgun (key 3, the Peacekeeper's) starts from the old game's Bagpipe: 8 pellets of 11 damage, 0.85 s between
+shots, 2 shells, a 2.6 s reload, 34 m range, spread 0.1 (0.05 aiming). One pull is one round, one click, one view
+kick and one hit marker; each pellet scatters on its own. It has falloff sliders, starting at none, as the old
+Bagpipe had none. Its model is the sandbox's own minimal shape (no Art text covers it yet), held like the rifle.
 
 Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
 Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q there. While aiming
@@ -44,8 +49,8 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 
 - The camera starts on the Original profile (above). Most other sliders start at the old game's number. A few
   are the sandbox's own picks, because the old game has no number for them: the body radius (from the Art
-  brief's soldier), push strength and push radius, the two sprint-to-fire delays (0.15 s SMG, 0.25 s rifle) and
-  the active-reload window (40 % to 60 %). Every slider has its own reset (↺, lit when the value has moved);
+  brief's soldier), push strength and push radius, the sprint-to-fire delays (0.15 s SMG, 0.25 s rifle, 0.3 s
+  shotgun), the active-reload window (40 % to 60 %) and the shotgun's falloff (none). Every slider has its own reset (↺, lit when the value has moved);
   hover a name to see where its start value comes from. The Export names the camera profile in use.
 - **Export** copies every value as JSON with the date and time, the build it came from, units in the names and
   the old game's own names beside them. The JSON also appears in a box, in case the browser blocks copying.

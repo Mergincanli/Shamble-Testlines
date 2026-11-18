@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { alongZ, box, hullOf, merge } from './geom';
 
-export type GunId = 'smg' | 'rifle';
+export type GunId = 'smg' | 'rifle' | 'shotgun';
 
 export interface GunModel {
   id: GunId;
@@ -112,7 +112,7 @@ export function shotgunModel(): GunModel {
   parts.push(alongZ(0.36, 0.56, { w: 0.05, h: 0.048, cy: 0.04 }, { w: 0.05, h: 0.048, cy: 0.04 }));
   parts.push(box(0, bore + 0.022, 0.745, 0.01, 0.012, 0.01));
   return {
-    id: 'smg' as GunId,
+    id: 'shotgun',
     geometry: merge(parts),
     hull: hullOf(parts),
     sockets: {
@@ -125,7 +125,7 @@ export function shotgunModel(): GunModel {
 
 let cache: Record<GunId, GunModel> | null = null;
 export function gunModels(): Record<GunId, GunModel> {
-  if (!cache) cache = { smg: smg(), rifle: rifle() };
+  if (!cache) cache = { smg: smg(), rifle: rifle(), shotgun: shotgunModel() };
   return cache;
 }
 
@@ -144,6 +144,10 @@ const q = (x: number, y: number, z: number) => new THREE.Quaternion().setFromEul
 
 /** The aiming and sprinting poses of appendix A10 (the Art lead's proposals). */
 export const POSES: Record<GunId, { aim: Pose; sprint: Pose }> = {
+  // The shotgun has no pose sheet: it is held like the rifle (another long gun).
+  get shotgun() {
+    return this.rifle;
+  },
   rifle: {
     aim: { grip: new THREE.Vector3(-0.13, 1.36, 0.21), rot: new THREE.Quaternion(), chest: -45 * deg, lean: 0 },
     // Points to his left and 25° up, across the chest.

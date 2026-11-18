@@ -90,29 +90,42 @@ export class Fx {
    * A shot leaves the muzzle: tracer, flash and view kick, all at once. Called after update(), so everything it
    * starts is drawn this frame at full strength, whatever the frame rate. No tracer at point blank.
    */
-  shot(from: THREE.Vector3, to: THREE.Vector3, recoil: number, lens: number, hitSomething: boolean, tracer: boolean) {
-    if (tracer) {
-      const t = this.take(this.tracers, 'tracer');
-      const len = from.distanceTo(to);
-      t.mesh.position.copy(from);
-      t.mesh.lookAt(to);
-      t.mesh.scale.set(0.05, 0.05, Math.max(0.01, len));
-      (t.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
+  shot(
+    from: THREE.Vector3,
+    rays: { to: THREE.Vector3; hitSomething: boolean; tracer: boolean }[],
+    recoil: number,
+    lens: number,
+  ) {
+    // One flash and one kick per shot; a tracer and a spark per ray (a shotgun's pellets each get theirs).
+    for (const r of rays) {
+      if (r.tracer) {
+        const t = this.take(this.tracers, 'tracer');
+        const len = from.distanceTo(r.to);
+        t.mesh.position.copy(from);
+        t.mesh.lookAt(r.to);
+        t.mesh.scale.set(0.05, 0.05, Math.max(0.01, len));
+        (t.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
+      }
+      if (r.hitSomething) {
+        const s = this.take(this.sparks, 'spark');
+        s.mesh.position.copy(r.to);
+        s.mesh.scale.setScalar(0.18);
+      }
     }
     const f = this.take(this.flashes, 'flash');
     f.mesh.position.copy(from);
     f.mesh.scale.setScalar(0.32);
     f.mesh.rotation.set(Math.random() * 3, Math.random() * 3, 0);
-    if (hitSomething) {
-      const s = this.take(this.sparks, 'spark');
-      s.mesh.position.copy(to);
-      s.mesh.scale.setScalar(0.18);
-    }
     // The view kick, as the old game: shake grows with recoil, and a zoom punch scaled to the lens.
     this.shake = Math.min(0.6, this.shake + recoil * 0.187);
     const k = lens / 52;
     this.fovPunch = Math.min(7 * k, this.fovPunch + (1.85 + recoil * 0.68) * k);
     this.gunKick = Math.min(1.1, this.gunKick + 0.4 + recoil * 0.05);
+  }
+
+  /** Show a dummy's health bar for a while (after any hit on it). */
+  showBar(dummy: number) {
+    if (dummy >= 0) this.bars[dummy].shownFor = 3;
   }
 
   /** The hit is confirmed: the marker at the cursor, bigger and red on a kill; the target's bar shows. */

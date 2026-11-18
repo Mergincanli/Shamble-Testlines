@@ -79,6 +79,7 @@ const W = newWeapons(store, store.get('gun') as GunId);
 const events: ShotEvent[] = [];
 let shotsFired = 0;
 let lastShotSpread = 0;
+let lastShotRays = 0;
 
 function resize() {
   const canvas = renderer.domElement;
@@ -125,6 +126,7 @@ input.onKey((code, key) => {
   if (code === 'Backquote' || key === '`') panel.toggle();
   if (code === 'Digit1') store.set('gun', 'smg');
   if (code === 'Digit2') store.set('gun', 'rifle');
+  if (code === 'Digit3') store.set('gun', 'shotgun');
 });
 renderer.domElement.addEventListener('pointerdown', () => unlockAudio());
 
@@ -181,7 +183,7 @@ let aimYaw = Math.PI * 1.25;
 let sprintBlend = 0;
 const renderPos = new THREE.Vector3();
 const muzzle = new THREE.Vector3();
-const hitPoint = new THREE.Vector3();
+const rayEnds: THREE.Vector3[] = [];
 const shake = new THREE.Vector3();
 
 /** One fixed simulation step: the player's soldier, his gun, the dummies, then the soft push. */
@@ -269,23 +271,35 @@ function frame(now: number) {
   if (events.length) {
     soldier.muzzleWorld(muzzle);
     for (const e of events) {
-      hitPoint.set(e.ex, e.ey, e.ez);
-      const len = Math.hypot(e.ex - e.ox, e.ez - e.oz);
-      fx.shot(muzzle, hitPoint, gunValue(store, e.gun, 'Recoil'), store.num('camLens'), e.hit >= 0 || e.hitBlock, len > 1);
+      // One shot: one flash, one kick, one click, and one hit marker however many pellets hit.
+      fx.shot(
+        muzzle,
+        e.rays.map((r, i) => ({
+          to: (rayEnds[i] ??= new THREE.Vector3()).set(r.ex, r.ey, r.ez),
+          hitSomething: r.hit >= 0 || r.hitBlock,
+          tracer: Math.hypot(r.ex - e.ox, r.ez - e.oz) > 1,
+        })),
+        gunValue(store, e.gun, 'Recoil'),
+        store.num('camLens'),
+      );
       click();
-      if (e.hit >= 0) {
-        fx.hit(e.hit, e.killed, input.mouseX, input.mouseY);
-        dummyFlinch[e.hit] = 1;
+      if (e.hits.length) fx.hit(e.hits[0], e.killed, input.mouseX, input.mouseY);
+      for (const r of e.rays) {
+        if (r.hit < 0) continue;
+        fx.showBar(r.hit);
+        dummyFlinch[r.hit] = 1;
+        const len = Math.hypot(r.ex - e.ox, r.ez - e.oz);
         if (len > 1e-6) {
-          const fy = dummyYaw[e.hit];
-          dummyTip[e.hit] = ((e.ex - e.ox) * Math.sin(fy) + (e.ez - e.oz) * Math.cos(fy)) > 0 ? 1 : -1;
-          const k = dummyKnock[e.hit];
-          k.x += ((e.ex - e.ox) / len) * 0.12;
-          k.y += ((e.ez - e.oz) / len) * 0.12;
+          const fy = dummyYaw[r.hit];
+          dummyTip[r.hit] = ((r.ex - e.ox) * Math.sin(fy) + (r.ez - e.oz) * Math.cos(fy)) > 0 ? 1 : -1;
+          const k = dummyKnock[r.hit];
+          k.x += ((r.ex - e.ox) / len) * 0.12;
+          k.y += ((r.ez - e.oz) / len) * 0.12;
           if (k.length() > 0.35) k.setLength(0.35);
         }
       }
     }
+    lastShotRays = events[events.length - 1].rays.length;
     shotsFired += events.length;
     lastShotSpread = events[events.length - 1].spread;
     events.length = 0;
@@ -440,6 +454,7 @@ requestAnimationFrame(frame);
     readyIn: readyIn(W, store),
     queued: W.queued,
     lastShotSpread,
+    lastShotRays,
   }),
   /** Where a world point is on the page, in CSS pixels. */
   screenOf: (x: number, y: number, z: number) => {
