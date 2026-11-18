@@ -65,7 +65,7 @@ store.onChange((key) => {
 });
 
 input.onKey((code, key) => {
-  if (code === 'Backquote' || key === '`' || code === 'IntlBackslash') panel.toggle();
+  if (code === 'Backquote' || key === '`') panel.toggle();
   if (code === 'Digit1') store.set('gun', 'smg');
   if (code === 'Digit2') store.set('gun', 'rifle');
 });

@@ -364,6 +364,8 @@ export const PARAMS: Param[] = [
     start: null,
     digits: 1,
     auto: (v) => restViewAngle(v),
+    note: (v) =>
+      `to the feet: ${((Math.atan2(v.camHeight as number, Math.max(0.001, v.camBack as number)) * 180) / Math.PI).toFixed(1)}° (height and distance alone)`,
     source:
       "Auto: the view's real angle at rest, which follows height, distance and the look-ahead (32.0° at the start values: the camera sits 40 m up and 56.6 m back, so 35.3° to the feet, but it looks at a point 5.5 m ahead and 1.2 m up). Moving it is the old panel's pitch override: it moves the point the camera looks at, not the camera, and the forward look-ahead then has no effect. Reset returns to auto.",
   },
