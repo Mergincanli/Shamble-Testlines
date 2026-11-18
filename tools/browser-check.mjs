@@ -219,10 +219,11 @@ async function run(browserName) {
     await sleep(300);
     const me2 = await T(() => window.__testlines.state());
     const du2 = (await T(() => window.__testlines.dummies()))[0];
-    const along = (11 + 11 - me2.x - me2.z) / Math.SQRT2;
+    // Distance along the walk (from the start at 11, 11 toward -x, -z) of the soldier and of the dummy at the end.
+    const alongOf = (p) => (11 + 11 - p.x - p.z) / Math.SQRT2;
+    const along = alongOf(me2);
     const shoved = Math.hypot(du2.x - 8, du2.z - 8);
-    const dummyAlong = (11 + 11 - 8 - 8) / Math.SQRT2;
-    ok('a standing dummy never blocks: the soldier gets past', along > dummyAlong + 1, `${along.toFixed(2)} m travelled; dummy at ${dummyAlong.toFixed(2)} m`);
+    ok('a standing dummy never blocks: the soldier gets past', along > alongOf(du2) + 1, `soldier ${along.toFixed(2)} m along, dummy now ${alongOf(du2).toFixed(2)} m along`);
     ok('the dummy is shoved aside', shoved > 0.2, `${shoved.toFixed(2)} m`);
     // The same at the stiffest push: still never blocked.
     await T(() => window.__testlines.set('pushStrength', 40));
@@ -234,8 +235,8 @@ async function run(browserName) {
     await page.keyboard.up('KeyW');
     await sleep(300);
     const me3 = await T(() => window.__testlines.state());
-    const along3 = (11 + 11 - me3.x - me3.z) / Math.SQRT2;
-    ok('at the stiffest push a standing dummy still never blocks', along3 > dummyAlong + 1, `${along3.toFixed(2)} m travelled`);
+    const du3 = (await T(() => window.__testlines.dummies()))[0];
+    ok('at the stiffest push a standing dummy still never blocks', alongOf(me3) > alongOf(du3) + 1, `soldier ${alongOf(me3).toFixed(2)} m along, dummy now ${alongOf(du3).toFixed(2)} m along`);
     await T(() => window.__testlines.set('pushStrength', 8));
     await T(() => window.__testlines.set('dummiesWalk', true));
 

@@ -55,14 +55,15 @@ export function softPush(
         nx = dx / dist;
         nz = dz / dist;
       }
-      // Head-on: turn the push sideways, to the side they are already drifting (or a fixed side).
+      // Head-on: turn the push sideways, so each is pushed further to the side of the other's path he is already
+      // on (or a fixed side when exactly in line).
       const rvx = a.vx - b.vx;
       const rvz = a.vz - b.vz;
       const rs = Math.hypot(rvx, rvz);
       if (rs > 0.2) {
         const headOn = Math.abs((nx * rvx + nz * rvz) / rs);
         const cross = nx * rvz - nz * rvx;
-        const side = cross >= 0 ? 1 : -1;
+        const side = cross > 0 ? -1 : 1;
         const tx = -nz * side;
         const tz = nx * side;
         nx += tx * SIDEWAYS * headOn;
