@@ -119,10 +119,14 @@ function gunParams(id: 'smg' | 'rifle' | 'shotgun', g: GunStart): Param[] {
     {
       kind: 'range', key: k('Damage'), group: id, label: 'Damage per hit', exportKey: 'damage', unit: '',
       min: 1, max: 150, step: 1, start: g.damage, digits: 0,
-      note: (v) =>
-        id === 'shotgun'
-          ? `${Math.ceil((v.dummyHealth as number) / (v[k('Damage')] as number))} of ${Math.round(v.shotgunPellets as number)} pellets drop a dummy (up close)`
-          : `${Math.ceil((v.dummyHealth as number) / (v[k('Damage')] as number))} hits to drop a dummy (up close)`,
+      note: (v) => {
+        const need = Math.ceil((v.dummyHealth as number) / (v[k('Damage')] as number));
+        if (id !== 'shotgun') return `${need} hits to drop a dummy (up close)`;
+        const pellets = Math.max(1, Math.round(v.shotgunPellets as number));
+        return need <= pellets
+          ? `${need} of ${pellets} pellets drop a dummy (up close)`
+          : `${Math.ceil(need / pellets)} shots (${need} pellets) drop a dummy (up close)`;
+      },
       source: `Old game ${g.legacy}.damage.`, legacy: `${g.legacy}.damage`,
     },
     {

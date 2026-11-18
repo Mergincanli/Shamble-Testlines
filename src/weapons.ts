@@ -112,6 +112,8 @@ export function newWeapons(P: Store, gun: GunId): WeaponsState {
 
 /** The old game's pause after a gun change before the first shot. */
 const SWITCH_TIME = 0.12;
+/** A press in the gap between shots is kept if the gap has at most this long to run (the sandbox's own pick). */
+const PRESS_BUFFER = 0.15;
 
 /** Change guns: a reload in progress stops, the spread rests, and the gun comes up after a short moment. */
 export function switchGun(W: WeaponsState, gun: GunId, P: Store) {
@@ -120,7 +122,9 @@ export function switchGun(W: WeaponsState, gun: GunId, P: Store) {
   const g = W.guns[gun];
   g.reloadLeft = 0;
   g.spread = gunValue(P, gun, 'SpreadHip');
-  g.cooldown = Math.max(g.cooldown, SWITCH_TIME);
+  // Every change leaves the same short pause before the first shot (old game), whatever gap the gun was put
+  // away in.
+  g.cooldown = SWITCH_TIME;
   W.queued = false;
 }
 
@@ -263,7 +267,10 @@ export function stepWeapons(
   // A press is kept until the gun can fire: through the gap between shots, a gun change and the sprint-to-fire
   // delay, so a click during a sprint fires once the gun is up. A press during a reload, or with nothing in the
   // magazine, is dropped. An automatic gun also fires for as long as it is held.
-  if (inp.pressed) W.queued = g.reloadLeft <= 0 && g.ammo > 0;
+  // A press is kept through the sprint-to-fire delay and a gun change, but in the gap between two shots only
+  // when the gap is nearly over; a click earlier in the gap is dropped (the old game dropped them all), so a
+  // double click on the shotgun does not fire its second shell by itself much later.
+  if (inp.pressed) W.queued = g.reloadLeft <= 0 && g.ammo > 0 && g.cooldown <= PRESS_BUFFER;
   if (g.reloadLeft > 0 || g.ammo <= 0) W.queued = false;
   const wants = auto ? inp.held || W.queued : W.queued;
   const canFire = g.reloadLeft <= 0 && sprintReady && g.ammo > 0;
