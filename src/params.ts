@@ -165,7 +165,7 @@ function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
     },
     {
       kind: 'range', key: k('ActiveStart'), group: id, label: 'Active reload: window starts at', exportKey: 'active_reload_window_start_pct', unit: '%',
-      min: 0, max: 100, step: 1, start: 40, digits: 0,
+      min: 0, max: 95, step: 1, start: 40, digits: 0,
       note: (v) => {
         const t = v[k('Reload')] as number;
         const a = (v[k('ActiveStart')] as number) / 100;
@@ -178,7 +178,19 @@ function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
     {
       kind: 'range', key: k('ActiveWidth'), group: id, label: 'Active reload: window width', exportKey: 'active_reload_window_width_pct', unit: '%',
       min: 1, max: 100, step: 1, start: 20, digits: 0,
-      note: (v) => `${(((v[k('ActiveWidth')] as number) / 100) * (v[k('Reload')] as number)).toFixed(2)} s wide`,
+      note: (v) => {
+        const t = v[k('Reload')] as number;
+        const a = (v[k('ActiveStart')] as number) / 100;
+        const w = Math.min(1, a + (v[k('ActiveWidth')] as number) / 100) - a;
+        const step = 1 / Number(v.tickRate) / t;
+        const warn =
+          a > 1 - step
+            ? ' · starts in the last step of the reload: no tap can score'
+            : w < step
+              ? ` · narrower than one step at ${v.tickRate} steps/s (${(step * 100).toFixed(1)} %): a tap may never score`
+              : '';
+        return `${(w * t).toFixed(2)} s wide${warn}`;
+      },
       source: 'No old number. LOOP_V2 7 asks for a gentle active reload, so it starts wide. A share of the reload time.',
     },
     {

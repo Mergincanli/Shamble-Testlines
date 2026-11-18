@@ -358,11 +358,22 @@ async function run(browserName) {
     await sleep(3600);
     g1 = await T(() => window.__testlines.gun());
     ok('the rifle is loaded again after its reload', g1.ammo === 1, `${g1.ammo} rounds`);
-    // The rifle's reload starts by itself after its one round; a tap in the window (40 % to 60 % of 3.5 s) ends it.
+    // The rifle's reload starts by itself after its one round. A reflex R right after the shot is not the tap;
+    // a tap in the window (40 % to 60 % of 3.5 s) ends it.
+    // (The R press goes in with the shot, so it lands within the grace at any frame rate; at 5 frames a second a
+    // later press would arrive after the grace has passed.)
     await page.mouse.down();
+    await page.keyboard.press('KeyR');
     await sleep(60);
     await page.mouse.up();
-    await sleep(1400 + 350);
+    await sleep(250);
+    g1 = await T(() => window.__testlines.gun());
+    ok('a reflex R just after the rifle\'s shot does not use up the tap', g1.active === '' && g1.reloadLeft > 0, `tap state '${g1.active}'`);
+    for (let i = 0; i < 150; i++) {
+      g1 = await T(() => window.__testlines.gun());
+      if (g1.reloadLeft > 0 && 1 - g1.reloadLeft / g1.reloadTotal >= 0.42) break;
+      await sleep(30);
+    }
     await page.keyboard.press('KeyR');
     await sleep(250);
     g1 = await T(() => window.__testlines.gun());

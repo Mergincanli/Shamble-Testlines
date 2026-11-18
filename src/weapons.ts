@@ -17,6 +17,8 @@ export const HIT_HEIGHT = 1.8;
  * a little way up the ramp can hit dummies on the ground. How aiming at height works is open in the game.
  */
 export const HEIGHT_GRACE = 0.6;
+/** After a reload starts by itself, R presses this soon are not judged as the active-reload tap. */
+export const AUTO_RELOAD_GRACE = 0.15;
 /** The last part of a dummy's down time is it getting up: not hittable, not walking yet. */
 export const RISE_TIME = 0.35;
 
@@ -34,6 +36,8 @@ export interface GunState {
   reloadTotal: number;
   /** The active reload: one tap per reload; 'perfect' ends it at once, 'miss' leaves a normal reload. */
   active: '' | 'perfect' | 'miss';
+  /** Just after a reload starts by itself, an R press counts as the press that started it, not as the tap. */
+  graceLeft: number;
 }
 
 export interface WeaponsState {
@@ -83,6 +87,7 @@ export function newWeapons(P: Store, gun: GunId): WeaponsState {
     reloadLeft: 0,
     reloadTotal: 0,
     active: '',
+    graceLeft: 0,
   });
   return { gun, guns: { smg: mk('smg'), rifle: mk('rifle') }, queued: false, sinceSprint: 1e9, activeNote: '' };
 }
@@ -213,14 +218,16 @@ export function stepWeapons(
   // Reload in progress. The active reload (LOOP_V2 7, simplified for Slice 1): the first tap of R during a reload
   // is judged; inside the window the reload ends at once, outside it the reload just carries on (no jam).
   if (g.reloadLeft > 0) {
-    if (inp.reload && g.active === '') {
+    if (inp.reload && g.active === '' && g.graceLeft <= 0) {
       const done = 1 - g.reloadLeft / g.reloadTotal;
       const from = v('ActiveStart') / 100;
       const to = from + v('ActiveWidth') / 100;
-      g.active = done >= from && done <= to ? 'perfect' : 'miss';
+      // A small allowance, so a step that falls exactly on an edge of the window is not lost to rounding.
+      g.active = done >= from - 1e-6 && done <= to + 1e-6 ? 'perfect' : 'miss';
       W.activeNote = g.active;
       if (g.active === 'perfect') g.reloadLeft = dt;
     }
+    g.graceLeft = Math.max(0, g.graceLeft - dt);
     g.reloadLeft -= dt;
     if (g.reloadLeft <= 1e-9) {
       g.reloadLeft = 0;
@@ -254,14 +261,19 @@ export function stepWeapons(
   g.cooldown -= dt;
   if (!(wants && canFire)) g.cooldown = Math.max(0, g.cooldown);
 
-  // Reload on R, or by itself when the magazine runs dry.
-  if (g.reloadLeft <= 0 && g.ammo < mag && (inp.reload || g.ammo <= 0)) startReload(g, v('Reload'));
+  // Reload on R, or by itself when the magazine runs dry. Started by itself, an R press in the next moment counts
+  // as the press that started it (a reflex R after the last round), not as the active-reload tap.
+  if (g.reloadLeft <= 0 && g.ammo < mag && (inp.reload || g.ammo <= 0)) {
+    startReload(g, v('Reload'));
+    if (!inp.reload) g.graceLeft = AUTO_RELOAD_GRACE;
+  }
 }
 
 export function startReload(g: GunState, seconds: number) {
   g.reloadTotal = Math.max(0.05, seconds);
   g.reloadLeft = g.reloadTotal;
   g.active = '';
+  g.graceLeft = 0;
 }
 
 function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Target[], P: Store, events: ShotEvent[]) {

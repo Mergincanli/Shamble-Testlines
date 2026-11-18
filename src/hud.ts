@@ -11,6 +11,7 @@ export class Hud {
   private reloadWindow: HTMLDivElement;
   private note: HTMLDivElement;
   private noteLife = 0;
+  private lastName = '';
   private lastAmmo = '';
   private frames = 0;
   private fpsTime = 0;
@@ -59,9 +60,15 @@ export class Hud {
     this.reloadWindow.style.left = `${(windowFrom * 100).toFixed(1)}%`;
     this.reloadWindow.style.width = `${(Math.max(0, Math.min(1, windowTo) - windowFrom) * 100).toFixed(1)}%`;
     this.reloadWindow.classList.toggle('missed', tap === 'miss');
+    // A gun change clears the note; otherwise it fades after a moment, keeping its colour while it fades.
+    if (name !== this.lastName) {
+      this.lastName = name;
+      this.noteLife = 0;
+      this.note.classList.remove('show');
+    }
     if (this.noteLife > 0) {
       this.noteLife -= dt;
-      if (this.noteLife <= 0) this.note.className = 'note';
+      if (this.noteLife <= 0) this.note.classList.remove('show');
     }
     const text = `${name}  ${ammo} / ${mag}${reload >= 0 ? '  reloading' : ready ? '' : '  not ready'}`;
     if (text !== this.lastAmmo) {
