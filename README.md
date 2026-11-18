@@ -8,8 +8,13 @@ Nothing here is the game, and no value here is a decision.
 `play/testlines.html` is the whole sandbox in one file. Save it and double-click it: it opens in your browser
 with no install, no server and no internet.
 
-Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, hold the middle button to
-turn the camera, 1 and 2 change guns, the backquote key (`) hides the panel.
+Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, R
+reloads, hold the middle button to turn the camera, 1 and 2 change guns (SMG, rifle), the backquote key (`) hides
+the panel.
+
+What is in it: a test yard with steps, a cover wall, ledges and a ramp; your soldier; eleven dummies walking loops
+in the other two factions' colours, which push softly and never block; the SMG and the rifle, firing at the
+dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped dummy stands again after 4 s).
 
 ## The panel
 

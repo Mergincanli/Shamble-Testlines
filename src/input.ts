@@ -15,6 +15,7 @@ export class Input {
   over = true;
   private turnDX = 0;
   private lastX: number | null = null;
+  private firePressed = false;
   private onKeyHandlers: ((code: string, key: string) => void)[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
@@ -61,6 +62,7 @@ export class Input {
       (document.activeElement as HTMLElement | null)?.blur?.();
       this.buttons = e.buttons;
       this.lastX = e.clientX;
+      if (e.button === 0) this.firePressed = true;
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
@@ -97,6 +99,18 @@ export class Input {
     const had = this.pressed.has(code);
     this.pressed.delete(code);
     return had;
+  }
+
+  /** The left button is held on the view. */
+  fireHeld(): boolean {
+    return (this.buttons & 1) !== 0;
+  }
+
+  /** True if the left button went down since the last call (consumes it). */
+  takeFirePress(): boolean {
+    const p = this.firePressed;
+    this.firePressed = false;
+    return p;
   }
 
   /** Mouse travel in pixels while the middle button was held, since the last call. */

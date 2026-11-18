@@ -63,6 +63,57 @@ html, body {
 }
 #stamina.locked > div { background: #c8553d; }
 
+#ammo {
+  position: fixed;
+  left: 10px;
+  bottom: 10px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: rgba(20, 22, 26, 0.6);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  pointer-events: none;
+}
+#ammo .reload {
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+  display: none;
+}
+#ammo .reload.show { display: block; }
+#ammo .reload > div {
+  height: 100%;
+  background: #f2efe6;
+  transform-origin: left center;
+}
+/* The hit marker: four short strokes round the cursor, shown when a hit is confirmed; red and larger on a drop. */
+#hitmarker {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+#hitmarker.show { opacity: 1; }
+#hitmarker i {
+  position: absolute;
+  width: 9px;
+  height: 2px;
+  margin: -1px 0 0 -4.5px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+#hitmarker i:nth-child(1) { transform: rotate(45deg) translateX(-9px); }
+#hitmarker i:nth-child(2) { transform: rotate(135deg) translateX(-9px); }
+#hitmarker i:nth-child(3) { transform: rotate(225deg) translateX(-9px); }
+#hitmarker i:nth-child(4) { transform: rotate(315deg) translateX(-9px); }
+#hitmarker.kill i { background: #e0402e; width: 13px; margin-left: -6.5px; }
 #panel {
   position: fixed;
   top: 0;

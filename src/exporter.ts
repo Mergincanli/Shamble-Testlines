@@ -2,7 +2,7 @@
 // old game's own names beside them, so the numbers can be handed to the Advisor as they are.
 import { GROUPS, PARAMS, type Store } from './params';
 
-export const BUILD = { step: 2, name: 'Dummies' };
+export const BUILD = { step: 3, name: 'Shoot' };
 
 function localStamp(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -86,6 +86,13 @@ export function buildExport(store: Store): string {
     'T.posBackMax': round(n('posBackMax'), 3),
     'T.posSideMax': round(n('posSideMax'), 3),
   };
+
+  // Every other value that has an old-game name (the guns, the dummies) goes in under that name.
+  for (const p of PARAMS) {
+    if (p.kind !== 'range' || !p.legacy || p.legacy in gameTerms) continue;
+    const v = store.get(p.key);
+    if (typeof v === 'number') gameTerms[p.legacy] = round(v, 5);
+  }
 
   const doc = {
     what: 'Shamble Testlines feel values',

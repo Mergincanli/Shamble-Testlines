@@ -105,7 +105,7 @@ export class Panel {
       el(
         'div',
         'p-keys',
-        'WASD move · Shift sprint · Space jump · mouse aims · hold the middle button to turn the camera · 1 / 2 guns · ` panel',
+        'WASD move · Shift sprint · Space jump · mouse aims · left button fires · R reloads · hold the middle button to turn the camera · 1 / 2 guns · ` panel',
       ),
     );
     this.root.append(scroll);

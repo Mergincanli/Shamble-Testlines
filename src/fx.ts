@@ -12,6 +12,8 @@ interface Pooled {
   mesh: THREE.Mesh;
   life: number;
   max: number;
+  /** Spawned this frame: shown for at least one drawn frame, however slow the frames are. */
+  fresh: boolean;
 }
 
 function unlit(hex: string, transparent = false) {
@@ -25,6 +27,7 @@ export class Fx {
   private next = { tracer: 0, flash: 0, spark: 0 };
   private marker: HTMLDivElement;
   private markerLife = 0;
+  private markerFresh = false;
   private bars: { group: THREE.Group; fill: THREE.Mesh; shownFor: number }[] = [];
   shake = 0;
   fovPunch = 0;
@@ -38,20 +41,20 @@ export class Fx {
       m.visible = false;
       m.renderOrder = 5;
       scene.add(m);
-      this.tracers.push({ mesh: m, life: 0, max: TRACER_LIFE });
+      this.tracers.push({ mesh: m, life: 0, max: TRACER_LIFE, fresh: false });
     }
     const star = new THREE.OctahedronGeometry(0.5, 0);
     for (let i = 0; i < 6; i++) {
       const m = new THREE.Mesh(star, unlit('#FFF8DC'));
       m.visible = false;
       scene.add(m);
-      this.flashes.push({ mesh: m, life: 0, max: FLASH_LIFE });
+      this.flashes.push({ mesh: m, life: 0, max: FLASH_LIFE, fresh: false });
     }
     for (let i = 0; i < 24; i++) {
       const m = new THREE.Mesh(star, unlit('#FFE6A0'));
       m.visible = false;
       scene.add(m);
-      this.sparks.push({ mesh: m, life: 0, max: SPARK_LIFE });
+      this.sparks.push({ mesh: m, life: 0, max: SPARK_LIFE, fresh: false });
     }
     // Health bars over the dummies: a dark back and a fill, always facing the camera.
     const plane = new THREE.PlaneGeometry(1, 1);
@@ -80,6 +83,7 @@ export class Fx {
     const p = pool[this.next[key] % pool.length];
     this.next[key]++;
     p.life = p.max;
+    p.fresh = true;
     p.mesh.visible = true;
     return p;
   }
@@ -111,23 +115,34 @@ export class Fx {
   /** The hit is confirmed: the marker at the cursor, bigger and red on a kill; the target's bar shows. */
   hit(dummy: number, killed: boolean) {
     this.markerLife = killed ? 0.3 : 0.12;
+    this.markerFresh = true;
     this.marker.classList.toggle('kill', killed);
     this.marker.classList.add('show');
     if (dummy >= 0) this.bars[dummy].shownFor = 3;
   }
 
   update(dt: number, mouseX: number, mouseY: number) {
-    for (const p of [...this.tracers, ...this.flashes, ...this.sparks]) {
-      if (p.life <= 0) continue;
-      p.life -= dt;
-      if (p.life <= 0) p.mesh.visible = false;
-      else if (this.tracers.includes(p)) (p.mesh.material as THREE.MeshBasicMaterial).opacity = p.life / p.max;
-    }
+    const age = (pool: Pooled[], fade: boolean) => {
+      for (const p of pool) {
+        if (p.life <= 0) continue;
+        if (p.fresh) {
+          p.fresh = false;
+          continue;
+        }
+        p.life -= dt;
+        if (p.life <= 0) p.mesh.visible = false;
+        else if (fade) (p.mesh.material as THREE.MeshBasicMaterial).opacity = p.life / p.max;
+      }
+    };
+    age(this.tracers, true);
+    age(this.flashes, false);
+    age(this.sparks, false);
     this.shake = Math.max(0, this.shake - dt * 2.5);
     this.fovPunch = Math.max(0, this.fovPunch - dt * 15);
     this.gunKick = Math.max(0, this.gunKick - dt * 8);
     if (this.markerLife > 0) {
-      this.markerLife -= dt;
+      if (this.markerFresh) this.markerFresh = false;
+      else this.markerLife -= dt;
       this.marker.style.transform = `translate(${mouseX}px, ${mouseY}px)`;
       if (this.markerLife <= 0) this.marker.classList.remove('show');
     }

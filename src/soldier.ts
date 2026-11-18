@@ -185,8 +185,11 @@ export class Soldier {
 
   private tmpPose: Pose = { grip: new THREE.Vector3(), rot: new THREE.Quaternion(), chest: 0, lean: 0 };
 
-  /** Blend between the aiming pose (0) and the sprint pose (1) of the current gun, then reach the hands. */
-  setPose(sprint: number) {
+  /**
+   * Blend between the aiming pose (0) and the sprint pose (1) of the current gun, push the gun back by its kick
+   * (0 to about 1, after a shot), then reach the hands.
+   */
+  setPose(sprint: number, kick = 0) {
     const P = POSES[this.gun];
     const t = Math.min(1, Math.max(0, sprint));
     this.blend = t;
@@ -195,6 +198,7 @@ export class Soldier {
     pose.rot.slerpQuaternions(P.aim.rot, P.sprint.rot, t);
     pose.chest = P.aim.chest + (P.sprint.chest - P.aim.chest) * t;
     pose.lean = P.aim.lean + (P.sprint.lean - P.aim.lean) * t;
+    if (kick > 0) pose.grip.addScaledVector(new THREE.Vector3(0, 0, 1).applyQuaternion(pose.rot), -0.035 * kick);
 
     this.lean.rotation.x = pose.lean;
     this.chest.rotation.y = pose.chest;

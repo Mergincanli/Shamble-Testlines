@@ -240,6 +240,85 @@ async function run(browserName) {
     await T(() => window.__testlines.set('pushStrength', 8));
     await T(() => window.__testlines.set('dummiesWalk', true));
 
+    // Shooting: dummies stopped, one dummy 7 m in front, the cursor on it.
+    await T(() => window.__testlines.set('dummiesWalk', false));
+    await T(() => window.__testlines.set('gun', 'smg'));
+    await T(() => window.__testlines.place(20, 20));
+    await T(() => window.__testlines.placeDummy(0, 20, 13));
+    // The camera eases after the soldier is moved: let it settle, then put the cursor on the dummy (twice, since
+    // moving the cursor nudges the framing).
+    const aimAt = async (x, z) => {
+      await sleep(1500);
+      for (let k = 0; k < 2; k++) {
+        const p = await T((xx, zz) => window.__testlines.screenOf(xx, 1.36, zz), x, z);
+        await page.mouse.move(p.x, p.y);
+        await sleep(700);
+      }
+    };
+    await aimAt(20, 13);
+    let g0 = await T(() => window.__testlines.gun());
+    const t0 = Date.now();
+    await page.mouse.down();
+    await sleep(1000);
+    await page.mouse.up();
+    const held = (Date.now() - t0) / 1000;
+    let g1 = await T(() => window.__testlines.gun());
+    const fired = g1.shots - g0.shots;
+    ok('the SMG fires at its rate while held (0.072 s a shot)', Math.abs(fired - held / 0.072) <= 4, `${fired} shots in about ${held.toFixed(2)} s`);
+    ok('each shot takes a round', g0.ammo - g1.ammo === fired, `${g0.ammo} -> ${g1.ammo}`);
+    // With the old numbers the SMG's spread recovers (0.7/s) faster than its shots add to it (14 x 0.005/s), so
+    // it stays at rest. With more added per shot it grows while the trigger is held.
+    ok('with the old numbers the SMG spread stays at rest', g1.spread <= 0.075 + 0.0051, g1.spread.toFixed(4));
+    let dmy = (await T(() => window.__testlines.dummies()))[0];
+    ok('hits hurt the dummy', dmy.health < 100, `health ${dmy.health.toFixed(0)}`);
+    // Keep firing until it drops, then it stands again after 4 s with full health.
+    await page.mouse.down();
+    for (let i = 0; i < 30 && !(await T(() => window.__testlines.dummies()))[0].down; i++) await sleep(100);
+    await page.mouse.up();
+    dmy = (await T(() => window.__testlines.dummies()))[0];
+    ok('enough hits drop the dummy', dmy.down, `health ${dmy.health.toFixed(0)}`);
+    await sleep(4600);
+    dmy = (await T(() => window.__testlines.dummies()))[0];
+    ok('a dropped dummy stands again with full health', !dmy.down && dmy.health === 100, `down ${dmy.down}, health ${dmy.health}`);
+    await T(() => window.__testlines.set('smgSpreadPerShot', 0.05));
+    await page.mouse.down();
+    await sleep(500);
+    const gs = await T(() => window.__testlines.gun());
+    await page.mouse.up();
+    ok('with more spread per shot it grows while firing', gs.spread > 0.075 + 0.01, gs.spread.toFixed(4));
+    await T(() => window.__testlines.set('smgSpreadPerShot', 0.005));
+    // R reloads the SMG.
+    await page.keyboard.press('KeyR');
+    await sleep(300);
+    g1 = await T(() => window.__testlines.gun());
+    ok('R starts a reload', g1.reloadLeft > 0, `${g1.reloadLeft.toFixed(2)} s left`);
+    await sleep(2200);
+    g1 = await T(() => window.__testlines.gun());
+    ok('the reload fills the magazine (1.9 s)', g1.ammo === 36 && g1.reloadLeft === 0, `${g1.ammo} rounds`);
+    // The rifle: one shot per click, then it reloads by itself (magazine of 1, 3.5 s).
+    await page.keyboard.press('Digit2');
+    await sleep(400);
+    g0 = await T(() => window.__testlines.gun());
+    await page.mouse.down();
+    await sleep(600);
+    await page.mouse.up();
+    g1 = await T(() => window.__testlines.gun());
+    ok('the rifle fires once per click', g1.gun === 'rifle' && g1.shots - g0.shots === 1, `${g1.shots - g0.shots} shots`);
+    ok('an empty rifle reloads by itself', g1.ammo === 0 && g1.reloadLeft > 0, `${g1.ammo} rounds, ${g1.reloadLeft.toFixed(2)} s left`);
+    await sleep(3600);
+    g1 = await T(() => window.__testlines.gun());
+    ok('the rifle is loaded again after its reload', g1.ammo === 1, `${g1.ammo} rounds`);
+    await page.keyboard.press('Digit1');
+    // Sprinting: the gun is not ready while sprinting.
+    await page.keyboard.down('ShiftLeft');
+    await page.keyboard.down('KeyS');
+    await sleep(500);
+    g1 = await T(() => window.__testlines.gun());
+    await page.keyboard.up('KeyS');
+    await page.keyboard.up('ShiftLeft');
+    ok('the gun is not ready while sprinting', g1.readyIn > 0.1, `ready in ${g1.readyIn.toFixed(2)} s`);
+    await T(() => window.__testlines.set('dummiesWalk', true));
+
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
     const b60 = (await page.$$('#panel .p-segbtn'))[seg.indexOf('60')];

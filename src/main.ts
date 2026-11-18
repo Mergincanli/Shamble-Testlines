@@ -1,18 +1,21 @@
 // Shamble Testlines: a throwaway feel sandbox for Shamble Frontlines. Nothing here is the game.
 import * as THREE from 'three';
 import './style.css';
+import { click, unlockAudio } from './audio';
 import { FollowCamera } from './camera';
+import { makeDummies, otherFactions, steerDummy } from './dummies';
+import { Fx } from './fx';
+import type { GunId } from './guns';
 import { Hud } from './hud';
 import { Input } from './input';
 import { addLights, setInkResolution, type Faction } from './look';
 import { newMover, stepMover, type MoveInput, type MoverState } from './movement';
 import { Panel } from './panel';
 import { Store } from './params';
-import { Soldier } from './soldier';
-import type { GunId } from './guns';
-import { buildYard } from './yard';
-import { makeDummies, otherFactions, steerDummy } from './dummies';
 import { softPush } from './push';
+import { Soldier } from './soldier';
+import { GUN_KEYS, gunValue, newWeapons, stepWeapons, switchGun, type ShotEvent, type Target } from './weapons';
+import { buildYard } from './yard';
 
 const store = new Store();
 
@@ -38,20 +41,29 @@ const soldier = new Soldier(store.get('faction') as Faction);
 soldier.setGun(store.get('gun') as GunId);
 scene.add(soldier.root);
 
-// Eleven dummies in the other two factions' colours, half with each gun.
+// Eleven dummies in the other two factions' colours; both factions carry both guns.
 const dummies = makeDummies();
 const dummySoldiers = dummies.map((d, i) => {
   const s = new Soldier(otherFactions(store.get('faction') as Faction)[d.side]);
-  // Both factions carry both guns.
   s.setGun(Math.floor(i / 2) % 2 ? 'smg' : 'rifle');
+  // Tilt (flinch, falling) turns about the dummy's own left-right axis, after its facing.
+  s.root.rotation.order = 'YXZ';
   scene.add(s.root);
   return s;
 });
+const targets: Target[] = dummies.map((d) => ({ state: d.state, health: store.num('dummyHealth'), downFor: 0 }));
 const dummyYaw = dummies.map(() => 0);
+const dummyFall = dummies.map(() => 0);
+const dummyFlinch = dummies.map(() => 0);
 function dressDummies() {
   const other = otherFactions(store.get('faction') as Faction);
   dummies.forEach((d, i) => dummySoldiers[i].setFaction(other[d.side]));
 }
+
+const fx = new Fx(scene, dummies.length);
+const W = newWeapons(store, store.get('gun') as GunId);
+const events: ShotEvent[] = [];
+let shotsFired = 0;
 
 function resize() {
   const canvas = renderer.domElement;
@@ -68,7 +80,7 @@ new ResizeObserver(resize).observe(renderer.domElement);
 resize();
 
 // Simulation state: the step before and the current step, for smoothing the picture between steps.
-let cur: MoverState = newMover(0, 0);
+const cur: MoverState = newMover(0, 0);
 let prev: MoverState = { ...cur };
 let acc = 0;
 let last = performance.now();
@@ -79,16 +91,23 @@ store.onChange((key) => {
     soldier.setFaction(store.get('faction') as Faction);
     dressDummies();
   }
-  if (key === null || key === 'gun') soldier.setGun(store.get('gun') as GunId);
+  if (key === null || key === 'gun') {
+    const g = store.get('gun') as GunId;
+    soldier.setGun(g);
+    switchGun(W, g, store);
+  }
   if (key === null || key === 'tickRate') acc = 0;
   if (key === null || key === 'camTurn') camera.resetTurn();
+  if (key === null || key === 'dummyHealth') for (const t of targets) if (t.downFor <= 0) t.health = store.num('dummyHealth');
 });
 
 input.onKey((code, key) => {
+  unlockAudio();
   if (code === 'Backquote' || key === '`') panel.toggle();
   if (code === 'Digit1') store.set('gun', 'smg');
   if (code === 'Digit2') store.set('gun', 'rifle');
 });
+renderer.domElement.addEventListener('pointerdown', () => unlockAudio());
 
 const moveInput: MoveInput = { wishX: 0, wishZ: 0, sprint: false, jump: false };
 
@@ -115,7 +134,8 @@ function readMoveInput() {
   const l = Math.hypot(x, z);
   moveInput.wishX = l > 1e-6 ? x / l : 0;
   moveInput.wishZ = l > 1e-6 ? z / l : 0;
-  moveInput.sprint = input.down('ShiftLeft') || input.down('ShiftRight');
+  // Firing stops the sprint (the gun then comes up after its sprint-to-fire delay).
+  moveInput.sprint = (input.down('ShiftLeft') || input.down('ShiftRight')) && !input.fireHeld();
   // Held Space keeps jumping on landing, as the old game; a tap between two steps is not lost.
   moveInput.jump = input.takePress('Space') || input.down('Space');
 }
@@ -128,6 +148,52 @@ const ndc = new THREE.Vector2();
 let aimYaw = Math.PI * 1.25;
 let sprintBlend = 0;
 const renderPos = new THREE.Vector3();
+const muzzle = new THREE.Vector3();
+const hitPoint = new THREE.Vector3();
+const shake = new THREE.Vector3();
+
+/** One fixed simulation step: the player's soldier, his gun, the dummies, then the soft push. */
+function simStep(dt: number) {
+  prev = { ...cur };
+  readMoveInput();
+  stepMover(cur, moveInput, dt, store);
+  stepWeapons(
+    W,
+    cur,
+    { held: input.fireHeld(), pressed: input.takeFirePress(), reload: input.takePress('KeyR'), aimYaw },
+    targets,
+    dt,
+    store,
+    events,
+  );
+  const walking = store.get('dummiesWalk') === true;
+  dummies.forEach((d, i) => {
+    const t = targets[i];
+    d.prev = { ...d.state };
+    if (t.downFor > 0) {
+      // Down: lie still, then stand again with full health.
+      t.downFor -= dt;
+      d.input.wishX = d.input.wishZ = 0;
+      if (t.downFor <= 0) {
+        t.downFor = 0;
+        t.health = store.num('dummyHealth');
+        d.best = Infinity;
+        d.stalled = 0;
+      }
+    } else steerDummy(d, walking, dt);
+    stepMover(d.state, d.input, dt, store);
+  });
+  softPush(
+    [cur, ...dummies.map((d) => d.state)],
+    [true, ...targets.map((t) => t.downFor <= 0)],
+    store.num('pushRadius'),
+    store.num('pushStrength'),
+    dt,
+    store.num('bodyRadius'),
+    store.num('stepUp'),
+  );
+  if (cur.y > peakY) peakY = cur.y;
+}
 
 function frame(now: number) {
   const dt = Math.min(0.25, Math.max(0, (now - last) / 1000));
@@ -137,25 +203,7 @@ function frame(now: number) {
   acc += dt;
   let steps = 0;
   while (acc >= stepDt && steps < 12) {
-    prev = { ...cur };
-    readMoveInput();
-    stepMover(cur, moveInput, stepDt, store);
-    const walking = store.get('dummiesWalk') === true;
-    for (const d of dummies) {
-      d.prev = { ...d.state };
-      steerDummy(d, walking, stepDt);
-      stepMover(d.state, d.input, stepDt, store);
-    }
-    softPush(
-      [cur, ...dummies.map((d) => d.state)],
-      [true, ...dummies.map(() => true)],
-      store.num('pushRadius'),
-      store.num('pushStrength'),
-      stepDt,
-      store.num('bodyRadius'),
-      store.num('stepUp'),
-    );
-    if (cur.y > peakY) peakY = cur.y;
+    simStep(stepDt);
     acc -= stepDt;
     steps++;
   }
@@ -172,7 +220,7 @@ function frame(now: number) {
   // Off the view (on the panel, outside the window) the cursor stops pushing the camera; the aim stays.
   camera.update(dt, renderPos, input.over ? input.ndcX : 0, input.over ? input.ndcY : 0, store);
 
-  // Face the cursor.
+  // Face the cursor (cast through the steady camera, before the shake is added).
   camera.cam.updateMatrixWorld();
   ndc.set(input.ndcX, input.ndcY);
   raycaster.setFromCamera(ndc, camera.cam);
@@ -183,16 +231,35 @@ function frame(now: number) {
     if (dx * dx + dz * dz > 0.09) aimYaw = Math.atan2(dx, dz);
   }
 
-  // The sprint pose comes in quickly and goes back to aiming over a short swing.
+  // Shots of this frame: the tracer leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
+  if (events.length) {
+    soldier.muzzleWorld(muzzle);
+    for (const e of events) {
+      hitPoint.set(e.ex, e.ey, e.ez);
+      fx.shot(muzzle, hitPoint, gunValue(store, e.gun, 'Recoil'), store.num('camLens'), e.hit >= 0 || e.hitBlock);
+      click();
+      if (e.hit >= 0) {
+        fx.hit(e.hit, e.killed);
+        dummyFlinch[e.hit] = 1;
+      }
+    }
+    shotsFired += events.length;
+    events.length = 0;
+  }
+  fx.update(dt, input.mouseX, input.mouseY);
+
+  // The sprint pose comes in quickly; going back to aiming takes the gun's sprint-to-fire delay.
   const sprintTarget = cur.sprinting ? 1 : 0;
-  const swing = sprintTarget > sprintBlend ? dt / 0.15 : dt / 0.2;
-  sprintBlend = sprintTarget > sprintBlend ? Math.min(1, sprintBlend + swing) : Math.max(0, sprintBlend - swing);
+  const back = Math.max(0.05, gunValue(store, W.gun, 'SprintDelay'));
+  sprintBlend =
+    sprintTarget > sprintBlend ? Math.min(1, sprintBlend + dt / 0.15) : Math.max(0, sprintBlend - dt / back);
 
   soldier.root.position.copy(renderPos);
   soldier.root.rotation.y = aimYaw;
-  soldier.setPose(sprintBlend);
+  soldier.setPose(sprintBlend, fx.gunKick);
   dummies.forEach((d, i) => {
     const s = dummySoldiers[i];
+    const t = targets[i];
     s.root.position.set(
       d.prev.x + (d.state.x - d.prev.x) * alpha,
       d.prev.y + (d.state.y - d.prev.y) * alpha,
@@ -200,14 +267,32 @@ function frame(now: number) {
     );
     // Face the way they walk, turning smoothly.
     const sp = Math.hypot(d.state.vx, d.state.vz);
-    if (sp > 0.3) {
+    if (sp > 0.3 && t.downFor <= 0) {
       const want = Math.atan2(d.state.vx, d.state.vz);
       let diff = want - dummyYaw[i];
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       dummyYaw[i] += diff * (1 - Math.exp(-10 * dt));
     }
+    // Flinch on a hit; fall over backwards when dropped, and get up again.
+    const down = t.downFor > 0;
+    dummyFall[i] = down ? Math.min(1, dummyFall[i] + dt / 0.25) : Math.max(0, dummyFall[i] - dt / 0.35);
+    dummyFlinch[i] = Math.max(0, dummyFlinch[i] - dt * 8);
+    const f = dummyFall[i];
     s.root.rotation.y = dummyYaw[i];
+    s.root.rotation.x = -(Math.PI / 2) * f * f * (3 - 2 * f) - 0.2 * dummyFlinch[i];
   });
+  fx.updateBars(
+    dt,
+    camera.cam,
+    dummies.map((d, i) => ({
+      x: dummySoldiers[i].root.position.x,
+      y: d.state.y,
+      z: dummySoldiers[i].root.position.z,
+      health: targets[i].health,
+      max: store.num('dummyHealth'),
+      down: targets[i].downFor > 0,
+    })),
+  );
   lights.follow(renderPos.x, renderPos.y, renderPos.z);
 
   hud.update(
@@ -219,6 +304,23 @@ function frame(now: number) {
     cur.staminaLocked,
     store.get('staminaOn') === true,
   );
+  const g = W.guns[W.gun];
+  hud.updateGun(
+    GUN_KEYS[W.gun].name,
+    g.ammo,
+    Math.max(1, Math.round(gunValue(store, W.gun, 'Mag'))),
+    g.reloadLeft > 0 ? 1 - g.reloadLeft / g.reloadTotal : -1,
+    g.readyIn <= 0,
+  );
+
+  // The view kick goes on last, so it never moves the aim.
+  fx.shakeOffset(shake);
+  camera.cam.translateX(shake.x);
+  camera.cam.translateY(shake.y);
+  if (fx.fovPunch > 0) {
+    camera.cam.fov = store.num('camLens') + fx.fovPunch;
+    camera.cam.updateProjectionMatrix();
+  }
   renderer.render(scene, camera.cam);
   requestAnimationFrame(frame);
 }
@@ -239,16 +341,26 @@ requestAnimationFrame(frame);
   },
   fps: () => document.getElementById('readout')?.textContent ?? '',
   set: (key: string, value: unknown) => store.set(key, value),
-  /** Put the soldier somewhere, at rest (for the scripted checks only). */
-  dummies: () => dummies.map((d) => ({ x: d.state.x, y: d.state.y, z: d.state.z })),
-  /** Put a dummy somewhere, at rest (for the scripted checks only). */
+  dummies: () =>
+    dummies.map((d, i) => ({ x: d.state.x, y: d.state.y, z: d.state.z, health: targets[i].health, down: targets[i].downFor > 0 })),
+  /** Put a dummy somewhere, at rest and at full health (for the scripted checks only). */
   placeDummy: (i: number, x: number, z: number) => {
     Object.assign(dummies[i].state, newMover(x, z));
     dummies[i].prev = { ...dummies[i].state };
+    targets[i].health = store.num('dummyHealth');
+    targets[i].downFor = 0;
   },
+  /** Put the soldier somewhere, at rest (for the scripted checks only). */
   place: (x: number, z: number, y = 0) => {
     Object.assign(cur, newMover(x, z), { y });
     prev = { ...cur };
     peakY = y;
+  },
+  gun: () => ({ gun: W.gun, ...W.guns[W.gun], shots: shotsFired }),
+  /** Where a world point is on the page, in CSS pixels. */
+  screenOf: (x: number, y: number, z: number) => {
+    const v = new THREE.Vector3(x, y, z).project(camera.cam);
+    const r = renderer.domElement.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
   },
 };

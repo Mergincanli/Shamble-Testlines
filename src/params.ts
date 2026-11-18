@@ -2,7 +2,18 @@
 // Export. Start values are the old game's numbers (docs/LEGACY_TUNING.md and the old code's described
 // behaviour) unless the source line says otherwise. None of them is a decision.
 
-export type GroupId = 'sim' | 'soldier' | 'move' | 'jump' | 'stamina' | 'push' | 'camera' | 'framing' | 'mouse';
+export type GroupId =
+  | 'sim'
+  | 'soldier'
+  | 'move'
+  | 'jump'
+  | 'stamina'
+  | 'push'
+  | 'smg'
+  | 'rifle'
+  | 'camera'
+  | 'framing'
+  | 'mouse';
 
 export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: string }[] = [
   { id: 'sim', title: 'Simulation', open: true, exportName: 'simulation' },
@@ -11,6 +22,8 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'jump', title: 'Jump', open: true, exportName: 'jump' },
   { id: 'stamina', title: 'Sprint stamina', open: false, exportName: 'stamina' },
   { id: 'push', title: 'Dummies and soft pushing', open: true, exportName: 'pushing' },
+  { id: 'smg', title: 'SMG (key 1)', open: true, exportName: 'smg' },
+  { id: 'rifle', title: 'Rifle (key 2)', open: false, exportName: 'rifle' },
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
   { id: 'mouse', title: 'Mouse', open: true, exportName: 'mouse' },
@@ -69,6 +82,106 @@ export function restViewAngle(v: Values): number {
 
 /** The old game's smoothing rate T.accel = 14 per second, as a time to cover 90 % of the change. */
 const LEGACY_SMOOTH_TIME = LN10 / 14;
+
+
+// The guns: start values from the old game's WEAPONS table (the SMG is WEAPONS.shabzon, the rifle WEAPONS.amk).
+interface GunStart {
+  name: string;
+  legacy: string;
+  interval: number;
+  damage: number;
+  mag: number;
+  reload: number;
+  recoil: number;
+  spreadHip: number;
+  spreadPerShot: number;
+  spreadMax: number;
+  spreadRecover: number;
+  range: number;
+  sprintDelay: number;
+}
+
+function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
+  const deg = (rad: number) => ((rad * 180) / Math.PI).toFixed(2);
+  const k = (s: string) => id + s;
+  const out: Param[] = [
+    {
+      kind: 'range', key: k('Interval'), group: id, label: 'Time between shots', exportKey: 'fire_interval_s', unit: 's',
+      min: 0.03, max: 1.5, step: 0.001, start: g.interval, digits: 3,
+      note: (v) => `= ${Math.round(60 / (v[k('Interval')] as number))} rounds a minute`,
+      source: `Old game ${g.legacy}.fireInterval.`, legacy: `${g.legacy}.fireInterval`,
+    },
+    {
+      kind: 'range', key: k('Damage'), group: id, label: 'Damage per hit', exportKey: 'damage', unit: '',
+      min: 1, max: 150, step: 1, start: g.damage, digits: 0,
+      note: (v) => `${Math.ceil((v.dummyHealth as number) / (v[k('Damage')] as number))} hits to drop a dummy (up close)`,
+      source: `Old game ${g.legacy}.damage.`, legacy: `${g.legacy}.damage`,
+    },
+    {
+      kind: 'range', key: k('Mag'), group: id, label: 'Magazine', exportKey: 'magazine', unit: 'rounds',
+      min: 1, max: 100, step: 1, start: g.mag, digits: 0,
+      source: `Old game ${g.legacy}.mag.`, legacy: `${g.legacy}.mag`,
+    },
+    {
+      kind: 'range', key: k('Reload'), group: id, label: 'Reload time', exportKey: 'reload_time_s', unit: 's',
+      min: 0.2, max: 8, step: 0.05, start: g.reload, digits: 2,
+      source: `Old game ${g.legacy}.reload. R reloads; an empty magazine reloads by itself.`, legacy: `${g.legacy}.reload`,
+    },
+    {
+      kind: 'range', key: k('Recoil'), group: id, label: 'Recoil (view kick)', exportKey: 'recoil_view_kick', unit: '',
+      min: 0, max: 6, step: 0.05, start: g.recoil, digits: 2,
+      source: `Old game ${g.legacy}.recoil. As in the old game it kicks the view: a camera shake and a small zoom punch per shot. Accuracy is the spread below.`,
+      legacy: `${g.legacy}.recoil`,
+    },
+    {
+      kind: 'range', key: k('SpreadHip'), group: id, label: 'Spread at rest', exportKey: 'spread_rest_rad', unit: 'rad',
+      min: 0, max: 0.3, step: 0.001, start: g.spreadHip, digits: 3,
+      note: (v) => `±${deg(v[k('SpreadHip')] as number)}° to each side`,
+      source: `Old game ${g.legacy}.spreadHip: each shot leaves up to this angle to either side of the aim.`, legacy: `${g.legacy}.spreadHip`,
+    },
+    {
+      kind: 'range', key: k('SpreadPerShot'), group: id, label: 'Spread added per shot', exportKey: 'spread_per_shot_rad', unit: 'rad',
+      min: 0, max: 0.05, step: 0.0005, start: g.spreadPerShot, digits: 4,
+      source: `Old game ${g.legacy}.spreadPerShot.`, legacy: `${g.legacy}.spreadPerShot`,
+    },
+    {
+      kind: 'range', key: k('SpreadMax'), group: id, label: 'Spread at most', exportKey: 'spread_max_rad', unit: 'rad',
+      min: 0, max: 0.4, step: 0.005, start: g.spreadMax, digits: 3,
+      note: (v) => `±${deg(v[k('SpreadMax')] as number)}°`,
+      source: `Old game ${g.legacy}.spreadMax.`, legacy: `${g.legacy}.spreadMax`,
+    },
+    {
+      kind: 'range', key: k('SpreadRecover'), group: id, label: 'Spread recovery', exportKey: 'spread_recovery_rad_per_s', unit: 'rad/s',
+      min: 0, max: 5, step: 0.05, start: g.spreadRecover, digits: 2,
+      source: `Old game ${g.legacy}.spreadDecay: the spread falls back toward rest by this much each second.`, legacy: `${g.legacy}.spreadDecay`,
+    },
+    {
+      kind: 'range', key: k('Range'), group: id, label: 'Range', exportKey: 'range_m', unit: 'm',
+      min: 5, max: 300, step: 1, start: g.range, digits: 0,
+      source: `Old game ${g.legacy}.range.`, legacy: `${g.legacy}.range`,
+    },
+    {
+      kind: 'range', key: k('SprintDelay'), group: id, label: 'Sprint-to-fire delay', exportKey: 'sprint_to_fire_delay_s', unit: 's',
+      min: 0, max: 1, step: 0.01, start: g.sprintDelay, digits: 2,
+      source: 'No old number. LOOP_V2 §7: every gun gets a short sprint-to-fire delay, longer for heavy guns. Firing stops the sprint; the first shot waits this long after it ends.',
+    },
+  ];
+  return out;
+}
+
+export const GUN_PARAMS: Param[] = [
+  ...gunParams('smg', {
+    name: 'SMG', legacy: 'WEAPONS.shabzon', interval: 0.072, damage: 8, mag: 36, reload: 1.9, recoil: 0.3,
+    spreadHip: 0.075, spreadPerShot: 0.005, spreadMax: 0.16, spreadRecover: 0.7, range: 55, sprintDelay: 0.15,
+  }),
+  { kind: 'range', key: 'smgFalloffStart', group: 'smg', label: 'Damage falls off from', exportKey: 'falloff_start_m', unit: 'm', min: 0, max: 150, step: 1, start: 15, digits: 0, source: 'Old game WEAPONS.shabzon.falloffStart.', legacy: 'WEAPONS.shabzon.falloffStart' },
+  { kind: 'range', key: 'smgFalloffEnd', group: 'smg', label: 'Damage falls off to', exportKey: 'falloff_end_m', unit: 'm', min: 1, max: 300, step: 1, start: 35, digits: 0, source: 'Old game WEAPONS.shabzon.falloffEnd.', legacy: 'WEAPONS.shabzon.falloffEnd' },
+  { kind: 'range', key: 'smgFalloffMin', group: 'smg', label: 'Damage left at the far end', exportKey: 'falloff_min_share', unit: '×', min: 0, max: 1, step: 0.01, start: 0.2, digits: 2, source: 'Old game WEAPONS.shabzon.falloffMin.', legacy: 'WEAPONS.shabzon.falloffMin' },
+  ...gunParams('rifle', {
+    name: 'Rifle', legacy: 'WEAPONS.amk', interval: 0.2, damage: 34, mag: 1, reload: 3.5, recoil: 2,
+    spreadHip: 0.022, spreadPerShot: 0, spreadMax: 0.05, spreadRecover: 0.3, range: 300, sprintDelay: 0.25,
+  }),
+];
 
 export const PARAMS: Param[] = [
   // Simulation
@@ -361,6 +474,40 @@ export const PARAMS: Param[] = [
     digits: 2,
     source: 'Starts at the body radius used for walls (half the stand-in\'s width over the hands, rounded up).',
   },
+
+  {
+    kind: 'range',
+    key: 'dummyHealth',
+    group: 'push',
+    label: 'Dummy health',
+    exportKey: 'dummy_health',
+    unit: '',
+    min: 1,
+    max: 500,
+    step: 1,
+    start: 100,
+    digits: 0,
+    source: "Old game UNIT_TYPES.conscript.maxHealth (the Conscript's).",
+    legacy: 'UNIT_TYPES.conscript.maxHealth',
+  },
+  {
+    kind: 'range',
+    key: 'dummyDownTime',
+    group: 'push',
+    label: 'A dropped dummy stands again after',
+    exportKey: 'dummy_down_time_s',
+    unit: 's',
+    min: 0.5,
+    max: 20,
+    step: 0.5,
+    start: 4,
+    digits: 1,
+    source: 'Old game T.enemyRespawn.',
+    legacy: 'T.enemyRespawn',
+  },
+
+  // The guns
+  ...GUN_PARAMS,
 
   // Camera
   {
