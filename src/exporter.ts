@@ -46,7 +46,8 @@ export function buildExport(store: Store): string {
     jump_rise_m: round(rise, 3),
     jump_takeoff_speed_m_per_s: round(jumpV, 3),
     jump_airtime_s: round((2 * jumpV) / n('gravity'), 3),
-    camera_angle_from_height_and_distance_deg: round(n('camAngle'), 2),
+    camera_view_angle_at_rest_deg: round(n('camAngle'), 2),
+    camera_angle_to_the_feet_deg: round((Math.atan2(n('camHeight'), Math.max(0.001, n('camBack'))) * 180) / Math.PI, 2),
     camera_straight_distance_m: round(Math.hypot(n('camHeight'), n('camBack')), 2),
   };
 
@@ -114,9 +115,12 @@ export async function copyText(text: string): Promise<boolean> {
     ta.value = text;
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
+    ta.style.userSelect = 'text';
+    ta.style.setProperty('-webkit-user-select', 'text');
     document.body.appendChild(ta);
     ta.select();
-    const ok = document.execCommand('copy');
+    const selected = ta.selectionEnd - ta.selectionStart === text.length;
+    const ok = selected && document.execCommand('copy');
     ta.remove();
     return ok;
   } catch {

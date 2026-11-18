@@ -59,6 +59,13 @@ export type Values = Record<string, Value>;
 
 const LN10 = Math.log(10);
 
+/** The camera's angle above the ground at rest: toward the look point, which sits ahead of and above the feet. */
+export function restViewAngle(v: Values): number {
+  const ahead = Math.min(v.lookMax as number, Math.max(v.lookMin as number, v.lookBase as number));
+  const h = (v.camHeight as number) - 1.2;
+  return (Math.atan2(Math.max(0.001, h), Math.max(0.001, (v.camBack as number) + ahead)) * 180) / Math.PI;
+}
+
 /** The old game's smoothing rate T.accel = 14 per second, as a time to cover 90 % of the change. */
 const LEGACY_SMOOTH_TIME = LN10 / 14;
 
@@ -356,9 +363,9 @@ export const PARAMS: Param[] = [
     step: 0.5,
     start: null,
     digits: 1,
-    auto: (v) => (Math.atan2(v.camHeight as number, Math.max(0.001, v.camBack as number)) * 180) / Math.PI,
+    auto: (v) => restViewAngle(v),
     source:
-      "Auto: follows height and distance (40 / 56.6 = 35.3°). Moving it is the old panel's pitch override: it moves the point the camera looks at, not the camera. Reset returns to auto.",
+      "Auto: the view's real angle at rest, which follows height, distance and the look-ahead (32.0° at the start values: the camera sits 40 m up and 56.6 m back, so 35.3° to the feet, but it looks at a point 5.5 m ahead and 1.2 m up). Moving it is the old panel's pitch override: it moves the point the camera looks at, not the camera, and the forward look-ahead then has no effect. Reset returns to auto.",
   },
   {
     kind: 'range',

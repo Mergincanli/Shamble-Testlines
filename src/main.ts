@@ -64,8 +64,8 @@ store.onChange((key) => {
   if (key === null || key === 'camTurn') camera.resetTurn();
 });
 
-input.onKey((code) => {
-  if (code === 'Backquote') panel.toggle();
+input.onKey((code, key) => {
+  if (code === 'Backquote' || key === '`' || code === 'IntlBackslash') panel.toggle();
   if (code === 'Digit1') store.set('gun', 'smg');
   if (code === 'Digit2') store.set('gun', 'rifle');
 });
@@ -134,7 +134,8 @@ function frame(now: number) {
 
   const turn = input.takeTurn();
   if (turn) camera.turnBy(turn, store);
-  camera.update(dt, renderPos, input.ndcX, input.ndcY, store);
+  // Off the view (on the panel, outside the window) the cursor stops pushing the camera; the aim stays.
+  camera.update(dt, renderPos, input.over ? input.ndcX : 0, input.over ? input.ndcY : 0, store);
 
   // Face the cursor.
   camera.cam.updateMatrixWorld();

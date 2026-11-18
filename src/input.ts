@@ -11,9 +11,11 @@ export class Input {
   ndcX = 0;
   ndcY = 0;
   buttons = 0;
+  /** False while the cursor is off the view (over the panel or outside the window). */
+  over = true;
   private turnDX = 0;
   private lastX: number | null = null;
-  private onKeyHandlers: ((code: string) => void)[] = [];
+  private onKeyHandlers: ((code: string, key: string) => void)[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     const typing = () => {
@@ -25,7 +27,7 @@ export class Input {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
       if (!e.repeat) {
         this.pressed.add(e.code);
-        for (const h of this.onKeyHandlers) h(e.code);
+        for (const h of this.onKeyHandlers) h(e.code, e.key);
       }
       this.keys.add(e.code);
     });
@@ -65,6 +67,13 @@ export class Input {
         // ignore
       }
     });
+    canvas.addEventListener('pointerenter', () => {
+      this.over = true;
+    });
+    canvas.addEventListener('pointerleave', () => {
+      // While a button is held the pointer stays captured, so a drag past the edge still counts as on the view.
+      if (!this.buttons) this.over = false;
+    });
     canvas.addEventListener('pointerup', (e) => {
       this.buttons = e.buttons;
     });
@@ -97,7 +106,7 @@ export class Input {
     return d;
   }
 
-  onKey(fn: (code: string) => void) {
+  onKey(fn: (code: string, key: string) => void) {
     this.onKeyHandlers.push(fn);
   }
 }

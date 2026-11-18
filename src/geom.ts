@@ -15,12 +15,16 @@ export function rectRing(w: number, d: number, cx = 0, cz = 0): Ring {
   ];
 }
 
-/** Regular n-gon with diameters w (first axis) and d (second axis). */
+/**
+ * Regular n-gon whose flat sides face the axes and measure w (first axis) and d (second axis) across, so an
+ * 8-sided part "0.235 across" is 0.235 wide.
+ */
 export function ngonRing(n: number, w: number, d: number, cx = 0, cz = 0): Ring {
   const r: Ring = [];
+  const k = 1 / Math.cos(Math.PI / n);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + Math.PI / n;
-    r.push([cx + (Math.cos(a) * w) / 2, cz + (Math.sin(a) * d) / 2]);
+    r.push([cx + (Math.cos(a) * w * k) / 2, cz + (Math.sin(a) * d * k) / 2]);
   }
   return r;
 }

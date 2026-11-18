@@ -155,6 +155,35 @@ async function run(browserName) {
     v = await T(() => window.__testlines.values().walkSpeed);
     ok('the reset puts it back', v === 6.3, String(v));
 
+    // A value box left untouched keeps the exact value; Escape cancels what was typed.
+    const rowOf = async (label) => {
+      const i = await page.$$eval(rowSel, (rs, l) => rs.findIndex((r) => r.querySelector('.p-label')?.textContent === l), label);
+      return (await page.$$(rowSel))[i];
+    };
+    const accRow = await rowOf('Speed-up time (to 90 %)');
+    await (await accRow.$('.p-val')).click();
+    await page.mouse.click(500, 450);
+    v = await T(() => window.__testlines.values().accelTime);
+    ok('an untouched value box keeps the exact value', Math.abs(v - Math.log(10) / 14) < 1e-12, String(v));
+    const walkRow = await rowOf('Walk speed');
+    await (await walkRow.$('.p-val')).click({ clickCount: 3 });
+    await page.keyboard.type('11');
+    await page.keyboard.press('Escape');
+    await page.mouse.click(500, 450);
+    v = await T(() => window.__testlines.values().walkSpeed);
+    ok('Escape cancels a typed value', v === 6.3, String(v));
+    const angRow = await rowOf('Angle above the ground');
+    const angText = await (await angRow.$('.p-val')).evaluate((e) => e.value);
+    ok('the angle shows the real view angle as auto', angText === 'auto 32.0', angText);
+
+    // At a high gravity the top of the jump falls between steps: the reach must still hold at 30 steps.
+    await T(() => window.__testlines.set('gravity', 50));
+    // The turn check above left the camera turned; setting the turn puts the live turn back to zero.
+    await T(() => window.__testlines.set('camTurn', 45));
+    await page.mouse.click(500, 450);
+    await ledge(-8, 'gravity 50: the 3.07 m ledge is still gained at 30 steps', 3.07);
+    await T(() => window.__testlines.set('gravity', 24));
+
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
     const b60 = (await page.$$('#panel .p-segbtn'))[seg.indexOf('60')];

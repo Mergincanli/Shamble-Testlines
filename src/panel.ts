@@ -204,9 +204,21 @@ export class Panel {
       note.hidden = !n;
     };
     slider.addEventListener('input', () => this.store.set(p.key, parseFloat(slider.value)));
+    // The box saves only what was typed into it: leaving it untouched keeps the exact value, not its rounding.
+    let edited = false;
+    val.addEventListener('input', () => {
+      edited = true;
+    });
     const commit = () => {
-      const n = parseFloat(val.value.replace(',', '.').replace(/^auto\s*/, ''));
-      if (Number.isFinite(n)) this.store.set(p.key, n);
+      if (edited) {
+        const text = val.value.trim().toLowerCase();
+        if (p.auto && (text === '' || text.startsWith('auto'))) this.store.set(p.key, null);
+        else {
+          const n = parseFloat(text.replace(',', '.'));
+          if (Number.isFinite(n)) this.store.set(p.key, n);
+        }
+      }
+      edited = false;
       refresh();
     };
     val.addEventListener('keydown', (e) => {
@@ -214,7 +226,7 @@ export class Panel {
         commit();
         val.blur();
       } else if (e.key === 'Escape') {
-        refresh();
+        edited = false;
         val.blur();
       }
       e.stopPropagation();

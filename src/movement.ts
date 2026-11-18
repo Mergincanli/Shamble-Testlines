@@ -16,6 +16,9 @@ export interface MoverState {
   stamina: number;
   staminaLocked: boolean;
   sprinting: boolean;
+  /** What is left of a step-up's pull onto the block, spread over a few steps so it does not lurch. */
+  pullX: number;
+  pullZ: number;
 }
 
 export interface MoveInput {
@@ -27,11 +30,27 @@ export interface MoveInput {
 }
 
 export function newMover(x = 0, z = 0): MoverState {
-  return { x, y: 0, z, vx: 0, vz: 0, vy: 0, grounded: true, stamina: 1, staminaLocked: false, sprinting: false };
+  return {
+    x,
+    y: 0,
+    z,
+    vx: 0,
+    vz: 0,
+    vy: 0,
+    grounded: true,
+    stamina: 1,
+    staminaLocked: false,
+    sprinting: false,
+    pullX: 0,
+    pullZ: 0,
+  };
 }
 
 /** The soldier stands on what is under his feet: a small circle, so he never stands on air past an edge. */
 const FOOT_RADIUS = 0.15;
+/** A step-up's pull onto the block: this share of what is left each step, all of it once less than PULL_MIN. */
+const PULL_SHARE = 0.5;
+const PULL_MIN = 0.03;
 /** Small drops (going down a ramp) keep the feet on the ground instead of a string of tiny falls. */
 const SNAP_DOWN = 0.2;
 const LN10 = Math.log(10);
@@ -82,15 +101,21 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
 
   // Vertical: the exact arc for this step, so the jump's height does not depend on the step rate.
   const wasGrounded = s.grounded;
+  // Feet height for this step's wall and step-up tests: when the top of the arc falls between two steps, use
+  // the top itself, so the reach does not depend on the step rate or the gravity.
+  let testFeet = s.y;
   if (!s.grounded) {
+    const y0 = s.y;
+    const vy0 = s.vy;
     s.y += s.vy * dt - 0.5 * g * dt * dt;
     s.vy -= g * dt;
+    testFeet = vy0 > 0 && s.vy <= 0 ? Math.max(s.y, y0 + (vy0 * vy0) / (2 * g)) : s.y;
   }
   // Move, then leave any block that is too tall from the new feet height (after this step's arc, so a
   // ledge stops being a wall at the very step the jump reaches it).
   const wantX = s.x + s.vx * dt;
   const wantZ = s.z + s.vz * dt;
-  const [rx, rz] = resolveWalls(wantX, wantZ, r, s.y, stepUp);
+  const [rx, rz] = resolveWalls(wantX, wantZ, r, testFeet, stepUp);
   // Lose the speed that went into a wall, so the soldier slides along it instead of pressing into it.
   const px = rx - wantX;
   const pz = rz - wantZ;
@@ -105,24 +130,40 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
   s.x = rx;
   s.z = rz;
 
-  // Step up onto a block the body meets, in the air too (that is how a jump gains a ledge): rise to its top and
-  // move the feet onto it.
+  // Step up onto a block the body meets, in the air too (that is how a jump gains a ledge): rise to its top, and
+  // pull the feet onto it over the next few steps.
   const rs = Math.min(FOOT_RADIUS, r);
-  const up = stepUpTarget(s.x, s.z, r, s.y, stepUp, s.vx, s.vz);
-  if (up) {
+  const up = stepUpTarget(s.x, s.z, r, testFeet, stepUp, s.vx, s.vz);
+  if (up && up.top > s.y) {
     s.y = up.top;
     s.vy = 0;
     s.grounded = true;
     const dx = up.qx - s.x;
     const dz = up.qz - s.z;
     const d = Math.hypot(dx, dz);
-    const inside = rs * 0.9;
-    if (d > inside) {
-      s.x += (dx / d) * (d - inside);
-      s.z += (dz / d) * (d - inside);
+    const need = d - rs * 0.9;
+    if (need > 0) {
+      s.pullX = (dx / d) * need;
+      s.pullZ = (dz / d) * need;
     }
   }
-  const surf = surfaceAt(s.x, s.z, rs, s.y, stepUp);
+  // Walking back the other way drops what is left of the pull.
+  if ((s.pullX || s.pullZ) && s.pullX * s.vx + s.pullZ * s.vz < 0) {
+    s.pullX = 0;
+    s.pullZ = 0;
+  }
+  const pulling = s.pullX !== 0 || s.pullZ !== 0;
+  if (pulling) {
+    const left = Math.hypot(s.pullX, s.pullZ);
+    const take = left < PULL_MIN ? 1 : PULL_SHARE;
+    s.x += s.pullX * take;
+    s.z += s.pullZ * take;
+    s.pullX *= 1 - take;
+    s.pullZ *= 1 - take;
+    if (take === 1) s.pullX = s.pullZ = 0;
+  }
+  // While a pull is under way the body stands on the block; after that, only the feet do.
+  const surf = surfaceAt(s.x, s.z, pulling ? r : rs, s.y, stepUp);
   if (s.y <= surf) {
     s.y = surf;
     s.vy = 0;

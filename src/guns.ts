@@ -69,14 +69,15 @@ function smg(): GunModel {
 function rifle(): GunModel {
   const bore = 0.08;
   const parts: THREE.BufferGeometry[] = [];
-  // Butt: 0.13 thick at its end, 0.075 at the wrist.
-  parts.push(alongZ(-0.259, -0.03, { w: 0.05, h: 0.13, cy: 0.035 }, { w: 0.048, h: 0.075, cy: 0.0475 }));
-  // Wrist and grip: 0.075 thick.
-  parts.push(alongZ(-0.03, 0.06, { w: 0.048, h: 0.075, cy: 0.0475 }, { w: 0.05, h: 0.07, cy: 0.055 }));
+  // Butt: 0.13 thick at its end, its top edge 0.03 above the grip (the rifle file's 1.39 m in the aiming pose,
+  // build plan appendix A9), so the stock drops below the bore line as on a real rifle; 0.075 at the wrist.
+  parts.push(alongZ(-0.259, -0.03, { w: 0.06, h: 0.13, cy: -0.035 }, { w: 0.058, h: 0.075, cy: 0.0075 }));
+  // Wrist and grip: 0.075 thick, rising to the receiver.
+  parts.push(alongZ(-0.03, 0.06, { w: 0.058, h: 0.075, cy: 0.0075 }, { w: 0.06, h: 0.08, cy: 0.035 }));
   // Receiver: steps down from 0.07 to 0.06.
-  parts.push(alongZ(0.06, 0.3, { w: 0.05, h: 0.07, cy: 0.055 }, { w: 0.05, h: 0.06, cy: 0.06 }));
+  parts.push(alongZ(0.06, 0.3, { w: 0.06, h: 0.07, cy: 0.055 }, { w: 0.06, h: 0.06, cy: 0.06 }));
   // Fore-end: 0.055 thick, ending short of the muzzle.
-  parts.push(alongZ(0.3, 0.62, { w: 0.048, h: 0.055, cy: 0.06 }, { w: 0.044, h: 0.05, cy: 0.062 }));
+  parts.push(alongZ(0.3, 0.62, { w: 0.056, h: 0.055, cy: 0.06 }, { w: 0.05, h: 0.05, cy: 0.062 }));
   // Barrel: 0.03 across, on the bore line to the muzzle.
   parts.push(alongZ(0.3, 0.864, { w: 0.03, h: 0.03, cy: bore }, { w: 0.03, h: 0.03, cy: bore }, true));
   // Front sight post and a bolt handle to the right (bolt action).

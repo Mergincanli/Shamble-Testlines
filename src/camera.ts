@@ -48,11 +48,8 @@ export class FollowCamera {
   }
 
   update(dt: number, target: THREE.Vector3, ndcX: number, ndcY: number, P: Store) {
-    // Turn, smoothed along the short way round.
-    let dy = this.yawTarget - this.yaw;
-    while (dy > Math.PI) dy -= Math.PI * 2;
-    while (dy < -Math.PI) dy += Math.PI * 2;
-    this.yaw += dy * ease(P.num('turnRate'), dt);
+    // Turn, smoothed. Both angles keep counting past a full turn, so the plain difference is the right way round.
+    this.yaw += (this.yawTarget - this.yaw) * ease(P.num('turnRate'), dt);
     const { fwdX, fwdZ, rightX, rightZ } = this.axes(P);
 
     const kp = ease(P.num('pushRate'), dt);
