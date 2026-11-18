@@ -98,6 +98,16 @@ async function run(browserName) {
     await ledge(-8, 'jump gains the 3.07 m ledge (at the reach)', 3.07);
     await ledge(-14, 'jump does not gain the 3.5 m ledge', 0);
 
+    // Past an edge: the centre 0.25 m beyond the 2.5 m ledge (inside the body, outside the feet) falls.
+    await T(() => window.__testlines.place(-11.75, -2, 2.5));
+    await sleep(900);
+    const off = await T(() => window.__testlines.state());
+    ok('does not stand on air past an edge', off.y < 0.01, `feet ${off.y.toFixed(3)}`);
+    await T(() => window.__testlines.place(-12.1, -2, 2.5));
+    await sleep(600);
+    const on = await T(() => window.__testlines.state());
+    ok('stands with the feet just on the edge', Math.abs(on.y - 2.5) < 0.01, `feet ${on.y.toFixed(3)}`);
+
     // Steps: 0.55 walks up, 0.56 does not.
     await T(() => window.__testlines.place(-5, 6));
     await page.keyboard.down('KeyW');

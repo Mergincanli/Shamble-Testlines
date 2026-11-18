@@ -91,6 +91,35 @@ export function surfaceAt(x: number, z: number, r: number, feet: number, stepUp:
 }
 
 /**
+ * Stepping up (or catching a ledge in a jump): the body touches a block whose top is above the feet but no
+ * more than step-up above them, while moving towards it. Returns that top and the block's nearest point, or
+ * null. Taken together with the narrow foot circle that the soldier stands on, this lets him step up as soon
+ * as his body meets the block, without ever standing on air past an edge.
+ */
+export function stepUpTarget(
+  x: number,
+  z: number,
+  r: number,
+  feet: number,
+  stepUp: number,
+  vx: number,
+  vz: number,
+): { top: number; qx: number; qz: number } | null {
+  let best: { top: number; qx: number; qz: number } | null = null;
+  for (const b of BLOCKS) {
+    if (!overlaps(b, x, z, r)) continue;
+    const top = heightNear(b, x, z);
+    if (top <= feet + 1e-6 || top > feet + stepUp + EPS) continue;
+    const qx = Math.min(b.maxX, Math.max(b.minX, x));
+    const qz = Math.min(b.maxZ, Math.max(b.minZ, z));
+    // Moving towards it (or already over it).
+    if ((qx - x) * vx + (qz - z) * vz <= 0 && (qx !== x || qz !== z)) continue;
+    if (!best || top > best.top) best = { top, qx, qz };
+  }
+  return best;
+}
+
+/**
  * Push a body of radius r out of every block too tall to step onto from its feet height. Returns the pushed
  * position. A few passes settle corners where two blocks meet.
  */

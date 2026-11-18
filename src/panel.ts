@@ -110,11 +110,22 @@ export class Panel {
     );
     this.root.append(scroll);
 
-    // Keep the game's keys away from the panel's controls once the mouse lets go.
-    this.root.addEventListener('pointerup', (e) => {
+    // Keep the game's keys away from the panel once the mouse lets go: anything that can hold focus (a slider,
+    // a button, a group header, a check box) gives it back, so Space jumps instead of pressing it. Only the
+    // value fields and the Export text keep focus, for typing.
+    this.root.addEventListener('pointerup', () => {
+      setTimeout(() => {
+        const a = document.activeElement as HTMLElement | null;
+        if (!a || !this.root.contains(a)) return;
+        if (a instanceof HTMLTextAreaElement || (a instanceof HTMLInputElement && a.type === 'text')) return;
+        a.blur();
+      }, 0);
+    });
+    this.root.addEventListener('keydown', (e) => {
+      // A focused header or check box would toggle on Space or Enter: never let the game's keys do that.
       const t = e.target as HTMLElement;
-      if (t instanceof HTMLInputElement && (t.type === 'range' || t.type === 'checkbox')) t.blur();
-      if (t instanceof HTMLButtonElement) t.blur();
+      if (t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.type === 'text')) return;
+      if (e.code === 'Space' || e.code === 'Enter') e.preventDefault();
     });
 
     store.onChange(() => this.refresh());

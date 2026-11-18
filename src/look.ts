@@ -33,8 +33,11 @@ export const UNIFORM: Record<Faction, { coat: string; top: string; trim: string;
  * ambient light carries the shadow colour and the sun adds the difference on top.
  */
 function makeGradient(): THREE.DataTexture {
-  // dot(N, L) from -1 to 1 maps to 0..1 across 8 texels: the first half is shade, then one middle texel.
-  const data = new Uint8Array([0, 0, 0, 0, 128, 255, 255, 255]);
+  // dot(N, L) from -1 to 1 maps to 0..1 across 20 texels. Facing away (dot < 0): shade. Facing the sun at a
+  // slant (0 <= dot < 0.7): the middle step. Facing it squarely (dot >= 0.7, which includes flat ground and
+  // the tops of blocks under this sun): full sun. So the three faces of a block seen from above read apart.
+  const data = new Uint8Array(20);
+  for (let i = 0; i < 20; i++) data[i] = i < 10 ? 0 : i < 17 ? 128 : 255;
   const t = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
   t.minFilter = THREE.NearestFilter;
   t.magFilter = THREE.NearestFilter;

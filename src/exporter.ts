@@ -46,7 +46,7 @@ export function buildExport(store: Store): string {
     jump_rise_m: round(rise, 3),
     jump_takeoff_speed_m_per_s: round(jumpV, 3),
     jump_airtime_s: round((2 * jumpV) / n('gravity'), 3),
-    camera_angle_deg: round(n('camAngle'), 2),
+    camera_angle_from_height_and_distance_deg: round(n('camAngle'), 2),
     camera_straight_distance_m: round(Math.hypot(n('camHeight'), n('camBack')), 2),
   };
 

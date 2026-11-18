@@ -12,6 +12,7 @@ export class Input {
   ndcY = 0;
   buttons = 0;
   private turnDX = 0;
+  private lastX: number | null = null;
   private onKeyHandlers: ((code: string) => void)[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
@@ -48,13 +49,16 @@ export class Input {
       this.ndcY = -((e.clientY - r.top) / r.height) * 2 + 1;
       // Chorded buttons (a second button pressed while one is held) arrive as moves, not downs.
       this.buttons = e.buttons;
-      if (this.buttons & 4) this.turnDX += e.movementX || 0;
+      // The turn is measured from the cursor's own positions, which every browser reports the same way.
+      if (this.buttons & 4 && this.lastX !== null) this.turnDX += e.clientX - this.lastX;
+      this.lastX = e.clientX;
     });
     canvas.addEventListener('pointerdown', (e) => {
       // Middle button: no autoscroll. Any button: the canvas takes focus away from panel controls.
       e.preventDefault();
       (document.activeElement as HTMLElement | null)?.blur?.();
       this.buttons = e.buttons;
+      this.lastX = e.clientX;
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {

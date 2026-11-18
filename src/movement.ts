@@ -2,7 +2,7 @@
 // and described behaviour: speed eases toward the wanted speed (one rate to speed up, one to stop), sprint
 // drains stamina, the jump starts from the speed that gives the chosen reach, and blocks no taller than the
 // step-up are walked onto, on the ground and in the air.
-import { resolveWalls, surfaceAt } from './yard';
+import { resolveWalls, stepUpTarget, surfaceAt } from './yard';
 import type { Store } from './params';
 
 export interface MoverState {
@@ -30,6 +30,8 @@ export function newMover(x = 0, z = 0): MoverState {
   return { x, y: 0, z, vx: 0, vz: 0, vy: 0, grounded: true, stamina: 1, staminaLocked: false, sprinting: false };
 }
 
+/** The soldier stands on what is under his feet: a small circle, so he never stands on air past an edge. */
+const FOOT_RADIUS = 0.15;
 /** Small drops (going down a ramp) keep the feet on the ground instead of a string of tiny falls. */
 const SNAP_DOWN = 0.2;
 const LN10 = Math.log(10);
@@ -103,8 +105,24 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
   s.x = rx;
   s.z = rz;
 
-  // Any block within step-up of the feet is stood on, in the air too: that is how a jump gains a ledge.
-  const surf = surfaceAt(s.x, s.z, r, s.y, stepUp);
+  // Step up onto a block the body meets, in the air too (that is how a jump gains a ledge): rise to its top and
+  // move the feet onto it.
+  const rs = Math.min(FOOT_RADIUS, r);
+  const up = stepUpTarget(s.x, s.z, r, s.y, stepUp, s.vx, s.vz);
+  if (up) {
+    s.y = up.top;
+    s.vy = 0;
+    s.grounded = true;
+    const dx = up.qx - s.x;
+    const dz = up.qz - s.z;
+    const d = Math.hypot(dx, dz);
+    const inside = rs * 0.9;
+    if (d > inside) {
+      s.x += (dx / d) * (d - inside);
+      s.z += (dz / d) * (d - inside);
+    }
+  }
+  const surf = surfaceAt(s.x, s.z, rs, s.y, stepUp);
   if (s.y <= surf) {
     s.y = surf;
     s.vy = 0;
