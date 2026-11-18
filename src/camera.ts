@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import type { Store } from './params';
 
 const ease = (rate: number, dt: number) => 1 - Math.exp(-rate * dt);
+/** How close to the edge of the view (in screen units, 1 = the edge) the aiming camera may push the soldier. */
+const VIEW_MARGIN = 0.92;
 
 /** 0 inside the dead zone, then a smooth rise to 1 at the screen edge. */
 function deadZonePush(n: number, dz: number): number {
@@ -103,8 +105,37 @@ export class FollowCamera {
       }
     }
 
-    // The camera's reaction to aiming down sights (old game T.adsCam).
+    // The camera's reaction to aiming down sights (old game T.adsCam). Both reactions keep the soldier in view:
+    // a trial camera is tested at the full reaction, and if the soldier would leave the screen the reaction is
+    // halved again and again (bisection) to the largest share that keeps him in.
     const mode = P.get('adsCam');
+    const trial = this.panCam;
+    trial.fov = P.num('camLens');
+    trial.aspect = this.cam.aspect;
+    trial.updateProjectionMatrix();
+    /** The soldier's feet and head are inside the view seen from (cx, cy, cz) looking at (lx, ly, lz). */
+    const soldierInView = (cx: number, cy: number, cz: number, lx: number, ly: number, lz: number) => {
+      trial.position.set(cx, cy, cz);
+      trial.lookAt(lx, ly, lz);
+      trial.updateMatrixWorld();
+      for (const up of [0, 1.8]) {
+        this.probe.set(target.x, target.y + up, target.z).project(trial);
+        if (Math.abs(this.probe.x) > VIEW_MARGIN || Math.abs(this.probe.y) > VIEW_MARGIN) return false;
+      }
+      return true;
+    };
+    /** The largest share (0..1) of a reaction for which `ok` holds, assuming none of it always does. */
+    const largestShare = (ok: (share: number) => boolean) => {
+      if (ok(1)) return 1;
+      let lo = 0;
+      let hi = 1;
+      for (let i = 0; i < 12; i++) {
+        const mid = (lo + hi) / 2;
+        if (ok(mid)) lo = mid;
+        else hi = mid;
+      }
+      return lo;
+    };
     if (this.adsK > 0.001 && mode === 'pitch') {
       // Flatten: tip the view toward the point the cursor marks in the resting view (not the tipped one, which
       // would chase itself), no flatter than the floor angle; the camera stays put.
@@ -112,14 +143,10 @@ export class FollowCamera {
       const dx = this.lookT.x - this.desired.x;
       const dz = this.lookT.z - this.desired.z;
       const dh = Math.hypot(dx, dz);
-      const rest = this.panCam;
-      rest.fov = P.num('camLens');
-      rest.aspect = this.cam.aspect;
-      rest.updateProjectionMatrix();
-      rest.position.copy(this.desired);
-      rest.lookAt(this.lookT);
-      rest.updateMatrixWorld();
-      this.ray.setFromCamera(this.ndc.set(ndcX, ndcY), rest);
+      trial.position.copy(this.desired);
+      trial.lookAt(this.lookT);
+      trial.updateMatrixWorld();
+      this.ray.setFromCamera(this.ndc.set(ndcX, ndcY), trial);
       this.plane.constant = -(target.y + 1.36);
       const hit = this.ray.ray.intersectPlane(this.plane, this.probe);
       if (hit && dh > 0.01 && h > 0.01) {
@@ -127,61 +154,42 @@ export class FollowCamera {
         const toAim = Math.atan2(this.desired.y - hit.y, Math.max(0.01, Math.hypot(hit.x - this.desired.x, hit.z - this.desired.z)));
         const floor = (P.num('adsPitchFloor') * Math.PI) / 180;
         const tgt = Math.max(Math.min(floor, nat), Math.min(nat, toAim));
-        let eff = nat + (tgt - nat) * this.adsK;
-        // Never tip so far that the soldier's feet leave the bottom of the screen: back off toward the resting
-        // angle until they are inside it (the same test Slide uses).
-        const feetOnScreen = (ang: number) => {
+        const full = (tgt - nat) * this.adsK;
+        const lookAtAngle = (ang: number): [number, number] => {
           const f = h / Math.tan(ang) / dh;
-          rest.lookAt(this.desired.x + dx * f, this.lookT.y, this.desired.z + dz * f);
-          rest.updateMatrixWorld();
-          return this.probe.set(target.x, target.y, target.z).project(rest).y >= -0.9;
+          return [this.desired.x + dx * f, this.desired.z + dz * f];
         };
-        if (Math.abs(eff - nat) > 1e-4 && !feetOnScreen(eff)) {
-          let lo = 0;
-          let hi = 1;
-          for (let i = 0; i < 12; i++) {
-            const mid = (lo + hi) / 2;
-            if (feetOnScreen(nat + (eff - nat) * mid)) lo = mid;
-            else hi = mid;
-          }
-          eff = nat + (eff - nat) * lo;
-        }
-        if (Math.abs(eff - nat) > 1e-4) {
-          const f = h / Math.tan(eff) / dh;
-          this.lookT.x = this.desired.x + dx * f;
-          this.lookT.z = this.desired.z + dz * f;
+        if (Math.abs(full) > 1e-4) {
+          const share = largestShare((s) => {
+            const [lx, lz] = lookAtAngle(nat + full * s);
+            return soldierInView(this.desired.x, this.desired.y, this.desired.z, lx, this.lookT.y, lz);
+          });
+          const [lx, lz] = lookAtAngle(nat + full * share);
+          this.lookT.x = lx;
+          this.lookT.z = lz;
         }
       }
     } else if (this.adsK > 0.001 && mode === 'pan') {
-      // Slide: move camera and look point together toward where the cursor pushes, keeping the soldier on screen.
+      // Slide: move the camera and its look point together toward where the cursor pushes, up to the reach.
       const reach = P.num('adsPanMax') * this.adsK;
-      let px = (fwdX * this.pushY + rightX * this.pushX) * reach;
-      let pz = (fwdZ * this.pushY + rightZ * this.pushX) * reach;
-      const cap = P.num('camBack') * 0.7;
-      const pl = Math.hypot(px, pz);
-      if (pl > cap && pl > 0) {
-        px *= cap / pl;
-        pz *= cap / pl;
+      const px = (fwdX * this.pushY + rightX * this.pushX) * reach;
+      const pz = (fwdZ * this.pushY + rightZ * this.pushX) * reach;
+      if (Math.hypot(px, pz) > 1e-4) {
+        const share = largestShare((s) =>
+          soldierInView(
+            this.desired.x + px * s,
+            this.desired.y,
+            this.desired.z + pz * s,
+            this.lookT.x + px * s,
+            this.lookT.y,
+            this.lookT.z + pz * s,
+          ),
+        );
+        this.desired.x += px * share;
+        this.desired.z += pz * share;
+        this.lookT.x += px * share;
+        this.lookT.z += pz * share;
       }
-      const pc = this.panCam;
-      pc.fov = P.num('camLens');
-      pc.aspect = this.cam.aspect;
-      pc.updateProjectionMatrix();
-      for (let i = 0; i < 3; i++) {
-        pc.position.set(this.desired.x + px, this.desired.y, this.desired.z + pz);
-        pc.lookAt(this.lookT.x + px, this.lookT.y, this.lookT.z + pz);
-        pc.updateMatrixWorld();
-        this.probe.set(target.x, target.y + 0.2, target.z).project(pc);
-        const over = Math.max(Math.abs(this.probe.x), Math.abs(this.probe.y)) / 0.9;
-        if (over > 1) {
-          px /= over;
-          pz /= over;
-        } else break;
-      }
-      this.desired.x += px;
-      this.desired.z += pz;
-      this.lookT.x += px;
-      this.lookT.z += pz;
     }
 
     if (!this.started) {
