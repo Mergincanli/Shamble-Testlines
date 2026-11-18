@@ -3,6 +3,8 @@
 import { BUILD, buildExport, copyText } from './exporter';
 import {
   CAMERA_PRESETS,
+  CAMERA_PROFILES,
+  profileActive,
   GROUPS,
   PARAMS,
   type ChoiceParam,
@@ -131,6 +133,8 @@ export class Panel {
     store.onChange(() => this.refresh());
     document.body.append(this.root);
     document.body.classList.add('panel-open');
+    // Light the active profile from the start.
+    this.refresh();
   }
 
   toggle() {
@@ -143,15 +147,28 @@ export class Panel {
   }
 
   private presetRow(): HTMLElement {
-    const row = el('div', 'p-presets');
-    row.append(el('span', 'p-presets-label', 'Presets'));
-    for (const pr of CAMERA_PRESETS) {
-      const b = el('button', 'p-btn p-small', pr.name);
-      b.title = `The old game's ${pr.name} camera: height ${pr.values.camHeight}, distance ${pr.values.camBack}, lens ${pr.values.camLens}°, turn ${pr.values.camTurn}°`;
-      b.addEventListener('click', () => this.store.setMany(pr.values));
-      row.append(b);
-    }
-    return row;
+    const wrap = el('div');
+    const mk = (label: string, list: { name: string; title: string; values: Record<string, unknown> }[]) => {
+      const row = el('div', 'p-presets');
+      row.append(el('span', 'p-presets-label', label));
+      for (const pr of list) {
+        const b = el('button', 'p-btn p-small', pr.name);
+        b.title = pr.title;
+        b.addEventListener('click', () => this.store.setMany(pr.values as never));
+        row.append(b);
+        this.refreshers.push(() => b.classList.toggle('on', profileActive(pr.values as never, this.store.values)));
+      }
+      wrap.append(row);
+    };
+    mk('Profiles', CAMERA_PROFILES);
+    mk(
+      'Old presets',
+      CAMERA_PRESETS.map((p) => ({
+        ...p,
+        title: `The old game's ${p.name} camera, at its own soldier scale: height ${p.values.camHeight}, distance ${p.values.camBack}, lens ${p.values.camLens}°, turn ${p.values.camTurn}°`,
+      })),
+    );
+    return wrap;
   }
 
   private row(p: Param): HTMLElement {

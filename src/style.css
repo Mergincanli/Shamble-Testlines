@@ -243,5 +243,6 @@ html, body {
 .p-segbtn.on { background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 600; }
 .p-check { flex: 1; display: flex; align-items: center; gap: 6px; }
 .p-presets { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 4px 0 6px; }
-.p-presets-label { color: var(--panel-dim); margin-right: 2px; }
+.p-presets-label { color: var(--panel-dim); margin-right: 2px; min-width: 74px; }
+.p-presets .p-btn.on { background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 600; }
 .p-keys { padding: 10px; color: var(--panel-dim); }

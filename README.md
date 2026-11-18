@@ -14,7 +14,17 @@ the panel.
 
 Active reload (simplified, as Slice 1 has it): during a reload, tap R while the bar is inside the gold window and
 the reload ends at once. A miss is a normal reload, with no jam; one try per reload. The window's start and width
-are sliders per gun, as shares of the reload time.
+are sliders per gun, as shares of the reload time. An R press within 0.25 s of a reload starting by itself (the
+rifle after every shot, any gun on its last round) counts as the press that started it, not as the tap.
+
+Camera profiles (in the panel's Camera group; each sets the whole camera, framing included):
+- **Original** (the default): the old game's camera as the owner's screenshot shows it. Fitted to the screenshot's
+  path tiles, it is the old Iso camera (40 m up, 56.6 m back, lens 15°) turned 64° to the grid, with the old
+  soldier 2.94 m tall on screen; it is scaled by 1.80 / 2.94 so the stand-in fills the screen as the old soldier
+  did (24.5 m up, 34.7 m back), with the look-ahead scaled alike.
+- **Indie**: the camera of the owner's indie game, judged by eye from one screenshot: about 50° above the feet,
+  a 35° lens, straight behind, the character about a tenth of the screen's height.
+- The old game's five presets (Classic, Tactical, Iso, Iso+, Foxhole) stay, at the old game's own soldier scale.
 
 What is in it: a test yard with steps, a cover wall, ledges and a ramp; your soldier; eleven dummies walking loops
 in the other two factions' colours, which push softly and never block; the SMG and the rifle, firing at the

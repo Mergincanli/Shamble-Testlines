@@ -18,7 +18,7 @@ export const HIT_HEIGHT = 1.8;
  */
 export const HEIGHT_GRACE = 0.6;
 /** After a reload starts by itself, R presses this soon are not judged as the active-reload tap. */
-export const AUTO_RELOAD_GRACE = 0.15;
+export const AUTO_RELOAD_GRACE = 0.25;
 /** The last part of a dummy's down time is it getting up: not hittable, not walking yet. */
 export const RISE_TIME = 0.35;
 
@@ -38,6 +38,8 @@ export interface GunState {
   active: '' | 'perfect' | 'miss';
   /** Just after a reload starts by itself, an R press counts as the press that started it, not as the tap. */
   graceLeft: number;
+  /** Seconds into the reload when the tap was judged (for the scripted checks). */
+  activeAt: number;
 }
 
 export interface WeaponsState {
@@ -88,6 +90,7 @@ export function newWeapons(P: Store, gun: GunId): WeaponsState {
     reloadTotal: 0,
     active: '',
     graceLeft: 0,
+    activeAt: 0,
   });
   return { gun, guns: { smg: mk('smg'), rifle: mk('rifle') }, queued: false, sinceSprint: 1e9, activeNote: '' };
 }
@@ -224,6 +227,7 @@ export function stepWeapons(
       const to = from + v('ActiveWidth') / 100;
       // A small allowance, so a step that falls exactly on an edge of the window is not lost to rounding.
       g.active = done >= from - 1e-6 && done <= to + 1e-6 ? 'perfect' : 'miss';
+      g.activeAt = done * g.reloadTotal;
       W.activeNote = g.active;
       if (g.active === 'perfect') g.reloadLeft = dt;
     }

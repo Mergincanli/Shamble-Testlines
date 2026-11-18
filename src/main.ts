@@ -11,7 +11,7 @@ import { Input } from './input';
 import { addLights, setInkResolution, type Faction } from './look';
 import { newMover, stepMover, type MoveInput, type MoverState } from './movement';
 import { Panel } from './panel';
-import { Store } from './params';
+import { CAMERA_PRESETS, CAMERA_PROFILES, Store } from './params';
 import { softPush } from './push';
 import { Soldier } from './soldier';
 import {
@@ -380,6 +380,11 @@ requestAnimationFrame(frame);
   },
   fps: () => document.getElementById('readout')?.textContent ?? '',
   set: (key: string, value: unknown) => store.set(key, value),
+  /** Apply a camera profile or old preset by name (for the scripted checks). */
+  preset: (name: string) => {
+    const pr = [...CAMERA_PROFILES, ...CAMERA_PRESETS].find((p) => p.name === name);
+    if (pr) store.setMany(pr.values);
+  },
   dummies: () =>
     dummies.map((d, i) => ({ x: d.state.x, y: d.state.y, z: d.state.z, health: targets[i].health, down: targets[i].downFor > 0 })),
   /** Put a dummy somewhere, at rest and at full health (for the scripted checks only). */

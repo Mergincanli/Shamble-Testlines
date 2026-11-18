@@ -594,7 +594,7 @@ export const PARAMS: Param[] = [
     note: (v) =>
       `to the feet: ${((Math.atan2(v.camHeight as number, Math.max(0.001, v.camBack as number)) * 180) / Math.PI).toFixed(1)}° (height and distance alone)`,
     source:
-      "Auto: the view's real angle at rest, which follows height, distance and the look-ahead (32.0° at the start values: the camera sits 40 m up and 56.6 m back, so 35.3° to the feet, but it looks at a point 5.5 m ahead and 1.2 m up). Moving it is the old panel's pitch override: it moves the point the camera looks at, not the camera, and the forward look-ahead then has no effect. Reset returns to auto.",
+      "Auto: the view's real angle at rest, which follows height, distance and the look-ahead (the camera looks at a point ahead of the soldier and 1.2 m up, so the view is a little flatter than the angle to the feet). Moving it is the old panel's pitch override: it moves the point the camera looks at, not the camera, and the forward look-ahead then has no effect. Reset returns to auto.",
   },
   {
     kind: 'range',
@@ -667,14 +667,98 @@ export const PARAMS: Param[] = [
 
 export const PARAM_BY_KEY: Record<string, Param> = Object.fromEntries(PARAMS.map((p) => [p.key, p]));
 
-/** The old game's five camera presets (CAM_STYLES): height, distance, lens, turn. */
-export const CAMERA_PRESETS: { name: string; values: Values }[] = [
-  { name: 'Classic', values: { camHeight: 24, camBack: 16, camLens: 52, camTurn: 0, camAngle: null } },
-  { name: 'Tactical', values: { camHeight: 15.5, camBack: 10.5, camLens: 52, camTurn: 0, camAngle: null } },
-  { name: 'Iso', values: { camHeight: 40, camBack: 56.6, camLens: 15, camTurn: 45, camAngle: null } },
-  { name: 'Iso+', values: { camHeight: 41.5, camBack: 65.5, camLens: 12, camTurn: 45, camAngle: null } },
-  { name: 'Foxhole', values: { camHeight: 52, camBack: 42, camLens: 18, camTurn: 45, camAngle: null } },
+// ---------------------------------------------------------------------------------------------------------
+// Camera profiles. Each sets the whole camera: height, distance, lens, turn, angle (auto) and the framing.
+
+/** The old game's look-ahead and camera shift (T.lookAhead*, T.look*Range, T.lookSideMax, T.pos*Max). */
+const OLD_FRAMING = {
+  lookBase: 5.5,
+  lookMin: 3.5,
+  lookMax: 8,
+  lookFwdRange: 26,
+  lookBackRange: 16,
+  lookSideMax: 6,
+  posFwdMax: 3.2,
+  posBackMax: 2.2,
+  posSideMax: 2,
+};
+
+function framingScaled(k: number): Values {
+  const out: Values = {};
+  for (const [key, v] of Object.entries(OLD_FRAMING)) out[key] = Math.round(v * k * 10) / 10;
+  return out;
+}
+
+/**
+ * "Original": the old game's camera as the owner's screenshot shows it. Fitted to the screenshot's path tiles
+ * (about 2 px off): the old Iso camera, 40 m up and 56.6 m back, lens 15°, but turned 64° to the grid, with
+ * the old soldier 2.94 m tall on screen. Scaled by 1.80 / 2.94 so the 1.80 m stand-in fills the screen as the
+ * old soldier did; the look-ahead and camera shift scale with it.
+ */
+const ORIGINAL_K = 1.8 / 2.94;
+export const ORIGINAL_PROFILE: Values = {
+  camHeight: Math.round(40 * ORIGINAL_K * 10) / 10,
+  camBack: Math.round(56.6 * ORIGINAL_K * 10) / 10,
+  camLens: 15,
+  camTurn: 64,
+  camAngle: null,
+  ...framingScaled(ORIGINAL_K),
+};
+
+/**
+ * "Indie": the camera of the owner's indie game of last year, judged by eye from one screenshot (no shapes in
+ * it to measure): about 50° above the feet, a 35° lens, straight behind, and the character about a tenth of
+ * the screen's height. The framing scales with the much closer camera.
+ */
+const INDIE_DIST = 17.6;
+export const INDIE_PROFILE: Values = {
+  camHeight: Math.round(INDIE_DIST * Math.sin((50 * Math.PI) / 180) * 10) / 10,
+  camBack: Math.round(INDIE_DIST * Math.cos((50 * Math.PI) / 180) * 10) / 10,
+  camLens: 35,
+  camTurn: 0,
+  camAngle: null,
+  ...framingScaled(INDIE_DIST / Math.hypot(40, 56.6)),
+};
+
+/** The two profiles, the first being the default. */
+export const CAMERA_PROFILES: { name: string; title: string; values: Values }[] = [
+  {
+    name: 'Original',
+    title:
+      "The old game's camera as your screenshot shows it (the Iso camera turned 64° to the grid), scaled to the 1.80 m stand-in. The default.",
+    values: ORIGINAL_PROFILE,
+  },
+  {
+    name: 'Indie',
+    title: 'Your indie game of last year, judged by eye from its screenshot: 50° above the feet, 35° lens, straight behind.',
+    values: INDIE_PROFILE,
+  },
 ];
+
+/** The old game's five camera presets (CAM_STYLES), with its own framing, at its own soldier scale. */
+export const CAMERA_PRESETS: { name: string; values: Values }[] = [
+  { name: 'Classic', values: { camHeight: 24, camBack: 16, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Tactical', values: { camHeight: 15.5, camBack: 10.5, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Iso', values: { camHeight: 40, camBack: 56.6, camLens: 15, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Iso+', values: { camHeight: 41.5, camBack: 65.5, camLens: 12, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Foxhole', values: { camHeight: 52, camBack: 42, camLens: 18, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
+];
+
+// The camera starts on the Original profile: its values become the start values (and so the resets).
+for (const [key, v] of Object.entries(ORIGINAL_PROFILE)) {
+  const p = PARAM_BY_KEY[key];
+  if (p.kind !== 'range' || v === null || p.start === v) continue;
+  p.source = `Starts on the Original camera profile (${v}${p.unit ? ' ' + p.unit : ''}). ${p.source}`;
+  p.start = v as number;
+}
+
+/** True if every value of a profile or preset is what the panel holds now. */
+export function profileActive(values: Values, current: Values): boolean {
+  return Object.entries(values).every(([k, v]) => {
+    const c = current[k];
+    return v === null || c === null ? v === c : Math.abs((c as number) - (v as number)) < 1e-6;
+  });
+}
 
 export function startValues(): Values {
   const v: Values = {};
@@ -696,9 +780,17 @@ export function sanitize(p: Param, raw: unknown): Value {
   return typeof raw === 'boolean' ? raw : p.start;
 }
 
-const STORE_KEY = 'shamble-testlines.values.v1';
+const STORE_KEY = 'shamble-testlines.values.v2';
+/** The first builds saved every value under this key. */
+const OLD_STORE_KEY = 'shamble-testlines.values.v1';
+/** Camera start values of those builds: a saved value equal to one of these was never moved by hand. */
+const OLD_CAMERA_STARTS: Record<string, number> = { camHeight: 40, camBack: 56.6, camTurn: 45, ...OLD_FRAMING };
 
-/** The live values, kept in the browser between visits when the browser allows it. */
+function same(a: Value, b: Value): boolean {
+  return typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) < 1e-9 : a === b;
+}
+
+/** The live values, kept in the browser between visits when the browser allows it (only what was changed). */
 export class Store {
   values: Values;
   private listeners: ((key: string | null) => void)[] = [];
@@ -710,6 +802,18 @@ export class Store {
       if (raw) {
         const saved = JSON.parse(raw) as Record<string, unknown>;
         for (const p of PARAMS) if (p.key in saved) this.values[p.key] = sanitize(p, saved[p.key]);
+      } else {
+        const old = window.localStorage.getItem(OLD_STORE_KEY);
+        if (old) {
+          const saved = JSON.parse(old) as Record<string, unknown>;
+          for (const p of PARAMS) {
+            if (!(p.key in saved)) continue;
+            if (p.key in OLD_CAMERA_STARTS && same(saved[p.key] as Value, OLD_CAMERA_STARTS[p.key])) continue;
+            this.values[p.key] = sanitize(p, saved[p.key]);
+          }
+          this.save();
+          window.localStorage.removeItem(OLD_STORE_KEY);
+        }
       }
     } catch {
       // Storage blocked or unreadable: start from the start values.
@@ -752,6 +856,7 @@ export class Store {
     this.values = startValues();
     try {
       window.localStorage.removeItem(STORE_KEY);
+      window.localStorage.removeItem(OLD_STORE_KEY);
     } catch {
       // ignore
     }
@@ -768,7 +873,10 @@ export class Store {
 
   private save() {
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify(this.values));
+      // Only what differs from the start values, so a later change of a start value reaches untouched sliders.
+      const changed: Values = {};
+      for (const p of PARAMS) if (!same(this.values[p.key], p.start)) changed[p.key] = this.values[p.key];
+      window.localStorage.setItem(STORE_KEY, JSON.stringify(changed));
     } catch {
       // Storage blocked: values live until the page closes.
     }
