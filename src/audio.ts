@@ -3,6 +3,8 @@
 
 let ctx: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
+/** Clicks actually sent to the speakers (for the scripted checks). */
+export let clicksPlayed = 0;
 
 function ensure(): AudioContext | null {
   try {
@@ -27,6 +29,11 @@ export function unlockAudio() {
   ensure();
 }
 
+/** The audio's state, for the scripted checks: 'running', 'suspended', or 'none'. */
+export function audioState(): string {
+  return ctx ? ctx.state : 'none';
+}
+
 export function click(volume = 0.25) {
   const c = ensure();
   if (!c || !noise || c.state !== 'running') return;
@@ -40,6 +47,7 @@ export function click(volume = 0.25) {
     g.gain.value = volume;
     src.connect(hp).connect(g).connect(c.destination);
     src.start();
+    clicksPlayed++;
   } catch {
     // No sound is better than a stopped page.
   }

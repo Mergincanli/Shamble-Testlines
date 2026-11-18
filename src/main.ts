@@ -1,7 +1,7 @@
 // Shamble Testlines: a throwaway feel sandbox for Shamble Frontlines. Nothing here is the game.
 import * as THREE from 'three';
 import './style.css';
-import { click, unlockAudio } from './audio';
+import { audioState, click, clicksPlayed, unlockAudio } from './audio';
 import { FollowCamera } from './camera';
 import { makeDummies, otherFactions, steerDummy } from './dummies';
 import { Fx } from './fx';
@@ -395,6 +395,7 @@ requestAnimationFrame(frame);
     prev = { ...cur };
     peakY = y;
   },
+  audio: () => ({ state: audioState(), clicks: clicksPlayed }),
   gun: () => ({
     gun: W.gun,
     ...W.guns[W.gun],

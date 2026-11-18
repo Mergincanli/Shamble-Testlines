@@ -24,6 +24,7 @@ async function run(browserName) {
   });
   const results = [];
   const ok = (name, pass, detail = '') => results.push({ name, pass, detail });
+  const skip = (name, detail) => results.push({ name, pass: true, skip: true, detail });
   try {
     const page = await browser.newPage();
     // Firefox's driver names the space bar ' '; both browsers then report the code 'Space' to the page.
@@ -265,6 +266,13 @@ async function run(browserName) {
     let g1 = await T(() => window.__testlines.gun());
     const fired = g1.shots - g0.shots;
     ok('the SMG fires at its rate while held (0.072 s a shot)', Math.abs(fired - held / 0.072) <= 4, `${fired} shots in about ${held.toFixed(2)} s`);
+    const au = await T(() => window.__testlines.audio());
+    if (isFx && au.state !== 'running') {
+      // Firefox here cannot open any audio output (the container has no sound device), so its audio never runs.
+      skip('the audio runs and each shot plays a click', `audio ${au.state}: no sound device in this container`);
+    } else {
+      ok('the audio runs and each shot plays a click', au.state === 'running' && au.clicks >= g1.shots - 2, `audio ${au.state}, ${au.clicks} clicks for ${g1.shots} shots`);
+    }
     ok('each shot takes a round', g0.ammo - g1.ammo === fired, `${g0.ammo} -> ${g1.ammo}`);
     // With the old numbers the SMG's spread recovers (0.7/s) faster than its shots add to it (14 x 0.005/s), so
     // it stays at rest. With more added per shot it grows while the trigger is held.
@@ -333,7 +341,12 @@ async function run(browserName) {
     await sleep(250);
     gr = await T(() => window.__testlines.gun());
     ok('a tap outside the window is a miss and the reload goes on', gr.active === 'miss' && gr.reloadLeft > 0, `${gr.active}, ${gr.reloadLeft.toFixed(2)} s left`);
-    await sleep(500);
+    // The second tap goes in inside the window, so only the one-try rule can stop it.
+    for (let i = 0; i < 150; i++) {
+      gr = await T(() => window.__testlines.gun());
+      if (gr.reloadLeft > 0 && 1 - gr.reloadLeft / gr.reloadTotal >= 0.33) break;
+      await sleep(30);
+    }
     await page.keyboard.press('KeyR');
     await sleep(250);
     gr = await T(() => window.__testlines.gun());
@@ -482,7 +495,7 @@ for (const b of which === 'both' ? ['chromium', 'firefox'] : [which]) {
     console.log(`\n${b}`);
     for (const r of res) {
       if (!r.pass) failed++;
-      console.log(`  ${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `  (${r.detail})` : ''}`);
+      console.log(`  ${r.skip ? 'SKIP' : r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `  (${r.detail})` : ''}`);
     }
   } catch (e) {
     failed++;
