@@ -616,12 +616,24 @@ async function run(browserName) {
 
     // The grenade: hold the right button to aim at the cursor, let go to throw; the arc shows the whole flight.
     const nades = () => T(() => window.__testlines.nades());
+    // Wait for every grenade to go off (a let-go may only be read at the next frame, so look a moment later first).
     const quiet = async () => {
-      for (let i = 0; i < 100; i++) {
-        if ((await nades()).flying.length === 0) break;
+      await sleep(400);
+      for (let i = 0; i < 150; i++) {
+        const n = await nades();
+        if (n.flying.length === 0 && !n.aiming) break;
         await sleep(100);
       }
       await sleep(200);
+    };
+    // Wait for the blast of the throw made after n0 was read.
+    const blastAfter = async (n0) => {
+      for (let i = 0; i < 150; i++) {
+        const n = await nades();
+        if (n.thrown > n0.thrown && n.blasts > n0.blasts && n.flying.length === 0) return n;
+        await sleep(100);
+      }
+      return nades();
     };
     const aimNade = async (x, y, z) => {
       for (let k = 0; k < 2; k++) {
@@ -656,10 +668,10 @@ async function run(browserName) {
     const fb = nd1.lastThrow?.bounces?.[0];
     const tg = nd1.lastThrow?.target;
     ok('it lands on the point under the cursor', !!fb && !!tg && Math.hypot(fb.x - tg.x, fb.z - tg.z) < 0.4 && Math.abs(tg.y) < 1e-6, fb && tg ? `${Math.hypot(fb.x - tg.x, fb.z - tg.z).toFixed(2)} m from the target` : 'no bounce');
-    await quiet();
-    nd1 = await nades();
+    nd1 = await blastAfter(nd0);
     ok('it flies the arc exactly: every bounce and the burst where shown', nd1.blasts - nd0.blasts === 1 && matches(nd1), nd1.lastBlast ? `${nd1.lastBlast.bounces.length} bounces` : 'no blast');
     // Walking while aiming: still exactly the arc shown just before letting go.
+    nd0 = await nades();
     await page.mouse.down({ button: 'right' });
     await sleep(400);
     await page.keyboard.down('KeyD');
@@ -667,18 +679,17 @@ async function run(browserName) {
     await page.mouse.up({ button: 'right' });
     await sleep(300);
     await page.keyboard.up('KeyD');
-    await quiet();
-    nd1 = await nades();
+    nd1 = await blastAfter(nd0);
     ok('walking while aiming: it still flies the arc exactly', matches(nd1), nd1.lastThrow?.end ? 'matched' : 'no arc');
     // A bank shot: aim at the cover wall; the arc shows the bounce off the wall and the grenade bounces there.
     await T(() => window.__testlines.place(-2, -4));
     await sleep(1200);
     await aimNade(-2, 0.75, -8.75);
+    nd0 = await nades();
     await page.mouse.down({ button: 'right' });
     await sleep(500);
     await page.mouse.up({ button: 'right' });
-    await quiet();
-    nd1 = await nades();
+    nd1 = await blastAfter(nd0);
     const onWall = (p) => !!p && p.x > -4.61 && p.x < 0.61 && p.z > -9.36 && p.z < -8.64 && p.y < 1.61;
     ok('aimed at the cover wall: the arc bounces off it and so does the grenade', onWall(nd1.lastThrow?.bounces?.[0]) && matches(nd1), JSON.stringify(nd1.lastThrow?.bounces?.[0] ?? null));
     // A quick let-go and press again (both between two steps) throws the first grenade and starts the second.
