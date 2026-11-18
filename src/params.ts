@@ -2,7 +2,7 @@
 // Export. Start values are the old game's numbers (docs/LEGACY_TUNING.md and the old code's described
 // behaviour) unless the source line says otherwise. None of them is a decision.
 
-export type GroupId = 'sim' | 'soldier' | 'move' | 'jump' | 'stamina' | 'camera' | 'framing' | 'mouse';
+export type GroupId = 'sim' | 'soldier' | 'move' | 'jump' | 'stamina' | 'push' | 'camera' | 'framing' | 'mouse';
 
 export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: string }[] = [
   { id: 'sim', title: 'Simulation', open: true, exportName: 'simulation' },
@@ -10,6 +10,7 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'move', title: 'Movement', open: true, exportName: 'movement' },
   { id: 'jump', title: 'Jump', open: true, exportName: 'jump' },
   { id: 'stamina', title: 'Sprint stamina', open: false, exportName: 'stamina' },
+  { id: 'push', title: 'Dummies and soft pushing', open: true, exportName: 'pushing' },
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
   { id: 'mouse', title: 'Mouse', open: true, exportName: 'mouse' },
@@ -318,6 +319,47 @@ export const PARAMS: Param[] = [
     digits: 0,
     source: 'Old game STAM.lockUntil = 0.3.',
     legacy: 'STAM.lockUntil',
+  },
+
+  // Dummies and soft pushing
+  {
+    kind: 'toggle',
+    key: 'dummiesWalk',
+    group: 'push',
+    label: 'Dummies walk their loops',
+    exportKey: 'dummies_walk',
+    start: true,
+    source: 'Off: the eleven dummies stand still (handy for pushing and, later, shooting).',
+  },
+  {
+    kind: 'range',
+    key: 'pushStrength',
+    group: 'push',
+    label: 'Push strength',
+    exportKey: 'push_strength_per_s',
+    unit: '/s',
+    min: 0,
+    max: 40,
+    step: 0.5,
+    start: 8,
+    digits: 1,
+    note: (v) => `${(100 * (1 - Math.exp(-(v.pushStrength as number) / Number(v.tickRate)))).toFixed(0)} % of the overlap undone per step`,
+    source:
+      'No old number: the old game let soldiers pass through each other. START-RULES: "they push each other softly and never block". The push moves soldiers apart by a share of their overlap each step and never stops anyone; higher is stiffer.',
+  },
+  {
+    kind: 'range',
+    key: 'pushRadius',
+    group: 'push',
+    label: 'Body size for pushing (radius)',
+    exportKey: 'push_radius_m',
+    unit: 'm',
+    min: 0.15,
+    max: 1,
+    step: 0.01,
+    start: 0.4,
+    digits: 2,
+    source: 'Starts at the body radius used for walls (half the stand-in\'s width over the hands, rounded up).',
   },
 
   // Camera

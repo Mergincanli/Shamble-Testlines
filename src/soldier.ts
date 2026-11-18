@@ -86,6 +86,7 @@ export class Soldier {
   private gunMesh: THREE.Mesh;
   private gunHull: THREE.Mesh;
   gun: GunId = 'smg';
+  private blend = 0;
 
   constructor(faction: Faction) {
     // Lower body, fixed to the root.
@@ -172,6 +173,8 @@ export class Soldier {
     const g = gunModels()[id];
     this.gunMesh.geometry = g.geometry;
     this.gunHull.geometry = g.hull;
+    // The hands go to the new gun's sockets.
+    this.setPose(this.blend);
   }
 
   /** Where the muzzle is, in world space. */
@@ -186,6 +189,7 @@ export class Soldier {
   setPose(sprint: number) {
     const P = POSES[this.gun];
     const t = Math.min(1, Math.max(0, sprint));
+    this.blend = t;
     const pose = this.tmpPose;
     pose.grip.lerpVectors(P.aim.grip, P.sprint.grip, t);
     pose.rot.slerpQuaternions(P.aim.rot, P.sprint.rot, t);

@@ -184,6 +184,48 @@ async function run(browserName) {
     await ledge(-8, 'gravity 50: the 3.07 m ledge is still gained at 30 steps', 3.07);
     await T(() => window.__testlines.set('gravity', 24));
 
+    // Dummies: eleven, walking their loops; they stand when switched off.
+    const d0 = await T(() => window.__testlines.dummies());
+    await sleep(1000);
+    const d1 = await T(() => window.__testlines.dummies());
+    const walked = d0.filter((p, i) => Math.hypot(p.x - d1[i].x, p.z - d1[i].z) > 1).length;
+    ok('eleven dummies walk their loops', d0.length === 11 && walked >= 10, `${d0.length} dummies, ${walked} moved more than 1 m in 1 s`);
+    await T(() => window.__testlines.set('dummiesWalk', false));
+    await sleep(500);
+    const d2 = await T(() => window.__testlines.dummies());
+    await sleep(800);
+    const d3 = await T(() => window.__testlines.dummies());
+    const still = d2.every((p, i) => Math.hypot(p.x - d3[i].x, p.z - d3[i].z) < 0.02);
+    ok('dummies stand still when switched off', still);
+
+    // Soft push: two soldiers on top of each other come apart to about two push radii.
+    await T(() => window.__testlines.set('camTurn', 45));
+    await page.mouse.click(500, 450);
+    await T(() => window.__testlines.placeDummy(0, 30, 30));
+    await T(() => window.__testlines.place(30.05, 30));
+    await sleep(1500);
+    const me = await T(() => window.__testlines.state());
+    const du = (await T(() => window.__testlines.dummies()))[0];
+    const gap = Math.hypot(me.x - du.x, me.z - du.z);
+    ok('soldiers on top of each other push apart', gap > 0.7 && gap < 0.81, `${gap.toFixed(3)} m apart (two radii: 0.80)`);
+
+    // Never block: walking at a standing dummy, the soldier gets past it and shoves it aside.
+    await T(() => window.__testlines.placeDummy(0, 8, 8));
+    await T(() => window.__testlines.place(11, 11));
+    await sleep(200);
+    await page.keyboard.down('KeyW');
+    await sleep(1500);
+    await page.keyboard.up('KeyW');
+    await sleep(300);
+    const me2 = await T(() => window.__testlines.state());
+    const du2 = (await T(() => window.__testlines.dummies()))[0];
+    const along = (11 + 11 - me2.x - me2.z) / Math.SQRT2;
+    const shoved = Math.hypot(du2.x - 8, du2.z - 8);
+    const dummyAlong = (11 + 11 - 8 - 8) / Math.SQRT2;
+    ok('a standing dummy never blocks: the soldier gets past', along > dummyAlong + 1, `${along.toFixed(2)} m travelled; dummy at ${dummyAlong.toFixed(2)} m`);
+    ok('the dummy is shoved aside', shoved > 0.2, `${shoved.toFixed(2)} m`);
+    await T(() => window.__testlines.set('dummiesWalk', true));
+
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
     const b60 = (await page.$$('#panel .p-segbtn'))[seg.indexOf('60')];

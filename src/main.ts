@@ -11,6 +11,8 @@ import { Store } from './params';
 import { Soldier } from './soldier';
 import type { GunId } from './guns';
 import { buildYard } from './yard';
+import { makeDummies, otherFactions, steerDummy } from './dummies';
+import { softPush } from './push';
 
 const store = new Store();
 
@@ -36,6 +38,20 @@ const soldier = new Soldier(store.get('faction') as Faction);
 soldier.setGun(store.get('gun') as GunId);
 scene.add(soldier.root);
 
+// Eleven dummies in the other two factions' colours, half with each gun.
+const dummies = makeDummies();
+const dummySoldiers = dummies.map((d, i) => {
+  const s = new Soldier(otherFactions(store.get('faction') as Faction)[d.side]);
+  s.setGun(i % 2 ? 'smg' : 'rifle');
+  scene.add(s.root);
+  return s;
+});
+const dummyYaw = dummies.map(() => 0);
+function dressDummies() {
+  const other = otherFactions(store.get('faction') as Faction);
+  dummies.forEach((d, i) => dummySoldiers[i].setFaction(other[d.side]));
+}
+
 function resize() {
   const canvas = renderer.domElement;
   const w = Math.max(1, canvas.clientWidth);
@@ -58,7 +74,10 @@ let last = performance.now();
 /** Highest feet height since the last check (for the scripted checks). */
 let peakY = 0;
 store.onChange((key) => {
-  if (key === null || key === 'faction') soldier.setFaction(store.get('faction') as Faction);
+  if (key === null || key === 'faction') {
+    soldier.setFaction(store.get('faction') as Faction);
+    dressDummies();
+  }
   if (key === null || key === 'gun') soldier.setGun(store.get('gun') as GunId);
   if (key === null || key === 'tickRate') acc = 0;
   if (key === null || key === 'camTurn') camera.resetTurn();
@@ -120,6 +139,20 @@ function frame(now: number) {
     prev = { ...cur };
     readMoveInput();
     stepMover(cur, moveInput, stepDt, store);
+    const walking = store.get('dummiesWalk') === true;
+    for (const d of dummies) {
+      d.prev = { ...d.state };
+      steerDummy(d, walking);
+      stepMover(d.state, d.input, stepDt, store);
+    }
+    softPush(
+      [cur, ...dummies.map((d) => d.state)],
+      store.num('pushRadius'),
+      store.num('pushStrength'),
+      stepDt,
+      store.num('bodyRadius'),
+      store.num('stepUp'),
+    );
     if (cur.y > peakY) peakY = cur.y;
     acc -= stepDt;
     steps++;
@@ -156,6 +189,23 @@ function frame(now: number) {
   soldier.root.position.copy(renderPos);
   soldier.root.rotation.y = aimYaw;
   soldier.setPose(sprintBlend);
+  dummies.forEach((d, i) => {
+    const s = dummySoldiers[i];
+    s.root.position.set(
+      d.prev.x + (d.state.x - d.prev.x) * alpha,
+      d.prev.y + (d.state.y - d.prev.y) * alpha,
+      d.prev.z + (d.state.z - d.prev.z) * alpha,
+    );
+    // Face the way they walk, turning smoothly.
+    const sp = Math.hypot(d.state.vx, d.state.vz);
+    if (sp > 0.3) {
+      const want = Math.atan2(d.state.vx, d.state.vz);
+      let diff = want - dummyYaw[i];
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      dummyYaw[i] += diff * (1 - Math.exp(-10 * dt));
+    }
+    s.root.rotation.y = dummyYaw[i];
+  });
   lights.follow(renderPos.x, renderPos.y, renderPos.z);
 
   hud.update(
@@ -188,6 +238,12 @@ requestAnimationFrame(frame);
   fps: () => document.getElementById('readout')?.textContent ?? '',
   set: (key: string, value: unknown) => store.set(key, value),
   /** Put the soldier somewhere, at rest (for the scripted checks only). */
+  dummies: () => dummies.map((d) => ({ x: d.state.x, y: d.state.y, z: d.state.z })),
+  /** Put a dummy somewhere, at rest (for the scripted checks only). */
+  placeDummy: (i: number, x: number, z: number) => {
+    Object.assign(dummies[i].state, newMover(x, z));
+    dummies[i].prev = { ...dummies[i].state };
+  },
   place: (x: number, z: number, y = 0) => {
     Object.assign(cur, newMover(x, z), { y });
     prev = { ...cur };
