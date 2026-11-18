@@ -1,10 +1,11 @@
 // The grenade's look, kept plain and in the Art texts' colours: the grenade itself in the Dark colour, the throw
-// preview (dots along the arc and a ring where it first lands) in the faction's Top colour, and the blast: a short
+// preview in the faction's Top colour (dots along the whole flight, a bigger dot at each bounce, a small ring where
+// it goes off and a thin ring of the blast's reach on the floor there), and the blast: a short
 // flash in the sun colour, a ring on the ground and fragments flying out (LOOK_V2: fragmentation first). Nothing
 // here is the old game's look.
 import * as THREE from 'three';
 import { PAL, toon, UNIFORM, type Faction } from './look';
-import type { Blast, Grenade } from './grenade';
+import type { Blast, Flight, Grenade } from './grenade';
 import { floorBelow } from './yard';
 
 const FRAGMENTS = 22;
@@ -32,7 +33,10 @@ export class NadeFx {
   private grenades: THREE.Mesh[] = [];
   private dots: THREE.Points;
   private dotPos: Float32Array;
+  private bounceDots: THREE.Points;
+  private bouncePos = new Float32Array(16 * 3);
   private ring: THREE.Mesh;
+  private reach: THREE.Mesh;
   private blasts: BlastFx[] = [];
   private nextBlast = 0;
   private frags: Fragment[] = [];
@@ -47,11 +51,23 @@ export class NadeFx {
     this.dots.frustumCulled = false;
     this.dots.visible = false;
     this.dots.renderOrder = 6;
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.BufferAttribute(this.bouncePos, 3));
+    this.bounceDots = new THREE.Points(bg, new THREE.PointsMaterial({ size: 1.0, sizeAttenuation: true, color: '#ffffff', depthWrite: false }));
+    this.bounceDots.frustumCulled = false;
+    this.bounceDots.visible = false;
+    this.bounceDots.renderOrder = 6;
     const rg = new THREE.RingGeometry(0.42, 0.6, 32);
     rg.rotateX(-Math.PI / 2);
     this.ring = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthWrite: false }));
     this.ring.visible = false;
     this.ring.renderOrder = 6;
+    // The blast's reach: a thin ring of radius 1, scaled to the blast radius.
+    const reachGeo = new THREE.RingGeometry(0.97, 1, 72);
+    reachGeo.rotateX(-Math.PI / 2);
+    this.reach = new THREE.Mesh(reachGeo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.6, depthWrite: false }));
+    this.reach.visible = false;
+    this.reach.renderOrder = 6;
     const fl = new THREE.IcosahedronGeometry(1, 1);
     const wg = new THREE.RingGeometry(0.85, 1, 48);
     wg.rotateX(-Math.PI / 2);
@@ -71,13 +87,15 @@ export class NadeFx {
       scene.add(m);
       this.frags.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0 });
     }
-    scene.add(this.dots, this.ring);
+    scene.add(this.dots, this.bounceDots, this.ring, this.reach);
   }
 
   /** The preview's colour follows the player's faction (its Top colour). */
   setFaction(f: Faction) {
     (this.dots.material as THREE.PointsMaterial).color.set(UNIFORM[f].top);
+    (this.bounceDots.material as THREE.PointsMaterial).color.set(UNIFORM[f].top);
     (this.ring.material as THREE.MeshBasicMaterial).color.set(UNIFORM[f].top);
+    (this.reach.material as THREE.MeshBasicMaterial).color.set(UNIFORM[f].top);
   }
 
   /** Draw the grenades in flight, between their last two steps. */
@@ -98,11 +116,18 @@ export class NadeFx {
     });
   }
 
-  /** The throw preview: dots along the arc to its first contact, a ring there; null hides it. */
-  preview(path: { x: number; y: number; z: number }[] | null, charge: number) {
-    if (!path || path.length < 2) {
+  /**
+   * The throw preview: dots along the whole flight, a bigger dot at each bounce, and where it goes off a small ring
+   * with the blast's reach round it, on the floor under that point (so a burst in the air shows its spot below
+   * the end of the dots); null hides it.
+   */
+  preview(flight: Flight | null, radius: number) {
+    const path = flight?.pts;
+    if (!flight || !path || path.length < 2) {
       this.dots.visible = false;
+      this.bounceDots.visible = false;
       this.ring.visible = false;
+      this.reach.visible = false;
       return;
     }
     // Dots at even spacing along the path.
@@ -113,6 +138,7 @@ export class NadeFx {
       const a = path[i - 1];
       const b = path[i];
       const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+      if (len < 1e-9) continue;
       let d = gap - carry;
       while (d <= len && n < 400) {
         const t = d / len;
@@ -126,10 +152,19 @@ export class NadeFx {
     geo.setDrawRange(0, n);
     (geo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     this.dots.visible = true;
-    const end = path[path.length - 1];
-    this.ring.position.set(end.x, end.y - 0.08, end.z);
-    this.ring.scale.setScalar(1 + charge * 0.35);
+    const nb = Math.min(16, flight.bounces.length);
+    flight.bounces.slice(0, nb).forEach((p, i) => this.bouncePos.set([p.x, p.y, p.z], i * 3));
+    const bgeo = this.bounceDots.geometry as THREE.BufferGeometry;
+    bgeo.setDrawRange(0, nb);
+    (bgeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    this.bounceDots.visible = nb > 0;
+    const end = flight.end;
+    const floor = floorBelow(end.x, end.z, end.y) + 0.02;
+    this.ring.position.set(end.x, floor, end.z);
     this.ring.visible = true;
+    this.reach.position.set(end.x, floor, end.z);
+    this.reach.scale.setScalar(Math.max(0.1, radius));
+    this.reach.visible = true;
   }
 
   /** A blast: flash, a ring on the floor under it, fragments. */

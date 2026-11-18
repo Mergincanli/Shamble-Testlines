@@ -2,7 +2,7 @@
 // old game's own names beside them, so the numbers can be handed to the Advisor as they are.
 import { CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
-export const BUILD = { step: '7', name: 'Grenade' };
+export const BUILD = { step: '7b', name: 'Aimed grenade' };
 
 function localStamp(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');

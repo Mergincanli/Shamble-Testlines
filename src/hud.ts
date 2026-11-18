@@ -14,8 +14,6 @@ export class Hud {
   private lastName = '';
   private nade: HTMLDivElement;
   private nadeText: HTMLDivElement;
-  private nadeBar: HTMLDivElement;
-  private nadeFill: HTMLDivElement;
   private lastNade = '';
   private lastAmmo = '';
   private frames = 0;
@@ -47,12 +45,7 @@ export class Hud {
     this.nade = document.createElement('div');
     this.nade.className = 'nade';
     this.nadeText = document.createElement('div');
-    this.nadeBar = document.createElement('div');
-    this.nadeBar.className = 'reload';
-    this.nadeFill = document.createElement('div');
-    this.nadeFill.className = 'fill';
-    this.nadeBar.append(this.nadeFill);
-    this.nade.append(this.nadeText, this.nadeBar);
+    this.nade.append(this.nadeText);
     this.ammo.append(this.nade);
     document.body.append(this.readout, this.stamina, this.ammo);
   }
@@ -95,15 +88,13 @@ export class Hud {
     if (reload >= 0) this.reloadFill.style.transform = `scaleX(${reload.toFixed(3)})`;
   }
 
-  /** Grenades in hand, and the throw's charge (0..1) while G is held, or -1. */
-  updateNade(count: number, max: number, charge: number) {
-    const text = `Grenades  ${count} / ${max}${charge >= 0 ? '  charging' : ''}`;
+  /** Grenades in hand, and whether a throw is being aimed. */
+  updateNade(count: number, max: number, aiming: boolean) {
+    const text = `Grenades  ${count} / ${max}${aiming ? '  · aiming a throw' : ''}`;
     if (text !== this.lastNade) {
       this.nadeText.textContent = text;
       this.lastNade = text;
     }
-    this.nadeBar.classList.toggle('show', charge >= 0);
-    if (charge >= 0) this.nadeFill.style.transform = `scaleX(${charge.toFixed(3)})`;
   }
 
   /** Show the result of an active-reload tap for a moment. */

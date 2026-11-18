@@ -1,7 +1,7 @@
 // Keyboard and mouse. Keys are read by position (KeyboardEvent.code), so WASD sits in the same place on any
 // layout. The page's own scrolling, middle-click scrolling and context menu are kept out of the way.
 
-/** The key that aims down sights, beside the right button. */
+/** The key that aims down sights (and the right button too, when it is set to aim). */
 export const AIM_KEY = 'KeyQ';
 
 export class Input {
@@ -21,7 +21,8 @@ export class Input {
   private turnDX = 0;
   private lastX: number | null = null;
   private firePressed = false;
-  private aimPressed = false;
+  private rightPressed = false;
+  private rightReleased = false;
   private onKeyHandlers: ((code: string, key: string) => void)[] = [];
   private onFocusLossHandlers: (() => void)[] = [];
 
@@ -35,9 +36,6 @@ export class Input {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
       if (!e.repeat) {
         this.pressed.add(e.code);
-        // Q aims down sights as well as the right button (in Firefox, Shift + right click always opens the
-        // browser's own menu, and Shift is the sprint key).
-        if (e.code === AIM_KEY) this.aimPressed = true;
         for (const h of this.onKeyHandlers) h(e.code, e.key);
       }
       this.keys.add(e.code);
@@ -51,7 +49,8 @@ export class Input {
       this.keys.clear();
       this.buttons = 0;
       this.firePressed = false;
-      this.aimPressed = false;
+      this.rightPressed = false;
+      this.rightReleased = false;
       this.pressed.clear();
       this.released.clear();
       for (const h of this.onFocusLossHandlers) h();
@@ -73,10 +72,8 @@ export class Input {
       const r = canvas.getBoundingClientRect();
       this.ndcX = ((e.clientX - r.left) / r.width) * 2 - 1;
       this.ndcY = -((e.clientY - r.top) / r.height) * 2 + 1;
-      // Chorded buttons (a second button pressed while one is held) arrive as moves, not downs.
-      if (e.buttons & 1 && !(this.buttons & 1)) this.firePressed = true;
-      if (e.buttons & 2 && !(this.buttons & 2)) this.aimPressed = true;
-      this.buttons = e.buttons;
+      // Chorded buttons (a second button pressed or let go while another is held) arrive as moves.
+      this.setButtons(e.buttons);
       // The turn is measured from the cursor's own positions, which every browser reports the same way.
       if (this.buttons & 4 && this.lastX !== null) this.turnDX += e.clientX - this.lastX;
       this.lastX = e.clientX;
@@ -85,10 +82,10 @@ export class Input {
       // Middle button: no autoscroll. Any button: the canvas takes focus away from panel controls.
       e.preventDefault();
       (document.activeElement as HTMLElement | null)?.blur?.();
-      this.buttons = e.buttons;
+      this.setButtons(e.buttons);
       this.lastX = e.clientX;
       if (e.button === 0) this.firePressed = true;
-      if (e.button === 2) this.aimPressed = true;
+      if (e.button === 2) this.rightPressed = true;
       try {
         canvas.setPointerCapture(e.pointerId);
       } catch {
@@ -102,25 +99,25 @@ export class Input {
       // While a button is held the pointer stays captured, so a drag past the edge still counts as on the view.
       if (!this.buttons) this.over = false;
     });
-    canvas.addEventListener('pointerup', (e) => {
-      this.buttons = e.buttons;
-    });
-    canvas.addEventListener('pointercancel', () => {
-      this.buttons = 0;
-    });
+    canvas.addEventListener('pointerup', (e) => this.setButtons(e.buttons));
+    canvas.addEventListener('pointercancel', () => this.setButtons(0));
     // A release outside the view (or one the view misses at its very edge) still counts.
-    window.addEventListener('pointerup', (e) => {
-      this.buttons = e.buttons;
-    });
-    window.addEventListener('mouseup', (e) => {
-      this.buttons = e.buttons;
-    });
+    window.addEventListener('pointerup', (e) => this.setButtons(e.buttons));
+    window.addEventListener('mouseup', (e) => this.setButtons(e.buttons));
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 1) e.preventDefault();
     });
     canvas.addEventListener('auxclick', (e) => e.preventDefault());
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+  }
+
+  /** New button state: notes a left or right press, and a right let-go, so short clicks between steps count. */
+  private setButtons(b: number) {
+    if (b & 1 && !(this.buttons & 1)) this.firePressed = true;
+    if (b & 2 && !(this.buttons & 2)) this.rightPressed = true;
+    if (!(b & 2) && this.buttons & 2) this.rightReleased = true;
+    this.buttons = b;
   }
 
   down(code: string): boolean {
@@ -146,9 +143,9 @@ export class Input {
     return p;
   }
 
-  /** The right button is held on the view, or the aim key. */
-  aimHeld(): boolean {
-    return (this.buttons & 2) !== 0 || this.keys.has(AIM_KEY);
+  /** The right button is held. */
+  rightHeld(): boolean {
+    return (this.buttons & 2) !== 0;
   }
 
   /** Called when the page loses focus or is hidden. */
@@ -157,9 +154,16 @@ export class Input {
   }
 
   /** True if the right button went down since the last call (consumes it). */
-  takeAimPress(): boolean {
-    const p = this.aimPressed;
-    this.aimPressed = false;
+  takeRightPress(): boolean {
+    const p = this.rightPressed;
+    this.rightPressed = false;
+    return p;
+  }
+
+  /** True if the right button came up since the last call (consumes it). */
+  takeRightRelease(): boolean {
+    const p = this.rightReleased;
+    this.rightReleased = false;
     return p;
   }
 

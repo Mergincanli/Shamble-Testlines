@@ -107,7 +107,7 @@ export class Panel {
       el(
         'div',
         'p-keys',
-        'WASD move · Shift sprint · Space jump · mouse aims · left button fires · right button or Q aims down sights (in Firefox, Shift + right click opens the browser menu: use Q while sprinting) · R reloads (tap R again while the bar is in the gold window: the reload ends at once) · hold the middle button to turn the camera · 1 / 2 / 3 guns · hold G and let go to throw a grenade · ` panel',
+        'WASD move · Shift sprint · Space jump · mouse aims · left button fires · hold the right button (or G) to aim a grenade at the cursor, let go to throw (in Firefox, Shift + right click opens the browser menu: use G while sprinting) · Q aims down sights (the Grenade group can give it the right button instead) · R reloads (tap R again while the bar is in the gold window: the reload ends at once) · hold the middle button to turn the camera · 1 / 2 / 3 guns · ` panel',
       ),
     );
     this.root.append(scroll);

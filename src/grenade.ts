@@ -1,10 +1,10 @@
-// The frag grenade, run at the fixed simulation step: a held charge sets the throw speed (the old game's G key:
-// fixed launch angle, speed from slow to fast over the charge), the flight follows its exact arc in fixed
-// sub-steps (the same path at either step rate) and is swept against the blocks so a fast grenade cannot pass
-// through the thin cover wall, it bounces off the ground,
-// blocks and the ramp, and goes off when its fuse runs out: damage falls off with distance and needs a clear line
-// from the blast. The same step function draws the throw preview, so the preview lands where the grenade does.
-// Numbers from the old game (T.grenade*, T_CHARGE.nade); written fresh.
+// The frag grenade, run at the fixed simulation step. The throw is aimed freely: it is solved to land on the point
+// under the cursor, at the launch angle (raised for a target above the hand), up to the longest throw's speed. The
+// flight follows its exact arc in fixed sub-steps (the same path at either step rate) and is swept against the
+// blocks so a fast grenade cannot pass through the thin cover wall; it bounces off the ground, blocks and the
+// ramp, and goes off when its fuse runs out: damage falls off with distance and needs a clear line from the
+// blast. The same step function draws the whole preview, bounces and burst included, so the grenade flies exactly
+// the path shown. Numbers from the old game (T.grenade*, the grenade's launch angle and top speed); written fresh.
 import type { Store } from './params';
 import type { MoverState } from './movement';
 import { BLOCKS, rampHeight } from './yard';
@@ -26,6 +26,8 @@ export interface Grenade {
   prev: { x: number; y: number; z: number };
   /** Where it first touched anything (for the scripted checks: the preview must land there). */
   firstContact?: { x: number; y: number; z: number };
+  /** Where it bounced (real impacts, not rolling), in order: the preview marks these. */
+  bounceAt: { x: number; y: number; z: number }[];
 }
 
 export interface Blast {
@@ -34,16 +36,75 @@ export interface Blast {
   z: number;
 }
 
-/** The throw velocity: along the aim on the ground, at the launch angle, at a speed set by the charge (0..1). */
-export function throwVelocity(aimYaw: number, charge: number, P: Store): [number, number, number] {
-  const sp = P.num('nadeSpeedMin') + (P.num('nadeSpeedMax') - P.num('nadeSpeedMin')) * Math.min(1, Math.max(0, charge));
-  const a = (P.num('nadeAngle') * Math.PI) / 180;
-  const h = Math.cos(a) * sp;
-  return [Math.sin(aimYaw) * h, Math.sin(a) * sp, Math.cos(aimYaw) * h];
+/**
+ * The throw that lands on a target point (its centre one grenade size above it): toward the target on the ground,
+ * at the launch angle (raised for a target above the hand, by half its elevation), at the speed that reaches it,
+ * but no faster than the longest throw; a target out of reach falls short. If that arc would hit something before
+ * the target (the edge of a ledge, cover in the way), it is lobbed higher, 5° at a time up to 80°, and the first arc
+ * that lands at the target is taken; if none does, the plain arc stays and the preview shows where it hits.
+ * `yaw` gives the direction when the target is straight below the hand.
+ */
+export function aimedThrow(
+  o: [number, number, number],
+  target: { x: number; y: number; z: number },
+  yaw: number,
+  P: Store,
+): [number, number, number] {
+  const d = Math.hypot(target.x - o[0], target.z - o[2]);
+  const elev = Math.atan2(target.y + GRENADE_R - o[1], d);
+  let a = (P.num('nadeAngle') * Math.PI) / 180;
+  if (elev > 0) a = Math.max(a + elev / 2, (elev + Math.PI / 2) / 2);
+  a = Math.min(a, (89 * Math.PI) / 180);
+  const plain = throwAt(o, target, yaw, a, P);
+  const near = Math.max(0.5, 0.03 * d);
+  if (landsNear(o, plain, target, near, P)) return plain;
+  for (let lob = a + (5 * Math.PI) / 180; lob <= (80.001 * Math.PI) / 180; lob += (5 * Math.PI) / 180) {
+    const v = throwAt(o, target, yaw, lob, P);
+    if (landsNear(o, v, target, near, P)) return v;
+  }
+  return plain;
+}
+
+/** The throw that reaches the target at launch angle a (capped at the longest throw's speed). */
+function throwAt(
+  o: [number, number, number],
+  target: { x: number; y: number; z: number },
+  yaw: number,
+  a: number,
+  P: Store,
+): [number, number, number] {
+  const dx = target.x - o[0];
+  const dz = target.z - o[2];
+  const h = target.y + GRENADE_R - o[1];
+  const d = Math.hypot(dx, dz);
+  const ux = d > 1e-6 ? dx / d : Math.sin(yaw);
+  const uz = d > 1e-6 ? dz / d : Math.cos(yaw);
+  const g = P.num('nadeGravity');
+  const c = Math.cos(a);
+  const under = 2 * c * c * (d * Math.tan(a) - h);
+  let sp = under > 1e-9 ? Math.sqrt((g * d * d) / under) : 0;
+  if (!Number.isFinite(sp)) sp = 0;
+  sp = Math.min(sp, P.num('nadeSpeedMax'));
+  return [ux * c * sp, Math.sin(a) * sp, uz * c * sp];
+}
+
+/** Whether this throw first touches anything within `near` of the target. */
+function landsNear(
+  o: [number, number, number],
+  v: [number, number, number],
+  target: { x: number; y: number; z: number },
+  near: number,
+  P: Store,
+): boolean {
+  const g = newGrenade(o[0], o[1], o[2], v, P);
+  g.fuse = 4;
+  while (!spent(g) && !g.firstContact) stepGrenade(g, SUB_DT, P);
+  const c = g.firstContact;
+  return !!c && Math.hypot(c.x - target.x, c.y - (target.y + GRENADE_R), c.z - target.z) < near;
 }
 
 export function newGrenade(x: number, y: number, z: number, v: [number, number, number], P: Store): Grenade {
-  return { x, y, z, vx: v[0], vy: v[1], vz: v[2], fuse: P.num('nadeFuse'), resting: false, prev: { x, y, z } };
+  return { x, y, z, vx: v[0], vy: v[1], vz: v[2], fuse: P.num('nadeFuse'), resting: false, prev: { x, y, z }, bounceAt: [] };
 }
 
 /** First hit of the segment p0 -> p0 + d against a box grown by r: [t in 0..1, normal axis 0/1/2, sign], or null. */
@@ -156,22 +217,16 @@ export function throwStart(x: number, y: number, z: number): V3 {
   return [x, y + THROW_HEIGHT, z];
 }
 
-/**
- * One fixed step of a grenade's flight, run as sub-steps of SUB_DT. Returns true when it stops at its first
- * contact (for the preview, which only needs where the throw first lands); the flight itself carries on bouncing
- * until the fuse runs out.
- */
-export function stepGrenade(g: Grenade, dt: number, P: Store, stopAtContact = false): boolean {
+/** One fixed step of a grenade's flight, run as sub-steps of SUB_DT; it carries on bouncing until the fuse runs out. */
+export function stepGrenade(g: Grenade, dt: number, P: Store) {
   g.prev = { x: g.x, y: g.y, z: g.z };
   const n = Math.max(1, Math.round(dt / SUB_DT));
   for (let i = 0; i < n; i++) {
     // The fuse runs in the same sub-steps, so the grenade goes off at the same place at either step rate.
     if (spent(g)) break;
     g.fuse -= SUB_DT;
-    if (g.resting) continue;
-    if (subStep(g, P) && stopAtContact) return true;
+    if (!g.resting) subStep(g, P);
   }
-  return g.resting;
 }
 
 /** True once the fuse has run out (the blast follows at the end of that step). */
@@ -252,6 +307,7 @@ function surface(g: Grenade, nx: number, ny: number, nz: number, dt: number, P: 
   const vn = g.vx * nx + g.vy * ny + g.vz * nz;
   if (vn < -IMPACT_SPEED) {
     bounce(g, nx, ny, nz, P);
+    if (g.bounceAt.length < 16) g.bounceAt.push({ x: g.x, y: g.y, z: g.z });
     return;
   }
   if (vn < 0) {
@@ -265,17 +321,28 @@ function surface(g: Grenade, nx: number, ny: number, nz: number, dt: number, P: 
   g.vz *= k;
 }
 
-/** The throw's path up to its first contact, by the same sub-steps as the flight, so it lands exactly there. */
-export function previewPath(x: number, y: number, z: number, v: [number, number, number], P: Store): { x: number; y: number; z: number }[] {
-  const g = newGrenade(x, y, z, v, P);
-  g.fuse = Infinity; // the preview shows where the throw lands, whatever the fuse
-  const pts = [{ x, y, z }];
-  for (let i = 0; i < 800; i++) {
-    const stop = stepGrenade(g, SUB_DT, P, true);
-    pts.push({ x: g.x, y: g.y, z: g.z });
-    if (stop) break;
+export interface Flight {
+  /** The path, one point per sub-step, from the hand to where it goes off. */
+  pts: { x: number; y: number; z: number }[];
+  /** Where it bounces on the way. */
+  bounces: { x: number; y: number; z: number }[];
+  /** Where it goes off. */
+  end: { x: number; y: number; z: number };
+}
+
+/**
+ * The whole flight of a throw, to the end of its fuse, by the same sub-steps as the real one: the grenade flies
+ * exactly this path, bounces where this one does and goes off where this one does.
+ */
+export function previewFlight(o: [number, number, number], v: [number, number, number], P: Store): Flight {
+  const g = newGrenade(o[0], o[1], o[2], v, P);
+  const pts = [{ x: g.x, y: g.y, z: g.z }];
+  for (let i = 0; i < 2000 && !spent(g); i++) {
+    stepGrenade(g, SUB_DT, P);
+    const last = pts[pts.length - 1];
+    if (g.x !== last.x || g.y !== last.y || g.z !== last.z) pts.push({ x: g.x, y: g.y, z: g.z });
   }
-  return pts;
+  return { pts, bounces: g.bounceAt, end: { x: g.x, y: g.y, z: g.z } };
 }
 
 /** True if nothing solid lies between two points (for the blast's reach). */

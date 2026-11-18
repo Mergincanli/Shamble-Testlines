@@ -448,7 +448,9 @@ async function run(browserName) {
     ok('the gun is not ready while sprinting', g1.readyIn > 0.1, `ready in ${g1.readyIn.toFixed(2)} s`);
     await T(() => window.__testlines.set('dummiesWalk', true));
 
-    // Aiming down sights (right button). Walk while aiming: 0.55 of the walk speed; Shift does not sprint.
+    // Aiming down sights (with the right button set to aim). Walk while aiming: 0.55 of the walk speed; Shift does
+    // not sprint.
+    await T(() => window.__testlines.set('rightButton', 'aim'));
     await T(() => window.__testlines.place(30, 30));
     await sleep(300);
     const aimSpot = await T(() => window.__testlines.screenOf(30, 1.36, 24));
@@ -520,7 +522,8 @@ async function run(browserName) {
     const tg4 = await T(() => window.__testlines.aiming());
     ok('a toggled aim survives a preset click and ends on focus loss', tg3 === true && tg4 === false, `${tg3}, ${tg4}`);
     await T(() => window.__testlines.set('adsMode', 'hold'));
-    // Q aims too (Firefox opens its own menu on Shift + right click, and Shift sprints).
+    await T(() => window.__testlines.set('rightButton', 'grenade'));
+    // Q aims down sights (with the right button on the grenade, the start).
     await page.mouse.click(aimSpot.x, aimSpot.y);
     await page.keyboard.down('KeyQ');
     await sleep(300);
@@ -611,123 +614,153 @@ async function run(browserName) {
     await page.keyboard.press('Digit1');
     await T(() => window.__testlines.set('dummiesWalk', true));
 
-    // The grenade (G): a tap throws the slowest throw; it goes off after its fuse.
+    // The grenade: hold the right button to aim at the cursor, let go to throw; the arc shows the whole flight.
+    const nades = () => T(() => window.__testlines.nades());
+    const quiet = async () => {
+      for (let i = 0; i < 100; i++) {
+        if ((await nades()).flying.length === 0) break;
+        await sleep(100);
+      }
+      await sleep(200);
+    };
+    const aimNade = async (x, y, z) => {
+      for (let k = 0; k < 2; k++) {
+        const sp = await T((a, b, c) => window.__testlines.screenOf(a, b, c), x, y, z);
+        await page.mouse.move(sp.x, sp.y);
+        await sleep(500);
+      }
+    };
+    const samePts = (a, b) => !!a && !!b && a.length === b.length && a.every((p, i) => Math.hypot(p.x - b[i].x, p.y - b[i].y, p.z - b[i].z) < 1e-9);
+    const matches = (n) => !!n.lastThrow?.end && !!n.lastBlast && Math.hypot(n.lastBlast.at.x - n.lastThrow.end.x, n.lastBlast.at.y - n.lastThrow.end.y, n.lastBlast.at.z - n.lastThrow.end.z) < 1e-9 && samePts(n.lastBlast.bounces, n.lastThrow.bounces);
     await T(() => window.__testlines.set('dummiesWalk', false));
+    await T(() => window.__testlines.set('nadeRefill', 0.5));
     await T(() => window.__testlines.place(30, 30));
     await sleep(1200);
-    const nadeSpot = await T(() => window.__testlines.screenOf(30, 1.36, 20));
-    await page.mouse.move(nadeSpot.x, nadeSpot.y);
-    await sleep(600);
-    let nd0 = await T(() => window.__testlines.nades());
-    await page.keyboard.press('KeyG');
-    await sleep(300);
-    let nd1 = await T(() => window.__testlines.nades());
-    ok('a G tap throws one grenade', nd1.thrown - nd0.thrown === 1 && nd0.held - nd1.held === 1, `held ${nd0.held} -> ${nd1.held}, flying ${nd1.flying.length}`);
-    await sleep(1700);
-    nd1 = await T(() => window.__testlines.nades());
-    ok('the grenade goes off after its fuse', nd1.blasts - nd0.blasts === 1 && nd1.flying.length === 0, `${nd1.blasts - nd0.blasts} blast`);
-    // Holding G charges; the preview lands where the grenade first touches. (A full charge outlasts the 1.5 s fuse
-    // and bursts in the air, as the old game's did, so this check gives it a longer fuse.)
-    await T(() => window.__testlines.set('nadeFuse', 4));
-    await page.keyboard.down('KeyG');
-    await sleep(1400);
-    const ndc = await T(() => window.__testlines.nades());
-    await page.keyboard.up('KeyG');
-    await sleep(2600);
-    nd1 = await T(() => window.__testlines.nades());
-    let fc = nd1.firstContact;
-    let land = nd1.lastThrow?.previewEnd;
-    ok('holding G charges the throw', ndc.charging && ndc.chargeT > 0.9, `charge ${ndc.chargeT.toFixed(2)} s`);
-    ok('the preview lands where the grenade first touches', !!fc && !!land && Math.hypot(fc.x - land.x, fc.y - land.y, fc.z - land.z) < 1e-6, fc && land ? `${Math.hypot(fc.x - land.x, fc.z - land.z).toFixed(4)} m apart` : 'no contact');
-    await sleep(1800);
-    // A part charge lands exactly on the preview drawn just before the throw (the throw uses the very charge, place
-    // and aim the preview showed), with the soldier walking.
-    await T(() => window.__testlines.set('nadeChargeTime', 4));
-    await page.keyboard.down('KeyG');
-    await sleep(700);
-    await page.keyboard.down('KeyD');
+    await aimNade(30, 0, 20);
+    let nd0 = await nades();
+    let gn0 = await T(() => window.__testlines.gun());
+    await page.mouse.down({ button: 'right' });
     await sleep(500);
-    await page.keyboard.up('KeyG');
+    await page.mouse.down();
+    await sleep(300);
+    await page.mouse.up();
+    const ndA = await nades();
+    const adsA = await T(() => window.__testlines.aiming());
+    let gn1 = await T(() => window.__testlines.gun());
+    await page.mouse.up({ button: 'right' });
+    await sleep(400);
+    let nd1 = await nades();
+    ok('holding the right button shows the arc, not aiming down sights', ndA.aiming && !!ndA.preview && !adsA, `aiming ${ndA.aiming}, arc ${!!ndA.preview}, sights ${adsA}`);
+    ok('the gun does not fire while a throw is aimed', gn1.shots === gn0.shots, `${gn1.shots - gn0.shots} shots`);
+    ok('letting go throws one grenade', nd1.thrown - nd0.thrown === 1 && !nd1.aiming, `thrown ${nd1.thrown - nd0.thrown}`);
+    const fb = nd1.lastThrow?.bounces?.[0];
+    const tg = nd1.lastThrow?.target;
+    ok('it lands on the point under the cursor', !!fb && !!tg && Math.hypot(fb.x - tg.x, fb.z - tg.z) < 0.4 && Math.abs(tg.y) < 1e-6, fb && tg ? `${Math.hypot(fb.x - tg.x, fb.z - tg.z).toFixed(2)} m from the target` : 'no bounce');
+    await quiet();
+    nd1 = await nades();
+    ok('it flies the arc exactly: every bounce and the burst where shown', nd1.blasts - nd0.blasts === 1 && matches(nd1), nd1.lastBlast ? `${nd1.lastBlast.bounces.length} bounces` : 'no blast');
+    // Walking while aiming: still exactly the arc shown just before letting go.
+    await page.mouse.down({ button: 'right' });
+    await sleep(400);
+    await page.keyboard.down('KeyD');
+    await sleep(600);
+    await page.mouse.up({ button: 'right' });
     await sleep(300);
     await page.keyboard.up('KeyD');
-    await sleep(2600);
-    nd1 = await T(() => window.__testlines.nades());
-    fc = nd1.firstContact;
-    land = nd1.lastThrow?.previewEnd;
-    const pc = nd1.lastThrow?.charge ?? -1;
-    ok('a part charge lands exactly on its preview, walking', pc > 0.05 && pc < 0.9 && !!fc && !!land && Math.hypot(fc.x - land.x, fc.y - land.y, fc.z - land.z) < 1e-6, `charge ${pc.toFixed(2)}, ${fc && land ? Math.hypot(fc.x - land.x, fc.z - land.z).toFixed(4) : '?'} m apart`);
-    await T(() => window.__testlines.set('nadeChargeTime', 1));
-    await sleep(1800);
+    await quiet();
+    nd1 = await nades();
+    ok('walking while aiming: it still flies the arc exactly', matches(nd1), nd1.lastThrow?.end ? 'matched' : 'no arc');
+    // A bank shot: aim at the cover wall; the arc shows the bounce off the wall and the grenade bounces there.
+    await T(() => window.__testlines.place(-2, -4));
+    await sleep(1200);
+    await aimNade(-2, 0.75, -8.75);
+    await page.mouse.down({ button: 'right' });
+    await sleep(500);
+    await page.mouse.up({ button: 'right' });
+    await quiet();
+    nd1 = await nades();
+    const onWall = (p) => !!p && p.x > -4.61 && p.x < 0.61 && p.z > -9.36 && p.z < -8.64 && p.y < 1.61;
+    ok('aimed at the cover wall: the arc bounces off it and so does the grenade', onWall(nd1.lastThrow?.bounces?.[0]) && matches(nd1), JSON.stringify(nd1.lastThrow?.bounces?.[0] ?? null));
     // A quick let-go and press again (both between two steps) throws the first grenade and starts the second.
     await T(() => window.__testlines.place(30, 30));
-    await T(() => window.__testlines.set('nadeRefill', 0.5));
-    await sleep(2000);
-    await T(() => window.__testlines.set('nadeRefill', 5));
-    nd0 = await T(() => window.__testlines.nades());
-    await page.keyboard.down('KeyG');
+    await sleep(1500);
+    await aimNade(30, 0, 20);
+    nd0 = await nades();
+    await page.mouse.down({ button: 'right' });
     await sleep(400);
-    await page.keyboard.up('KeyG');
-    await page.keyboard.down('KeyG');
-    await page.keyboard.up('KeyG');
+    await page.mouse.up({ button: 'right' });
+    await page.mouse.down({ button: 'right' });
+    await page.mouse.up({ button: 'right' });
     for (let i = 0; i < 30; i++) {
-      nd1 = await T(() => window.__testlines.nades());
+      nd1 = await nades();
       if (nd1.thrown - nd0.thrown >= 2) break;
       await sleep(100);
     }
-    await sleep(300);
-    nd1 = await T(() => window.__testlines.nades());
-    ok('a quick double tap throws two grenades', nd1.thrown - nd0.thrown === 2, `${nd1.thrown - nd0.thrown} thrown, held ${nd0.held} -> ${nd1.held}`);
-    // A held key's auto-repeat is not a new press: one hold throws one grenade. (Refill first: the blast check
-    // below needs a grenade in hand.)
-    await T(() => window.__testlines.set('nadeRefill', 0.5));
-    await sleep(2000);
-    await T(() => window.__testlines.set('nadeRefill', 5));
-    nd0 = await T(() => window.__testlines.nades());
+    ok('a quick double click throws two grenades', nd1.thrown - nd0.thrown === 2, `${nd1.thrown - nd0.thrown} thrown, held ${nd0.held} -> ${nd1.held}`);
+    await quiet();
+    await sleep(1000);
+    // G does the same (Firefox opens its menu on Shift + right click); a held key's repeats are not new presses.
+    nd0 = await nades();
     await page.keyboard.down('KeyG');
     await sleep(300);
     await page.keyboard.down('KeyG');
     await page.keyboard.down('KeyG');
     await sleep(300);
     await page.keyboard.up('KeyG');
-    await sleep(800);
-    nd1 = await T(() => window.__testlines.nades());
-    ok('a held G with key repeats throws one grenade', nd1.thrown - nd0.thrown === 1, `${nd1.thrown - nd0.thrown} thrown`);
-    // Let every grenade go off before the next check (the slow software renderer runs behind the clock).
-    for (let i = 0; i < 80; i++) {
-      if ((await T(() => window.__testlines.nades())).flying.length === 0) break;
-      await sleep(100);
-    }
+    await sleep(600);
+    nd1 = await nades();
+    ok('G aims and throws too, one grenade per hold (key repeats ignored)', nd1.thrown - nd0.thrown === 1, `${nd1.thrown - nd0.thrown} thrown`);
+    await quiet();
+    // Losing focus while aiming drops the throw.
+    nd0 = await nades();
+    await page.mouse.down({ button: 'right' });
     await sleep(300);
-    await T(() => window.__testlines.set('nadeFuse', 1.5));
-    // A short slow throw beside a dummy: the blast drops it, leaves one far away alone, and kicks the camera.
-    await T(() => window.__testlines.set('nadeSpeedMin', 3));
-    await T(() => window.__testlines.set('nadeSpeedMax', 3));
+    await T(() => window.dispatchEvent(new Event('blur')));
+    await sleep(200);
+    await page.mouse.up({ button: 'right' });
+    await sleep(400);
+    nd1 = await nades();
+    ok('losing focus while aiming drops the throw', nd1.thrown === nd0.thrown && !nd1.aiming, `${nd1.thrown - nd0.thrown} thrown`);
+    // With the right button set to aim down sights, it aims; G still throws.
+    await T(() => window.__testlines.set('rightButton', 'aim'));
+    nd0 = await nades();
+    await page.mouse.down({ button: 'right' });
+    await sleep(400);
+    const adsR = await T(() => window.__testlines.aiming());
+    const ndR = await nades();
+    await page.mouse.up({ button: 'right' });
+    await sleep(400);
+    nd1 = await nades();
+    ok('set to aim, the right button aims down sights and throws nothing', adsR && !ndR.aiming && nd1.thrown === nd0.thrown, `sights ${adsR}, grenade ${ndR.aiming}`);
+    await T(() => window.__testlines.set('rightButton', 'grenade'));
+    await sleep(1000);
+    // A throw at the feet of a dummy: the blast drops it, leaves one far away alone, and kicks the camera.
     await T(() => window.__testlines.placeDummy(0, 30, 27.4));
     await T(() => window.__testlines.placeDummy(1, 30, 18));
-    await sleep(300);
-    nd0 = await T(() => window.__testlines.nades());
-    await page.keyboard.press('KeyG');
+    await aimNade(30, 0, 28);
+    nd0 = await nades();
+    await page.mouse.down({ button: 'right' });
+    await sleep(400);
+    await page.mouse.up({ button: 'right' });
     let peakKick = 0;
-    for (let i = 0; i < 80; i++) {
-      const n = await T(() => window.__testlines.nades());
+    for (let i = 0; i < 120; i++) {
+      const n = await nades();
       peakKick = Math.max(peakKick, n.kick);
       if (n.blasts > nd0.blasts && peakKick > 0) break;
       await sleep(30);
     }
     for (let i = 0; i < 8; i++) {
-      peakKick = Math.max(peakKick, (await T(() => window.__testlines.nades())).kick);
+      peakKick = Math.max(peakKick, (await nades()).kick);
       await sleep(30);
     }
     const dn = await T(() => window.__testlines.dummies());
     ok('the blast drops a dummy beside it', dn[0].down, `health ${dn[0].health.toFixed(0)}`);
     ok('a dummy outside the blast radius is unhurt', dn[1].health === 100, `health ${dn[1].health.toFixed(0)}`);
     ok('a blast this close kicks the camera', peakKick > 0.05, `peak kick ${peakKick.toFixed(2)} m`);
-    await T(() => window.__testlines.set('nadeSpeedMin', 13));
-    await T(() => window.__testlines.set('nadeSpeedMax', 26));
     // One grenade comes back after the refill time.
     await T(() => window.__testlines.set('nadeRefill', 1));
     await sleep(3500);
-    nd1 = await T(() => window.__testlines.nades());
+    nd1 = await nades();
     ok('grenades come back after the refill time', nd1.held === 3, `held ${nd1.held}`);
     await T(() => window.__testlines.set('nadeRefill', 5));
     await T(() => window.__testlines.set('dummiesWalk', true));

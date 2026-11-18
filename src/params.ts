@@ -28,8 +28,8 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'smg', title: 'SMG (key 1)', open: true, exportName: 'smg' },
   { id: 'rifle', title: 'Rifle (key 2)', open: false, exportName: 'rifle' },
   { id: 'shotgun', title: 'Shotgun (key 3)', open: false, exportName: 'shotgun' },
-  { id: 'nade', title: 'Grenade (hold G, let go to throw)', open: false, exportName: 'grenade' },
-  { id: 'ads', title: 'Aim down sights (right button)', open: true, exportName: 'aim_down_sights' },
+  { id: 'nade', title: 'Grenade (hold the right button or G, let go to throw)', open: true, exportName: 'grenade' },
+  { id: 'ads', title: 'Aim down sights (Q)', open: true, exportName: 'aim_down_sights' },
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
   { id: 'mouse', title: 'Mouse', open: true, exportName: 'mouse' },
@@ -590,20 +590,29 @@ export const PARAMS: Param[] = [
 
 
   // The frag grenade (old game: the G key, T_CHARGE.nade, T.grenade*, the camera kick T.camKick*).
+  {
+    kind: 'choice',
+    key: 'rightButton',
+    group: 'nade',
+    label: 'Right button',
+    exportKey: 'right_button',
+    options: [
+      { value: 'grenade', label: 'Grenade' },
+      { value: 'aim', label: 'Aim down sights' },
+    ],
+    start: 'grenade',
+    source:
+      "The owner's pick: hold the right button to aim a grenade, let go to throw (G does the same either way). Aiming down sights is then on Q; the old game had it on the right button, which this switch brings back.",
+  },
   { kind: 'range', key: 'nadeCount', group: 'nade', label: 'Grenades carried', exportKey: 'grenades_carried', unit: '', min: 1, max: 10, step: 1, start: 3, digits: 0, source: 'Old game T.grenadeMax.', legacy: 'T.grenadeMax' },
   { kind: 'range', key: 'nadeRefill', group: 'nade', label: 'One grenade back every', exportKey: 'grenade_refill_s', unit: 's', min: 0.5, max: 60, step: 0.5, start: 5, digits: 1, source: "No old number (the old game refilled at the terminal): the sandbox's own pick, so you can keep throwing." },
-  { kind: 'range', key: 'nadeChargeTime', group: 'nade', label: 'Charge time (slow to fast throw)', exportKey: 'charge_time_s', unit: 's', min: 0.05, max: 4, step: 0.05, start: 1, digits: 2, source: 'Old game T_CHARGE.max: holding G this long gives the fastest throw; a tap gives the slowest.', legacy: 'T_CHARGE.max' },
   {
-    kind: 'range', key: 'nadeSpeedMin', group: 'nade', label: 'Throw speed, tapped', exportKey: 'throw_speed_min_m_per_s', unit: 'm/s', min: 1, max: 60, step: 0.5, start: 13, digits: 1,
-    note: (v) => `about ${nadeRange(v, v.nadeSpeedMin as number).toFixed(1)} m on flat ground`,
-    source: 'Old game T_CHARGE.nade.sMin.', legacy: 'T_CHARGE.nade.sMin',
+    kind: 'range', key: 'nadeSpeedMax', group: 'nade', label: 'Longest throw: speed', exportKey: 'throw_speed_max_m_per_s', unit: 'm/s', min: 1, max: 80, step: 0.5, start: 26, digits: 1,
+    note: (v) => `reaches about ${nadeRange(v, v.nadeSpeedMax as number).toFixed(1)} m on flat ground; a target further away falls short`,
+    source: "Old game T_CHARGE.nade.sMax, its fastest throw. Here the throw is aimed at the cursor (no charge), and this caps its speed.",
+    legacy: 'T_CHARGE.nade.sMax',
   },
-  {
-    kind: 'range', key: 'nadeSpeedMax', group: 'nade', label: 'Throw speed, fully charged', exportKey: 'throw_speed_max_m_per_s', unit: 'm/s', min: 1, max: 80, step: 0.5, start: 26, digits: 1,
-    note: (v) => `about ${nadeRange(v, v.nadeSpeedMax as number).toFixed(1)} m on flat ground`,
-    source: 'Old game T_CHARGE.nade.sMax.', legacy: 'T_CHARGE.nade.sMax',
-  },
-  { kind: 'range', key: 'nadeAngle', group: 'nade', label: 'Launch angle', exportKey: 'launch_angle_deg', unit: '°', min: 2, max: 80, step: 0.5, start: Math.round(((0.72 * 180) / Math.PI) * 10) / 10, digits: 1, source: 'Old game T_CHARGE.nade.pitch = 0.72 rad: the throw always leaves at this angle above level, toward the cursor.', legacy: 'T_CHARGE.nade.pitch (deg)' },
+  { kind: 'range', key: 'nadeAngle', group: 'nade', label: 'Launch angle', exportKey: 'launch_angle_deg', unit: '°', min: 2, max: 80, step: 0.5, start: Math.round(((0.72 * 180) / Math.PI) * 10) / 10, digits: 1, source: "Old game T_CHARGE.nade.pitch = 0.72 rad: the throw leaves at this angle above level. For a target above the hand the sandbox raises it by half the target's elevation, so a ledge top stays reachable.", legacy: 'T_CHARGE.nade.pitch (deg)' },
   { kind: 'range', key: 'nadeGravity', group: 'nade', label: 'Gravity on the grenade', exportKey: 'grenade_gravity_m_per_s2', unit: 'm/s²', min: 1, max: 60, step: 0.5, start: 20, digits: 1, source: 'Old game T_CHARGE.nade.grav (and its flight loop).', legacy: 'T_CHARGE.nade.grav' },
   { kind: 'range', key: 'nadeBounce', group: 'nade', label: 'Bounce: speed kept off a surface', exportKey: 'bounce_kept', unit: '×', min: 0, max: 1, step: 0.01, start: 0.4, digits: 2, source: 'Old game: a ground bounce kept 0.4 of the speed into the ground. The sandbox bounces off blocks and the ramp the same way.' },
   { kind: 'range', key: 'nadeSlide', group: 'nade', label: 'Bounce: speed kept along a surface', exportKey: 'slide_kept', unit: '×', min: 0, max: 1, step: 0.01, start: 0.6, digits: 2, source: 'Old game: a ground bounce kept 0.6 of the speed along the ground.' },
@@ -627,7 +636,7 @@ export const PARAMS: Param[] = [
     kind: 'choice',
     key: 'adsMode',
     group: 'ads',
-    label: 'Right button',
+    label: 'Aim down sights',
     exportKey: 'ads_button',
     options: [
       { value: 'hold', label: 'Hold to aim' },

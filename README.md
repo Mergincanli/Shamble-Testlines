@@ -8,9 +8,11 @@ Nothing here is the game, and no value here is a decision.
 `play/testlines.html` is the whole sandbox in one file. Save it and double-click it: it opens in your browser
 with no install, no server and no internet.
 
-Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, the
-right button (or Q) aims down sights, R reloads, hold G and let go to throw a grenade, hold the middle button to
-turn the camera, 1, 2 and 3 change guns (SMG, rifle, shotgun), the backquote key (`) hides the panel.
+Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, hold
+the right button (or G) to aim a grenade at the cursor and let go to throw, Q aims down sights, R reloads, hold the
+middle button to turn the camera, 1, 2 and 3 change guns (SMG, rifle, shotgun), the backquote key (`) hides the
+panel. The Grenade group's "Right button" switch gives the right button back to aiming down sights, as in the old
+game (G still throws).
 
 The shotgun (key 3, the Peacekeeper's) starts from the old game's Bagpipe: 8 pellets of 11 damage, 0.85 s between
 shots, 2 shells, a 2.6 s reload, 34 m range, spread 0.1 (0.05 aiming). One pull is one round, one click, one view
@@ -19,25 +21,31 @@ Bagpipe had none. Its reload fills both shells at once, as the old game's did (d
 by one; that is not built). Its model is the sandbox's own minimal shape (no Art text covers it yet), held like
 the rifle.
 
-The grenade (hold G, let go to throw) follows the old game: a tap throws at 13 m/s, a full 1 s charge at 26 m/s,
-always at 41.3° above level toward the cursor, from the soldier's middle at 1.5 m (the sandbox's pick: a lob from
-right behind the cover wall clears it); gravity 20; a 1.5 s fuse from the throw; a 6.5 m blast doing 140
-damage at the centre, falling off evenly to nothing at the edge and needing a clear line from the blast; and the
-view lurches away from a blast (the old camera kick: strength 24, reach 34 m, spring 110, damping 12). While G is
-held, dots in the faction's Top colour show the arc to where it first lands; the preview runs the very step
-function the grenade flies by, and the throw leaves with exactly the charge, place and aim the preview last
-showed, so it lands exactly there. Three grenades in hand. A full charge takes longer to land than the fuse, so it
-bursts in the air about 29 m out and 4.7 m up, as the old game's did, short of the preview's ring (35 m), which
-shows where it would land. Differences from the old game: grenades bounce off blocks and the ramp (the old one
-only bounced off the ground), and are swept so they never pass through the thin cover wall or into a block; a
-real impact bounces with the old game's shares (0.4 into, 0.6 along the surface), while rolling along a surface
-slows at a steady 3 per second (the old game lost speed per frame); a grenade comes to rest only on level ground
-(on the ramp it rolls back down); the flight and the fuse run in steps of 1/120 s at either step rate, so a throw
-flies and goes off the same at 30 or 60; one grenade comes back every 5 s. The soldier has no health, so blasts do
-not hurt him.
+The grenade (the owner's design): hold the right button (or G) and an arc shows the whole flight to the point
+under the cursor (the ground, a block's top or side, the ramp): dots along the path, a bigger dot at each bounce,
+and where it goes off a small ring with the blast's reach round it on the floor. Let go and it throws; the grenade
+flies exactly that arc, bounces exactly there and goes off exactly there (the arc runs the very step function the
+grenade flies by, with the same target and place). Aim at a wall's face and it bounces off it; aim at a ledge top or
+the ground behind cover and the throw lobs higher (5° at a time, up to 80°) until it lands there, or keeps its plain
+arc, shown hitting whatever is in the way. No charge (the old game shared one charge with the Torque Bow; the
+grenade has none now): the throw leaves at 41.3° above level (raised for a target above the hand), from the
+soldier's middle at 1.5 m (a lob from right behind the cover wall clears it), at the speed that reaches the target,
+up to 26 m/s, about 35 m on flat ground; a target further away falls short. While the arc is up the gun is held
+(the left button does nothing). From the old game: the launch angle and top speed, gravity 20, a 1.5 s fuse from
+the throw, a 6.5 m blast doing 140 damage at the centre, falling off evenly to nothing at the edge and needing a
+clear line from the blast, and the view lurching away from a blast (strength 24, reach 34 m, spring 110, damping 12).
+With the 1.5 s fuse, a throw beyond about 27 m goes off in the air before it lands, and a short one bounces and
+rolls on past the cursor before it goes off; the arc shows both. Three grenades in hand, one back every 5 s.
+Differences from the old game: grenades bounce off blocks and the ramp (the old one only bounced off the ground),
+and are swept so they never pass through the thin cover wall or into a block; a real impact bounces with the old
+game's shares (0.4 into, 0.6 along the surface), while rolling along a surface slows at a steady 3 per second (the
+old game lost speed per frame); a grenade comes to rest only on level ground (on the ramp it rolls back down); the
+flight and the fuse run in steps of 1/120 s at either step rate, so a throw flies and goes off the same at 30 or
+60. The soldier has no health, so blasts do not hurt him.
 
-Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
-Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q there. While aiming
+Aim down sights (the old game's rules): hold Q, or the right button when it is set to aim (or switch to
+click-to-toggle). In Firefox, Shift + right click always opens the browser's own menu, which no page can stop;
+since Shift sprints, use Q (or G, for the grenade) there. While aiming
 the soldier walks at 0.55 of his speed and cannot sprint, each gun's spread rests at its sights value, and the
 screen dead zone shrinks to 0.45. The camera reacts in one of three ways: Flatten (the view tips toward the
 cursor, no flatter than 28.5°), Slide (the camera slides toward the cursor, keeping the soldier on screen; the
@@ -70,8 +78,9 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
   are the sandbox's own picks, because the old game has no number for them: the body radius (from the Art
   brief's soldier), push strength and push radius, the sprint-to-fire delays (0.15 s SMG, 0.25 s rifle, 0.3 s
   shotgun), the active-reload window (40 % to 60 %), the shotgun's falloff (none), the press rule below
-  (0.15 s, no slider), the grenade refill (5 s), the grenade's rolling slowdown (3 per second, no slider) and where a throw starts (the
-  soldier's middle at 1.5 m, no slider). Every slider has its own reset (↺, lit when the value has moved);
+  (0.15 s, no slider), the grenade refill (5 s), the grenade's rolling slowdown (3 per second, no slider), where a
+  throw starts (the soldier's middle at 1.5 m, no slider) and how an aimed throw picks its angle (raised by half a
+  higher target's elevation; lobbed up to 80° to land on the target; no slider). Every slider has its own reset (↺, lit when the value has moved);
   hover a name to see where its start value comes from. The Export names the camera profile in use.
 - **Export** copies every value as JSON with the date and time, the build it came from, units in the names and
   the old game's own names beside them. The JSON also appears in a box, in case the browser blocks copying.

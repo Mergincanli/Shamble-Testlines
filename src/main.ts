@@ -5,11 +5,11 @@ import { audioState, click, clicksPlayed, unlockAudio } from './audio';
 import { FollowCamera } from './camera';
 import { makeDummies, otherFactions, steerDummy } from './dummies';
 import { Fx } from './fx';
-import { blastDamage, newGrenade, previewPath, spent, stepGrenade, throwStart, throwVelocity, type Blast, type Grenade } from './grenade';
+import { aimedThrow, blastDamage, newGrenade, previewFlight, spent, stepGrenade, throwStart, type Blast, type Flight, type Grenade } from './grenade';
 import { NadeFx } from './nadefx';
 import type { GunId } from './guns';
 import { Hud } from './hud';
-import { Input } from './input';
+import { AIM_KEY, Input } from './input';
 import { addLights, setInkResolution, type Faction } from './look';
 import { newMover, stepMover, type MoveInput, type MoverState } from './movement';
 import { Panel } from './panel';
@@ -27,7 +27,7 @@ import {
   type ShotEvent,
   type Target,
 } from './weapons';
-import { buildYard } from './yard';
+import { buildYard, rayWorld } from './yard';
 
 const store = new Store();
 
@@ -80,13 +80,16 @@ const fx = new Fx(scene, dummies.length);
 const nadeFx = new NadeFx(scene);
 nadeFx.setFaction(store.get('faction') as Faction);
 
-// Grenades (the G key): carried count and refill, the held charge, the grenades in flight, this frame's blasts.
+// Grenades (the right button or G): carried count and refill, the throw being aimed, the grenades in flight, this
+// frame's blasts.
 const grenades: Grenade[] = [];
 const blasts: { at: Blast; hits: number[]; killed: boolean }[] = [];
 let nadesHeld = store.num('nadeCount');
 let nadeRefillT = 0;
-let charging = false;
-let chargeT = 0;
+/** A throw is being aimed (the button is held and the arc shows). */
+let nadeAiming = false;
+/** The point under the cursor (ground, block or ramp), found at each frame: where the next throw is aimed. */
+let nadeTarget: { x: number; y: number; z: number } | null = null;
 let nadesThrown = 0;
 let blastsDone = 0;
 let lastFirstContact: { x: number; y: number; z: number } | null = null;
@@ -98,9 +101,11 @@ const events: ShotEvent[] = [];
 let shotsFired = 0;
 let lastShotSpread = 0;
 let lastShotRays = 0;
-let lastPreview: { x: number; y: number; z: number }[] | null = null;
-/** The last throw: its charge, and where the preview drawn just before it landed (for the scripted checks). */
-let lastThrow: { charge: number; previewEnd: { x: number; y: number; z: number } | null } | null = null;
+/** The arc drawn at the last frame, and the arc shown just before the last throw (for the scripted checks). */
+let lastPreview: Flight | null = null;
+let lastThrow: { preview: Flight | null; target: { x: number; y: number; z: number } } | null = null;
+/** The last blast: where it went off and where that grenade bounced on the way (for the scripted checks). */
+let lastBlast: { at: Blast; bounces: { x: number; y: number; z: number }[] } | null = null;
 
 function resize() {
   const canvas = renderer.domElement;
@@ -135,9 +140,11 @@ store.onChange((key) => {
     switchGun(W, g, store);
   }
   if (key === null || key === 'tickRate') acc = 0;
-  if (store.get('adsMode') !== lastAdsMode) {
+  if (store.get('adsMode') !== lastAdsMode || store.get('rightButton') !== lastRightButton) {
     lastAdsMode = store.get('adsMode');
+    lastRightButton = store.get('rightButton');
     aiming = false;
+    nadeAiming = false;
   }
   if (key === null || key === 'camTurn') camera.resetTurn();
   if (key === null || key === 'dummyHealth') for (const t of targets) if (t.downFor <= 0) t.health = store.num('dummyHealth');
@@ -153,16 +160,20 @@ input.onKey((code, key) => {
 renderer.domElement.addEventListener('pointerdown', () => unlockAudio());
 
 const moveInput: MoveInput = { wishX: 0, wishZ: 0, sprint: false, jump: false, speedMult: 1 };
-/** Aiming down sights, decided at each simulation step from the right button (hold or toggle). */
+/** Aiming down sights, decided at each simulation step from Q (and the right button when set to aim). */
 let aiming = false;
 let lastAdsMode = store.get('adsMode');
+let lastRightButton = store.get('rightButton');
 input.onFocusLoss(() => {
   aiming = false;
-  // A charge is dropped, not thrown, when the page loses focus (as the old game did).
-  charging = false;
+  // A throw being aimed is dropped, not thrown, when the page loses focus.
+  nadeAiming = false;
 });
 
-function readMoveInput() {
+/** The right button aims a grenade (the start) or aims down sights. */
+const rightIsGrenade = () => store.get('rightButton') !== 'aim';
+
+function readMoveInput(rightPress: boolean) {
   const ax = camera.axes(store);
   let x = 0;
   let z = 0;
@@ -185,11 +196,12 @@ function readMoveInput() {
   const l = Math.hypot(x, z);
   moveInput.wishX = l > 1e-6 ? x / l : 0;
   moveInput.wishZ = l > 1e-6 ? z / l : 0;
-  // Aiming down sights: the right button, held or toggled.
-  const aimPress = input.takeAimPress();
+  // Aiming down sights: Q (and the right button, when it is set to aim), held or toggled.
+  const rightAims = !rightIsGrenade();
+  const aimPress = input.takePress(AIM_KEY) || (rightAims && rightPress);
   if (store.get('adsMode') === 'toggle') {
     if (aimPress) aiming = !aiming;
-  } else aiming = input.aimHeld();
+  } else aiming = input.down(AIM_KEY) || (rightAims && input.rightHeld());
   moveInput.speedMult = aiming ? store.num('adsMoveMult') : 1;
   // Firing stops the sprint, and so do a press waiting for the gun to come up (after the gun's sprint-to-fire
   // delay) and aiming down sights.
@@ -213,13 +225,18 @@ const shake = new THREE.Vector3();
 /** One fixed simulation step: the player's soldier, his gun, the dummies, then the soft push. */
 function simStep(dt: number) {
   prev = { ...cur };
-  readMoveInput();
-  nadeInput();
+  // The right button's press and let-go are read once a step and go to the grenade or to aiming down sights.
+  const rightPress = input.takeRightPress();
+  const rightRelease = input.takeRightRelease();
+  readMoveInput(rightPress);
+  nadeInput(rightPress, rightRelease);
   stepMover(cur, moveInput, dt, store);
+  // While a throw is aimed the gun is held: the left button does nothing.
+  const firePress = input.takeFirePress();
   stepWeapons(
     W,
     cur,
-    { held: input.fireHeld(), pressed: input.takeFirePress(), reload: input.takePress('KeyR'), aimYaw, ads: aiming },
+    { held: input.fireHeld() && !nadeAiming, pressed: firePress && !nadeAiming, reload: input.takePress('KeyR'), aimYaw, ads: aiming },
     targets,
     dt,
     store,
@@ -261,27 +278,26 @@ function throwOrigin(): [number, number, number] {
 }
 
 /**
- * The G key, first thing in a step, so a throw leaves with exactly the charge, place and aim the preview showed
- * at the last frame. A release throws, then a press starts the next charge (so a quick double tap throws two).
- * G down starts the charge (with a grenade in hand); G up throws, at a speed set by how long it was held: a tap
- * within one step is the slowest throw.
+ * The grenade buttons, first thing in a step, so a throw leaves for exactly the target, from exactly the place the
+ * arc showed at the last frame. Hold the right button (or G) to aim, let go to throw. A let-go throws, then a press
+ * starts aiming the next one (so a quick double click throws two).
  */
-function nadeInput() {
-  const released = input.takeRelease('KeyG');
-  if (charging && (released || !input.down('KeyG'))) {
-    const [ox, oy, oz] = throwOrigin();
-    const charge = chargeT / store.num('nadeChargeTime');
-    grenades.push(newGrenade(ox, oy, oz, throwVelocity(aimYaw, charge, store), store));
-    lastThrow = { charge, previewEnd: lastPreview ? lastPreview[lastPreview.length - 1] : null };
+function nadeInput(rightPress: boolean, rightRelease: boolean) {
+  const right = rightIsGrenade();
+  const pressed = input.takePress('KeyG') || (right && rightPress);
+  const released = input.takeRelease('KeyG') || (right && rightRelease);
+  const held = input.down('KeyG') || (right && input.rightHeld());
+  if (nadeAiming && (released || !held)) {
+    const o = throwOrigin();
+    const target = nadeTarget ?? { x: aimPoint.x, y: 0, z: aimPoint.z };
+    grenades.push(newGrenade(o[0], o[1], o[2], aimedThrow(o, target, aimYaw, store), store));
+    lastThrow = { preview: lastPreview, target };
     lastPreview = null;
     nadesHeld--;
     nadesThrown++;
-    charging = false;
+    nadeAiming = false;
   }
-  if (input.takePress('KeyG') && !charging && nadesHeld > 0) {
-    charging = true;
-    chargeT = 0;
-  }
+  if (pressed && !nadeAiming && nadesHeld > 0) nadeAiming = true;
 }
 
 /** Advance a damped spring (x'' = -k x - c x') by dt exactly: stable at any step rate, and the same swing at 30 or 60. */
@@ -321,8 +337,6 @@ function stepNades(dt: number) {
       nadeRefillT = 0;
     }
   } else nadeRefillT = 0;
-  // The charge grows while G stays down (the throw itself is at the start of the next step, in nadeInput).
-  if (charging && input.down('KeyG')) chargeT = Math.min(chargeT + dt, store.num('nadeChargeTime'));
   for (let i = grenades.length - 1; i >= 0; i--) {
     const g = grenades[i];
     stepGrenade(g, dt, store);
@@ -330,6 +344,7 @@ function stepNades(dt: number) {
     if (!spent(g)) continue;
     grenades.splice(i, 1);
     const at: Blast = { x: g.x, y: g.y, z: g.z };
+    lastBlast = { at, bounces: g.bounceAt };
     const hits: number[] = [];
     let killed = false;
     targets.forEach((t, k) => {
@@ -411,6 +426,10 @@ function frame(now: number) {
     const dz = aimPoint.z - renderPos.z;
     if (dx * dx + dz * dz > 0.09) aimYaw = Math.atan2(dx, dz);
   }
+  // The grenade's target: the first surface under the cursor (a wall's face too, for a throw off it).
+  const ro = raycaster.ray.origin;
+  const rd = raycaster.ray.direction;
+  nadeTarget = rayWorld(ro.x, ro.y, ro.z, rd.x, rd.y, rd.z);
 
   // Effects age first; then this frame's shots start theirs, so they are drawn at full strength. The tracer
   // leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
@@ -437,11 +456,11 @@ function frame(now: number) {
   }
   blasts.length = 0;
   nadeFx.showGrenades(grenades, alpha);
-  if (charging) {
-    const [ox, oy, oz] = throwOrigin();
-    const charge = chargeT / store.num('nadeChargeTime');
-    lastPreview = previewPath(ox, oy, oz, throwVelocity(aimYaw, charge, store), store);
-    nadeFx.preview(lastPreview, charge);
+  // While a throw is aimed: its whole flight, bounces and burst included, exactly as the grenade will fly it.
+  if (nadeAiming && nadeTarget) {
+    const o = throwOrigin();
+    lastPreview = previewFlight(o, aimedThrow(o, nadeTarget, aimYaw, store), store);
+    nadeFx.preview(lastPreview, store.num('nadeRadius'));
   } else nadeFx.preview(null, 0);
   if (events.length) {
     soldier.muzzleWorld(muzzle);
@@ -558,7 +577,7 @@ function frame(now: number) {
     W.activeNote = '';
   }
 
-  hud.updateNade(nadesHeld, Math.round(store.num('nadeCount')), charging ? chargeT / store.num('nadeChargeTime') : -1);
+  hud.updateNade(nadesHeld, Math.round(store.num('nadeCount')), nadeAiming);
   // The view kick goes on last, so it never moves the aim (and the blast's kick with it).
   camera.cam.position.x += kickPrev.x + (kick.x - kickPrev.x) * alpha;
   camera.cam.position.y += kickPrev.y + (kick.y - kickPrev.y) * alpha;
@@ -628,14 +647,15 @@ requestAnimationFrame(frame);
   aimPoint: () => ({ x: aimPoint.x, y: aimPoint.y, z: aimPoint.z }),
   nades: () => ({
     held: nadesHeld,
-    charging,
-    chargeT,
+    aiming: nadeAiming,
+    target: nadeTarget,
     thrown: nadesThrown,
     blasts: blastsDone,
     flying: grenades.map((g) => ({ x: g.x, y: g.y, z: g.z })),
     firstContact: lastFirstContact,
-    previewEnd: lastPreview ? lastPreview[lastPreview.length - 1] : null,
-    lastThrow,
+    preview: lastPreview ? { end: lastPreview.end, bounces: lastPreview.bounces } : null,
+    lastThrow: lastThrow ? { target: lastThrow.target, end: lastThrow.preview?.end ?? null, bounces: lastThrow.preview?.bounces ?? null } : null,
+    lastBlast,
     kick: Math.hypot(kick.x, kick.y, kick.z),
   }),
   gun: () => ({

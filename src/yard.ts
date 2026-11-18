@@ -60,6 +60,80 @@ export function rampHeight(b: Block, x: number, z: number): number {
   return t * b.top;
 }
 
+/**
+ * The first solid surface along a ray (the cursor's, from the camera): the ground, a block's top or side, the
+ * ramp's slope or side. Null if it meets nothing (it always meets the ground when looking down).
+ */
+export function rayWorld(
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+): { x: number; y: number; z: number } | null {
+  let best = Infinity;
+  if (dy < -1e-9) best = -oy / dy;
+  const o = [ox, oy, oz];
+  const d = [dx, dy, dz];
+  for (const b of BLOCKS) {
+    if (!b.ramp) {
+      // Slab test against the block's box: the entry point.
+      const lo = [b.minX, 0, b.minZ];
+      const hi = [b.maxX, b.top, b.maxZ];
+      let t0 = 0;
+      let t1 = Infinity;
+      let ok = true;
+      for (let i = 0; i < 3 && ok; i++) {
+        if (Math.abs(d[i]) < 1e-12) {
+          if (o[i] < lo[i] || o[i] > hi[i]) ok = false;
+          continue;
+        }
+        let a = (lo[i] - o[i]) / d[i];
+        let c = (hi[i] - o[i]) / d[i];
+        if (a > c) [a, c] = [c, a];
+        t0 = Math.max(t0, a);
+        t1 = Math.min(t1, c);
+        if (t0 > t1) ok = false;
+      }
+      if (ok && t0 > 0 && t0 < best) best = t0;
+      continue;
+    }
+    // The ramp: its slope, its two sides (under the slope) and its high end.
+    const r = b.ramp;
+    const ax = r.axis === 'x' ? 0 : 2;
+    const cx = ax === 0 ? 2 : 0;
+    const s = b.top / (r.high - r.low);
+    const inside = (p: number[], eps: number) =>
+      p[0] >= b.minX - eps && p[0] <= b.maxX + eps && p[2] >= b.minZ - eps && p[2] <= b.maxZ + eps;
+    const at = (t: number) => [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
+    // Slope: y = s * (c - low), c the coordinate along the rise.
+    const den = d[1] - s * d[ax];
+    if (Math.abs(den) > 1e-12) {
+      const t = (s * (o[ax] - r.low) - o[1]) / den;
+      if (t > 0 && t < best && inside(at(t), 1e-6)) best = t;
+    }
+    // Sides: the planes across the ramp, under the slope.
+    const lo = cx === 0 ? b.minX : b.minZ;
+    const hi = cx === 0 ? b.maxX : b.maxZ;
+    for (const plane of [lo, hi]) {
+      if (Math.abs(d[cx]) < 1e-12) continue;
+      const t = (plane - o[cx]) / d[cx];
+      if (t <= 0 || t >= best) continue;
+      const p = at(t);
+      if (inside(p, 1e-6) && p[1] >= 0 && p[1] <= rampHeight(b, p[0], p[2])) best = t;
+    }
+    // High end.
+    if (Math.abs(d[ax]) > 1e-12) {
+      const t = (r.high - o[ax]) / d[ax];
+      const p = at(t);
+      if (t > 0 && t < best && inside(p, 1e-6) && p[1] >= 0 && p[1] <= b.top) best = t;
+    }
+  }
+  if (!Number.isFinite(best)) return null;
+  return { x: ox + dx * best, y: oy + dy * best, z: oz + dz * best };
+}
+
 /** The highest surface at (x, z) at or just below height y: the ground, a block's top or the ramp (for effects). */
 export function floorBelow(x: number, z: number, y: number): number {
   let f = 0;
