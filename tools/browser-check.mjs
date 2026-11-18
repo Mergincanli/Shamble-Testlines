@@ -583,13 +583,16 @@ async function run(browserName) {
     gsg1 = await T(() => window.__testlines.gun());
     ok('the pellet slider sets the rays per shot', gsg1.lastShotRays === 3, `${gsg1.lastShotRays} rays`);
     await T(() => window.__testlines.set('shotgunPellets', 8));
-    // A fast double click fires once: the second click comes early in the 0.85 s gap and is dropped.
+    // Two clicks 0.3 s apart fire once: the second comes early in the 0.85 s gap and is dropped. (The rule itself
+    // is proven step by step in a simulation; this checks it in the page, with the clicks a few frames apart.)
     await sleep(3000);
     gsg = await T(() => window.__testlines.gun());
-    await page.mouse.click(p0sg.x, p0sg.y, { clickCount: 2, delay: 30 });
+    await page.mouse.click(p0sg.x, p0sg.y);
+    await sleep(300);
+    await page.mouse.click(p0sg.x, p0sg.y);
     await sleep(1500);
     gsg1 = await T(() => window.__testlines.gun());
-    ok('a fast double click on the shotgun fires once', gsg1.shots - gsg.shots === 1, `${gsg1.shots - gsg.shots} shots`);
+    ok('a second shotgun click early in the gap is dropped', gsg1.shots - gsg.shots === 1, `${gsg1.shots - gsg.shots} shots`);
     // Fire, switch away and back: the first shot after the switch comes after the short switch pause.
     await T(() => window.__testlines.set('shotgunMag', 10));
     await sleep(3000);

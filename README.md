@@ -15,7 +15,9 @@ rifle, shotgun), the backquote key (`) hides the panel.
 The shotgun (key 3, the Peacekeeper's) starts from the old game's Bagpipe: 8 pellets of 11 damage, 0.85 s between
 shots, 2 shells, a 2.6 s reload, 34 m range, spread 0.1 (0.05 aiming). One pull is one round, one click, one view
 kick and one hit marker; each pellet scatters on its own. It has falloff sliders, starting at none, as the old
-Bagpipe had none. Its model is the sandbox's own minimal shape (no Art text covers it yet), held like the rifle.
+Bagpipe had none. Its reload fills both shells at once, as the old game's did (docs/UNITS.md has shells loading one
+by one; that is not built). Its model is the sandbox's own minimal shape (no Art text covers it yet), held like
+the rifle.
 
 Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
 Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q there. While aiming
@@ -50,7 +52,8 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 - The camera starts on the Original profile (above). Most other sliders start at the old game's number. A few
   are the sandbox's own picks, because the old game has no number for them: the body radius (from the Art
   brief's soldier), push strength and push radius, the sprint-to-fire delays (0.15 s SMG, 0.25 s rifle, 0.3 s
-  shotgun), the active-reload window (40 % to 60 %) and the shotgun's falloff (none). Every slider has its own reset (↺, lit when the value has moved);
+  shotgun), the active-reload window (40 % to 60 %), the shotgun's falloff (none) and the press rule below
+  (0.15 s, no slider). Every slider has its own reset (↺, lit when the value has moved);
   hover a name to see where its start value comes from. The Export names the camera profile in use.
 - **Export** copies every value as JSON with the date and time, the build it came from, units in the names and
   the old game's own names beside them. The JSON also appears in a box, in case the browser blocks copying.
@@ -65,6 +68,10 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 - A level shot still counts within 0.6 m above a dummy's head or below its feet, so the 0.55 m step and the foot
   of the ramp work. How aiming at height works is open in the game.
 - Recoil is the old game's view kick (a camera shake and a small zoom punch per shot), not an aim kick.
+- A click in the gap between two shots is kept only if the gap has at most 0.15 s left (then it fires as the gap
+  ends); earlier clicks do nothing. The old game dropped every click in the gap. Clicks during the sprint-to-fire
+  delay and the pause after a gun change still wait and fire. This has no slider.
+- A gun change leaves 0.12 s before the first shot, whatever gap the gun was put away in (the old game's rule).
 - With the old numbers the SMG's spread does not build up: its recovery takes back more between two shots than a
   shot adds. The panel says so under "Spread added per shot".
 
