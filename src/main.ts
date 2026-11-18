@@ -5,6 +5,8 @@ import { audioState, click, clicksPlayed, unlockAudio } from './audio';
 import { FollowCamera } from './camera';
 import { makeDummies, otherFactions, steerDummy } from './dummies';
 import { Fx } from './fx';
+import { blastDamage, newGrenade, previewPath, stepGrenade, THROW_HEIGHT, throwVelocity, type Blast, type Grenade } from './grenade';
+import { NadeFx } from './nadefx';
 import type { GunId } from './guns';
 import { Hud } from './hud';
 import { Input } from './input';
@@ -75,11 +77,27 @@ function dressDummies() {
 }
 
 const fx = new Fx(scene, dummies.length);
+const nadeFx = new NadeFx(scene);
+nadeFx.setFaction(store.get('faction') as Faction);
+
+// Grenades (the G key): carried count and refill, the held charge, the grenades in flight, this frame's blasts.
+const grenades: Grenade[] = [];
+const blasts: { at: Blast; hits: number[]; killed: boolean }[] = [];
+let nadesHeld = store.num('nadeCount');
+let nadeRefillT = 0;
+let charging = false;
+let chargeT = 0;
+let nadesThrown = 0;
+let blastsDone = 0;
+let lastFirstContact: { x: number; y: number; z: number } | null = null;
+/** The blast's camera kick: a spring, stepped with the simulation (stable at any frame rate). */
+const kick = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
 const W = newWeapons(store, store.get('gun') as GunId);
 const events: ShotEvent[] = [];
 let shotsFired = 0;
 let lastShotSpread = 0;
 let lastShotRays = 0;
+let lastPreview: { x: number; y: number; z: number }[] | null = null;
 
 function resize() {
   const canvas = renderer.domElement;
@@ -106,6 +124,7 @@ store.onChange((key) => {
   if (key === null || key === 'faction') {
     soldier.setFaction(store.get('faction') as Faction);
     dressDummies();
+    nadeFx.setFaction(store.get('faction') as Faction);
   }
   if (key === null || key === 'gun') {
     const g = store.get('gun') as GunId;
@@ -136,6 +155,8 @@ let aiming = false;
 let lastAdsMode = store.get('adsMode');
 input.onFocusLoss(() => {
   aiming = false;
+  // A charge is dropped, not thrown, when the page loses focus (as the old game did).
+  charging = false;
 });
 
 function readMoveInput() {
@@ -226,7 +247,93 @@ function simStep(dt: number) {
     store.num('bodyRadius'),
     store.num('stepUp'),
   );
+  stepNades(dt);
   if (cur.y > peakY) peakY = cur.y;
+}
+
+/** Where a throw leaves the hand: a little in front of the soldier, at throwing height. */
+function throwOrigin(): [number, number, number] {
+  return [cur.x + Math.sin(aimYaw) * 0.4, cur.y + THROW_HEIGHT, cur.z + Math.cos(aimYaw) * 0.4];
+}
+
+/** One step of the grenades: the G key's charge and throw, the refill, the flights, the blasts, the camera kick. */
+function stepNades(dt: number) {
+  const max = Math.round(store.num('nadeCount'));
+  if (nadesHeld > max) nadesHeld = max;
+  if (nadesHeld < max) {
+    nadeRefillT += dt;
+    if (nadeRefillT >= store.num('nadeRefill')) {
+      nadesHeld++;
+      nadeRefillT = 0;
+    }
+  } else nadeRefillT = 0;
+  // G down starts the charge (with a grenade in hand); G up throws, at a speed set by how long it was held. A tap
+  // shorter than one step still throws (the slowest throw).
+  if (input.takePress('KeyG') && !charging && nadesHeld > 0) {
+    charging = true;
+    chargeT = 0;
+  }
+  if (charging) {
+    chargeT = Math.min(chargeT + dt, store.num('nadeChargeTime'));
+    if (input.takeRelease('KeyG') || !input.down('KeyG')) {
+      const [ox, oy, oz] = throwOrigin();
+      grenades.push(newGrenade(ox, oy, oz, throwVelocity(aimYaw, chargeT / store.num('nadeChargeTime'), store), store));
+      nadesHeld--;
+      nadesThrown++;
+      charging = false;
+    }
+  } else input.takeRelease('KeyG');
+  for (let i = grenades.length - 1; i >= 0; i--) {
+    const g = grenades[i];
+    stepGrenade(g, dt, store);
+    if (g.firstContact) lastFirstContact = g.firstContact;
+    if (g.fuse > 0) continue;
+    grenades.splice(i, 1);
+    const at: Blast = { x: g.x, y: g.y, z: g.z };
+    const hits: number[] = [];
+    let killed = false;
+    targets.forEach((t, k) => {
+      if (t.downFor > 0) return;
+      const dmg = blastDamage(at, dummies[k].state, store);
+      if (dmg <= 0) return;
+      t.health -= dmg;
+      hits.push(k);
+      if (t.health <= 0) {
+        t.health = 0;
+        t.downFor = Math.max(RISE_TIME + 0.05, store.num('dummyDownTime'));
+        killed = true;
+      }
+    });
+    // The camera lurches away from the blast, harder the closer it is.
+    let ax = cur.x - at.x;
+    let az = cur.z - at.z;
+    const d = Math.hypot(ax, az);
+    const prox = Math.max(0, 1 - d / store.num('nadeKickRange'));
+    if (prox > 0) {
+      if (d > 0.6) {
+        ax /= d;
+        az /= d;
+      } else {
+        const a = (blastsDone * 2.39) % (Math.PI * 2);
+        ax = Math.cos(a);
+        az = Math.sin(a);
+      }
+      const imp = store.num('nadeKick') * prox;
+      kick.vx += ax * imp;
+      kick.vz += az * imp;
+      kick.vy += imp * 0.4;
+    }
+    blasts.push({ at, hits, killed });
+    blastsDone++;
+  }
+  // The kick's spring, stepped here so it stays stable whatever the frame rate.
+  const k = store.num('nadeKickStiff');
+  const c = store.num('nadeKickDamp');
+  for (const ax of ['x', 'y', 'z'] as const) {
+    const v = ('v' + ax) as 'vx' | 'vy' | 'vz';
+    kick[v] += (-k * kick[ax] - c * kick[v]) * dt;
+    kick[ax] += kick[v] * dt;
+  }
 }
 
 function frame(now: number) {
@@ -268,6 +375,34 @@ function frame(now: number) {
   // Effects age first; then this frame's shots start theirs, so they are drawn at full strength. The tracer
   // leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
   fx.update(dt, input.mouseX, input.mouseY);
+  nadeFx.update(dt);
+  // Blasts of this frame: flash, ring and fragments; hit dummies flinch and show their bars; the hit marker on a hit.
+  for (const b of blasts) {
+    nadeFx.blast(b.at, store.num('nadeRadius'));
+    const prox = Math.max(0, 1 - Math.hypot(cur.x - b.at.x, cur.z - b.at.z) / store.num('nadeKickRange'));
+    fx.shake = Math.max(fx.shake, 0.4 * prox);
+    if (b.hits.length) fx.hit(b.hits[0], b.killed, input.mouseX, input.mouseY);
+    for (const h of b.hits) {
+      fx.showBar(h);
+      dummyFlinch[h] = 1;
+      const dx = dummies[h].state.x - b.at.x;
+      const dz = dummies[h].state.z - b.at.z;
+      const l = Math.hypot(dx, dz) || 1;
+      const fy = dummyYaw[h];
+      dummyTip[h] = (dx * Math.sin(fy) + dz * Math.cos(fy)) / l > 0 ? 1 : -1;
+      dummyKnock[h].x += (dx / l) * 0.3;
+      dummyKnock[h].y += (dz / l) * 0.3;
+      if (dummyKnock[h].length() > 0.5) dummyKnock[h].setLength(0.5);
+    }
+  }
+  blasts.length = 0;
+  nadeFx.showGrenades(grenades, alpha);
+  if (charging) {
+    const [ox, oy, oz] = throwOrigin();
+    const charge = chargeT / store.num('nadeChargeTime');
+    lastPreview = previewPath(ox, oy, oz, throwVelocity(aimYaw, charge, store), stepDt, store);
+    nadeFx.preview(lastPreview, charge);
+  } else nadeFx.preview(null, 0);
   if (events.length) {
     soldier.muzzleWorld(muzzle);
     for (const e of events) {
@@ -383,7 +518,11 @@ function frame(now: number) {
     W.activeNote = '';
   }
 
-  // The view kick goes on last, so it never moves the aim.
+  hud.updateNade(nadesHeld, Math.round(store.num('nadeCount')), charging ? chargeT / store.num('nadeChargeTime') : -1);
+  // The view kick goes on last, so it never moves the aim (and the blast's kick with it).
+  camera.cam.position.x += kick.x;
+  camera.cam.position.y += kick.y;
+  camera.cam.position.z += kick.z;
   fx.shakeOffset(shake);
   camera.cam.translateX(shake.x);
   camera.cam.translateY(shake.y);
@@ -447,6 +586,17 @@ requestAnimationFrame(frame);
   audio: () => ({ state: audioState(), clicks: clicksPlayed }),
   aiming: () => aiming,
   aimPoint: () => ({ x: aimPoint.x, y: aimPoint.y, z: aimPoint.z }),
+  nades: () => ({
+    held: nadesHeld,
+    charging,
+    chargeT,
+    thrown: nadesThrown,
+    blasts: blastsDone,
+    flying: grenades.map((g) => ({ x: g.x, y: g.y, z: g.z })),
+    firstContact: lastFirstContact,
+    previewEnd: lastPreview ? lastPreview[lastPreview.length - 1] : null,
+    kick: Math.hypot(kick.x, kick.y, kick.z),
+  }),
   gun: () => ({
     gun: W.gun,
     ...W.guns[W.gun],

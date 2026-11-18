@@ -23,6 +23,8 @@ export interface Grenade {
   fuse: number;
   resting: boolean;
   prev: { x: number; y: number; z: number };
+  /** Where it first touched anything (for the scripted checks: the preview must land there). */
+  firstContact?: { x: number; y: number; z: number };
 }
 
 export interface Blast {
@@ -105,64 +107,100 @@ export function stepGrenade(g: Grenade, dt: number, P: Store, stopAtContact = fa
   const d: [number, number, number] = [g.vx * dt, g.vy * dt - 0.5 * grav * dt * dt, g.vz * dt];
   g.vy -= grav * dt;
   const p0: [number, number, number] = [g.x, g.y, g.z];
+  // Upright faces (block sides, the ramp's sides and high end) are swept, so a fast grenade cannot pass through a
+  // thin wall; floors (the ground, block tops, the ramp's slope) are handled after the move.
   let tHit = 1;
   let normal: [number, number, number] | null = null;
   for (const b of BLOCKS) {
     const hit = segBox(p0, d, [b.minX - GRENADE_R, -1, b.minZ - GRENADE_R], [b.maxX + GRENADE_R, b.top + GRENADE_R, b.maxZ + GRENADE_R]);
-    if (!hit || hit[0] >= tHit) continue;
+    if (!hit || hit[0] >= tHit || hit[1] === 1) continue;
     if (b.ramp) {
-      // A ramp's box only counts on its upright faces (the two sides and the high end), and only below the
-      // slope's height there; its top is the slope, handled after the move.
-      if (hit[1] === 1) continue;
+      // A ramp's sides count only below the slope's height there, and its low end has no height at all.
+      const r = b.ramp;
+      const lowFace =
+        (r.axis === 'x' && hit[1] === 0 && hit[2] === (r.low < r.high ? -1 : 1)) ||
+        (r.axis === 'z' && hit[1] === 2 && hit[2] === (r.low < r.high ? -1 : 1));
+      if (lowFace) continue;
       const hx = p0[0] + d[0] * hit[0];
       const hy = p0[1] + d[1] * hit[0];
       const hz = p0[2] + d[2] * hit[0];
       const qx = Math.min(b.maxX, Math.max(b.minX, hx));
       const qz = Math.min(b.maxZ, Math.max(b.minZ, hz));
       if (hy - GRENADE_R > rampHeight(b, qx, qz)) continue;
-    }
+    } else if (p0[1] + d[1] * hit[0] > b.top + GRENADE_R - 1e-6) continue;
     tHit = hit[0];
     normal = [0, 0, 0];
     normal[hit[1]] = hit[2];
-  }
-  // The ground.
-  const yEnd = p0[1] + d[1];
-  if (yEnd < GRENADE_R && d[1] < 0) {
-    const t = Math.max(0, (p0[1] - GRENADE_R) / -d[1]);
-    if (t < tHit) {
-      tHit = t;
-      normal = [0, 1, 0];
-    }
   }
   const t = normal ? Math.max(0, tHit - 1e-4) : 1;
   g.x = p0[0] + d[0] * t;
   g.y = p0[1] + d[1] * t;
   g.z = p0[2] + d[2] * t;
-  let contact = normal !== null;
-  if (normal) bounce(g, normal[0], normal[1], normal[2], P);
-  // The ramp: a sloped surface; below it means a bounce off its slope.
+  let contact = false;
+  if (normal) {
+    surface(g, normal[0], normal[1], normal[2], dt, P);
+    contact = true;
+  }
+  // Floors: the ground, the top of a block it came down onto, the ramp's slope.
+  let floorY = GRENADE_R;
+  let floorN: [number, number, number] = [0, 1, 0];
   for (const b of BLOCKS) {
-    if (!b.ramp) continue;
-    if (g.x < b.minX || g.x > b.maxX || g.z < b.minZ || g.z > b.maxZ) continue;
-    const h = rampHeight(b, g.x, g.z);
-    if (g.y - GRENADE_R < h) {
-      g.y = h + GRENADE_R;
-      const r = b.ramp!;
-      const slope = b.top / (r.high - r.low);
-      // The slope's normal: up, tilted against the rise.
-      const n = r.axis === 'x' ? [-slope, 1, 0] : [0, 1, -slope];
-      const l = Math.hypot(n[0], n[1], n[2]);
-      bounce(g, n[0] / l, n[1] / l, n[2] / l, P);
-      contact = true;
+    if (g.x < b.minX - GRENADE_R || g.x > b.maxX + GRENADE_R || g.z < b.minZ - GRENADE_R || g.z > b.maxZ + GRENADE_R) continue;
+    if (b.ramp) {
+      if (g.x < b.minX || g.x > b.maxX || g.z < b.minZ || g.z > b.maxZ) continue;
+      const h = rampHeight(b, g.x, g.z) + GRENADE_R;
+      if (h > floorY && p0[1] >= h - 0.6) {
+        floorY = h;
+        const r = b.ramp;
+        const slope = b.top / (r.high - r.low);
+        const n: [number, number, number] = r.axis === 'x' ? [-slope, 1, 0] : [0, 1, -slope];
+        const l = Math.hypot(n[0], n[1], n[2]);
+        floorN = [n[0] / l, n[1] / l, n[2] / l];
+      }
+    } else {
+      const top = b.top + GRENADE_R;
+      if (top > floorY && p0[1] >= top - 1e-6) {
+        floorY = top;
+        floorN = [0, 1, 0];
+      }
     }
   }
-  if (g.y < GRENADE_R) g.y = GRENADE_R;
+  if (g.y < floorY) {
+    g.y = floorY;
+    surface(g, floorN[0], floorN[1], floorN[2], dt, P);
+    contact = true;
+  }
+  if (contact && !g.firstContact) g.firstContact = { x: g.x, y: g.y, z: g.z };
   // Come to rest when barely moving on a surface.
-  if (contact && Math.hypot(g.vx, g.vy, g.vz) < 0.6) {
+  if (contact && Math.hypot(g.vx, g.vy, g.vz) < REST_SPEED) {
     g.vx = g.vy = g.vz = 0;
     g.resting = true;
   }
   return stopAtContact && contact;
+}
+
+/** Below this speed into a surface it is not a bounce but rolling or sliding along it. */
+const IMPACT_SPEED = 1;
+/** Rolling or sliding along a surface slows at this rate per second (the sandbox's own; the old game lost speed per frame). */
+const ROLL_SLOW = 3;
+const REST_SPEED = 0.3;
+
+/** Meeting a surface: a real impact bounces (the old game's shares); otherwise it rolls along, slowing steadily. */
+function surface(g: Grenade, nx: number, ny: number, nz: number, dt: number, P: Store) {
+  const vn = g.vx * nx + g.vy * ny + g.vz * nz;
+  if (vn < -IMPACT_SPEED) {
+    bounce(g, nx, ny, nz, P);
+    return;
+  }
+  if (vn < 0) {
+    g.vx -= vn * nx;
+    g.vy -= vn * ny;
+    g.vz -= vn * nz;
+  }
+  const k = Math.exp(-ROLL_SLOW * dt);
+  g.vx *= k;
+  g.vy *= k;
+  g.vz *= k;
 }
 
 /** The throw's path up to its first contact, by the same step function and step rate as the flight. */

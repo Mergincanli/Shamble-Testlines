@@ -102,6 +102,7 @@ html, body {
   box-shadow: inset 0 0 0 1px #e0b04a;
 }
 #ammo .reload > .window.missed { background: rgba(107, 90, 58, 0.6); box-shadow: inset 0 0 0 1px #6b5a3a; }
+#ammo .nade { font-size: 12px; font-weight: 500; margin-top: 4px; color: #d8d3c8; }
 #ammo .note {
   font-size: 12px;
   height: 1.35em;

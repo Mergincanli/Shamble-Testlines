@@ -8,6 +8,8 @@ export class Input {
   readonly keys = new Set<string>();
   /** Key presses since the last simulation step read them, so a short tap between steps is not lost. */
   private pressed = new Set<string>();
+  /** Key releases since the last simulation step read them. */
+  private released = new Set<string>();
   mouseX = 0;
   mouseY = 0;
   /** Cursor in normalised device coordinates (-1..1, y up), over the canvas. */
@@ -40,7 +42,10 @@ export class Input {
       }
       this.keys.add(e.code);
     });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      this.released.add(e.code);
+    });
     // Losing focus (another window, another tab) lets go of everything, presses included.
     const letGo = () => {
       this.keys.clear();
@@ -48,6 +53,7 @@ export class Input {
       this.firePressed = false;
       this.aimPressed = false;
       this.pressed.clear();
+      this.released.clear();
       for (const h of this.onFocusLossHandlers) h();
     };
     window.addEventListener('blur', letGo);
@@ -155,6 +161,13 @@ export class Input {
     const p = this.aimPressed;
     this.aimPressed = false;
     return p;
+  }
+
+  /** True if the key came up since the last call for that key (consumes it). */
+  takeRelease(code: string): boolean {
+    const had = this.released.has(code);
+    this.released.delete(code);
+    return had;
   }
 
   /** Mouse travel in pixels while the middle button was held, since the last call. */

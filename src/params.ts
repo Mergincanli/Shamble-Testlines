@@ -12,6 +12,7 @@ export type GroupId =
   | 'smg'
   | 'rifle'
   | 'shotgun'
+  | 'nade'
   | 'ads'
   | 'camera'
   | 'framing'
@@ -27,6 +28,7 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'smg', title: 'SMG (key 1)', open: true, exportName: 'smg' },
   { id: 'rifle', title: 'Rifle (key 2)', open: false, exportName: 'rifle' },
   { id: 'shotgun', title: 'Shotgun (key 3)', open: false, exportName: 'shotgun' },
+  { id: 'nade', title: 'Grenade (hold G, let go to throw)', open: false, exportName: 'grenade' },
   { id: 'ads', title: 'Aim down sights (right button)', open: true, exportName: 'aim_down_sights' },
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
@@ -76,6 +78,16 @@ export type Value = number | string | boolean | null;
 export type Values = Record<string, Value>;
 
 const LN10 = Math.log(10);
+
+/** How far a grenade thrown at this speed flies on flat ground, from the throwing height (for the notes). */
+function nadeRange(v: Values, speed: number): number {
+  const a = ((v.nadeAngle as number) * Math.PI) / 180;
+  const g = v.nadeGravity as number;
+  const vx = speed * Math.cos(a);
+  const vy = speed * Math.sin(a);
+  const t = (vy + Math.sqrt(vy * vy + 2 * g * 1.5)) / g;
+  return vx * t;
+}
 
 /** The camera's angle above the ground at rest: toward the look point, which sits ahead of and above the feet. */
 export function restViewAngle(v: Values): number {
@@ -575,6 +587,40 @@ export const PARAMS: Param[] = [
 
   // The guns
   ...GUN_PARAMS,
+
+
+  // The frag grenade (old game: the G key, T_CHARGE.nade, T.grenade*, the camera kick T.camKick*).
+  { kind: 'range', key: 'nadeCount', group: 'nade', label: 'Grenades carried', exportKey: 'grenades_carried', unit: '', min: 1, max: 10, step: 1, start: 3, digits: 0, source: 'Old game T.grenadeMax.', legacy: 'T.grenadeMax' },
+  { kind: 'range', key: 'nadeRefill', group: 'nade', label: 'One grenade back every', exportKey: 'grenade_refill_s', unit: 's', min: 0.5, max: 60, step: 0.5, start: 5, digits: 1, source: "No old number (the old game refilled at the terminal): the sandbox's own pick, so you can keep throwing." },
+  { kind: 'range', key: 'nadeChargeTime', group: 'nade', label: 'Charge time (slow to fast throw)', exportKey: 'charge_time_s', unit: 's', min: 0.05, max: 4, step: 0.05, start: 1, digits: 2, source: 'Old game T_CHARGE.max: holding G this long gives the fastest throw; a tap gives the slowest.', legacy: 'T_CHARGE.max' },
+  {
+    kind: 'range', key: 'nadeSpeedMin', group: 'nade', label: 'Throw speed, tapped', exportKey: 'throw_speed_min_m_per_s', unit: 'm/s', min: 1, max: 60, step: 0.5, start: 13, digits: 1,
+    note: (v) => `about ${nadeRange(v, v.nadeSpeedMin as number).toFixed(1)} m on flat ground`,
+    source: 'Old game T_CHARGE.nade.sMin.', legacy: 'T_CHARGE.nade.sMin',
+  },
+  {
+    kind: 'range', key: 'nadeSpeedMax', group: 'nade', label: 'Throw speed, fully charged', exportKey: 'throw_speed_max_m_per_s', unit: 'm/s', min: 1, max: 80, step: 0.5, start: 26, digits: 1,
+    note: (v) => `about ${nadeRange(v, v.nadeSpeedMax as number).toFixed(1)} m on flat ground`,
+    source: 'Old game T_CHARGE.nade.sMax.', legacy: 'T_CHARGE.nade.sMax',
+  },
+  { kind: 'range', key: 'nadeAngle', group: 'nade', label: 'Launch angle', exportKey: 'launch_angle_deg', unit: '°', min: 2, max: 80, step: 0.5, start: Math.round(((0.72 * 180) / Math.PI) * 10) / 10, digits: 1, source: 'Old game T_CHARGE.nade.pitch = 0.72 rad: the throw always leaves at this angle above level, toward the cursor.', legacy: 'T_CHARGE.nade.pitch (deg)' },
+  { kind: 'range', key: 'nadeGravity', group: 'nade', label: 'Gravity on the grenade', exportKey: 'grenade_gravity_m_per_s2', unit: 'm/s²', min: 1, max: 60, step: 0.5, start: 20, digits: 1, source: 'Old game T_CHARGE.nade.grav (and its flight loop).', legacy: 'T_CHARGE.nade.grav' },
+  { kind: 'range', key: 'nadeBounce', group: 'nade', label: 'Bounce: speed kept off a surface', exportKey: 'bounce_kept', unit: '×', min: 0, max: 1, step: 0.01, start: 0.4, digits: 2, source: 'Old game: a ground bounce kept 0.4 of the speed into the ground. The sandbox bounces off blocks and the ramp the same way.' },
+  { kind: 'range', key: 'nadeSlide', group: 'nade', label: 'Bounce: speed kept along a surface', exportKey: 'slide_kept', unit: '×', min: 0, max: 1, step: 0.01, start: 0.6, digits: 2, source: 'Old game: a ground bounce kept 0.6 of the speed along the ground.' },
+  { kind: 'range', key: 'nadeFuse', group: 'nade', label: 'Fuse (from the throw)', exportKey: 'fuse_s', unit: 's', min: 0.1, max: 6, step: 0.05, start: 1.5, digits: 2, source: 'Old game: 1.5 s from the throw.' },
+  { kind: 'range', key: 'nadeRadius', group: 'nade', label: 'Blast radius', exportKey: 'blast_radius_m', unit: 'm', min: 0.5, max: 20, step: 0.1, start: 6.5, digits: 1, source: 'Old game T.grenadeRadius. Damage falls off evenly to nothing at the edge, and needs a clear line from the blast.', legacy: 'T.grenadeRadius' },
+  {
+    kind: 'range', key: 'nadeDamage', group: 'nade', label: 'Blast damage (at the centre)', exportKey: 'blast_damage', unit: '', min: 1, max: 500, step: 1, start: 140, digits: 0,
+    note: (v) => {
+      const kill = (v.nadeRadius as number) * (1 - (v.dummyHealth as number) / (v.nadeDamage as number));
+      return kill > 0 ? `drops a dummy within ${kill.toFixed(1)} m` : 'cannot drop a dummy alone';
+    },
+    source: 'Old game T.grenadeDamage.', legacy: 'T.grenadeDamage',
+  },
+  { kind: 'range', key: 'nadeKick', group: 'nade', label: 'Camera kick strength', exportKey: 'camera_kick_strength', unit: '', min: 0, max: 80, step: 0.5, start: 24, digits: 1, source: 'Old game T.camKickImpulse: the view lurches away from the blast, harder the closer it is (LOOK_V2 keeps this concussion feel). At the old camera distance; the closer profiles feel it more.', legacy: 'T.camKickImpulse' },
+  { kind: 'range', key: 'nadeKickRange', group: 'nade', label: 'Camera kick reaches', exportKey: 'camera_kick_range_m', unit: 'm', min: 1, max: 100, step: 1, start: 34, digits: 0, source: 'Old game T.camKickRange.', legacy: 'T.camKickRange' },
+  { kind: 'range', key: 'nadeKickStiff', group: 'nade', label: 'Camera kick spring', exportKey: 'camera_kick_stiffness', unit: '', min: 10, max: 400, step: 5, start: 110, digits: 0, source: 'Old game T.camKickStiffness: how fast the view springs back.', legacy: 'T.camKickStiffness' },
+  { kind: 'range', key: 'nadeKickDamp', group: 'nade', label: 'Camera kick damping', exportKey: 'camera_kick_damping', unit: '', min: 0, max: 60, step: 0.5, start: 12, digits: 1, source: 'Old game T.camKickDamping: how quickly the swing dies out.', legacy: 'T.camKickDamping' },
 
   // Aim down sights
   {

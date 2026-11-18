@@ -611,6 +611,70 @@ async function run(browserName) {
     await page.keyboard.press('Digit1');
     await T(() => window.__testlines.set('dummiesWalk', true));
 
+    // The grenade (G): a tap throws the slowest throw; it goes off after its fuse.
+    await T(() => window.__testlines.set('dummiesWalk', false));
+    await T(() => window.__testlines.place(30, 30));
+    await sleep(1200);
+    const nadeSpot = await T(() => window.__testlines.screenOf(30, 1.36, 20));
+    await page.mouse.move(nadeSpot.x, nadeSpot.y);
+    await sleep(600);
+    let nd0 = await T(() => window.__testlines.nades());
+    await page.keyboard.press('KeyG');
+    await sleep(300);
+    let nd1 = await T(() => window.__testlines.nades());
+    ok('a G tap throws one grenade', nd1.thrown - nd0.thrown === 1 && nd0.held - nd1.held === 1, `held ${nd0.held} -> ${nd1.held}, flying ${nd1.flying.length}`);
+    await sleep(1700);
+    nd1 = await T(() => window.__testlines.nades());
+    ok('the grenade goes off after its fuse', nd1.blasts - nd0.blasts === 1 && nd1.flying.length === 0, `${nd1.blasts - nd0.blasts} blast`);
+    // Holding G charges; the preview lands where the grenade first touches. (A full charge outlasts the 1.5 s fuse
+    // and bursts in the air, as the old game's did, so this check gives it a longer fuse.)
+    await T(() => window.__testlines.set('nadeFuse', 4));
+    await page.keyboard.down('KeyG');
+    await sleep(1400);
+    const ndc = await T(() => window.__testlines.nades());
+    const land = ndc.previewEnd;
+    nd0 = await T(() => window.__testlines.nades());
+    await page.keyboard.up('KeyG');
+    await sleep(2600);
+    nd1 = await T(() => window.__testlines.nades());
+    const fc = nd1.firstContact;
+    ok('holding G charges the throw', ndc.charging && ndc.chargeT > 0.9, `charge ${ndc.chargeT.toFixed(2)} s`);
+    ok('the preview lands where the grenade first touches', !!fc && Math.hypot(fc.x - land.x, fc.z - land.z) < 0.05, fc ? `${Math.hypot(fc.x - land.x, fc.z - land.z).toFixed(3)} m apart` : 'no contact');
+    await sleep(1800);
+    await T(() => window.__testlines.set('nadeFuse', 1.5));
+    // A short slow throw beside a dummy: the blast drops it, leaves one far away alone, and kicks the camera.
+    await T(() => window.__testlines.set('nadeSpeedMin', 3));
+    await T(() => window.__testlines.set('nadeSpeedMax', 3));
+    await T(() => window.__testlines.placeDummy(0, 30, 27.4));
+    await T(() => window.__testlines.placeDummy(1, 30, 18));
+    await sleep(300);
+    nd0 = await T(() => window.__testlines.nades());
+    await page.keyboard.press('KeyG');
+    let peakKick = 0;
+    for (let i = 0; i < 80; i++) {
+      const n = await T(() => window.__testlines.nades());
+      peakKick = Math.max(peakKick, n.kick);
+      if (n.blasts > nd0.blasts && peakKick > 0) break;
+      await sleep(30);
+    }
+    for (let i = 0; i < 8; i++) {
+      peakKick = Math.max(peakKick, (await T(() => window.__testlines.nades())).kick);
+      await sleep(30);
+    }
+    const dn = await T(() => window.__testlines.dummies());
+    ok('the blast drops a dummy beside it', dn[0].down, `health ${dn[0].health.toFixed(0)}`);
+    ok('a dummy outside the blast radius is unhurt', dn[1].health === 100, `health ${dn[1].health.toFixed(0)}`);
+    ok('a blast this close kicks the camera', peakKick > 0.05, `peak kick ${peakKick.toFixed(2)} m`);
+    await T(() => window.__testlines.set('nadeSpeedMin', 13));
+    await T(() => window.__testlines.set('nadeSpeedMax', 26));
+    // One grenade comes back after the refill time.
+    await T(() => window.__testlines.set('nadeRefill', 1));
+    await sleep(2500);
+    nd1 = await T(() => window.__testlines.nades());
+    ok('grenades come back after the refill time', nd1.held === 3, `held ${nd1.held}`);
+    await T(() => window.__testlines.set('nadeRefill', 5));
+    await T(() => window.__testlines.set('dummiesWalk', true));
+
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
     const b60 = (await page.$$('#panel .p-segbtn'))[seg.indexOf('60')];

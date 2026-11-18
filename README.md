@@ -9,8 +9,8 @@ Nothing here is the game, and no value here is a decision.
 with no install, no server and no internet.
 
 Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, the
-right button aims down sights, R reloads, hold the middle button to turn the camera, 1, 2 and 3 change guns (SMG,
-rifle, shotgun), the backquote key (`) hides the panel.
+right button (or Q) aims down sights, R reloads, hold G and let go to throw a grenade, hold the middle button to
+turn the camera, 1, 2 and 3 change guns (SMG, rifle, shotgun), the backquote key (`) hides the panel.
 
 The shotgun (key 3, the Peacekeeper's) starts from the old game's Bagpipe: 8 pellets of 11 damage, 0.85 s between
 shots, 2 shells, a 2.6 s reload, 34 m range, spread 0.1 (0.05 aiming). One pull is one round, one click, one view
@@ -18,6 +18,18 @@ kick and one hit marker; each pellet scatters on its own. It has falloff sliders
 Bagpipe had none. Its reload fills both shells at once, as the old game's did (docs/UNITS.md has shells loading one
 by one; that is not built). Its model is the sandbox's own minimal shape (no Art text covers it yet), held like
 the rifle.
+
+The grenade (hold G, let go to throw) follows the old game: a tap throws at 13 m/s, a full 1 s charge at 26 m/s,
+always at 41.3° above level toward the cursor; gravity 20; a 1.5 s fuse from the throw; a 6.5 m blast doing 140
+damage at the centre, falling off evenly to nothing at the edge and needing a clear line from the blast; and the
+view lurches away from a blast (the old camera kick: strength 24, reach 34 m, spring 110, damping 12). While G is
+held, dots in the faction's Top colour show the arc to where it first lands; the preview runs the very step
+function the grenade flies by, so it lands exactly there. Three grenades in hand. A full charge takes longer to
+land than the fuse, so it bursts in the air around 30 m, as the old game's did. Differences from the old game:
+grenades bounce off blocks and the ramp (the old one only bounced off the ground), and are swept so they never
+pass through the thin cover wall; a real impact bounces with the old game's shares (0.4 into, 0.6 along the
+surface), while rolling along a surface slows at a steady 3 per second (the old game lost speed per frame); one
+grenade comes back every 5 s. The soldier has no health, so blasts do not hurt him.
 
 Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
 Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q there. While aiming
@@ -52,8 +64,8 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 - The camera starts on the Original profile (above). Most other sliders start at the old game's number. A few
   are the sandbox's own picks, because the old game has no number for them: the body radius (from the Art
   brief's soldier), push strength and push radius, the sprint-to-fire delays (0.15 s SMG, 0.25 s rifle, 0.3 s
-  shotgun), the active-reload window (40 % to 60 %), the shotgun's falloff (none) and the press rule below
-  (0.15 s, no slider). Every slider has its own reset (↺, lit when the value has moved);
+  shotgun), the active-reload window (40 % to 60 %), the shotgun's falloff (none), the press rule below
+  (0.15 s, no slider), the grenade refill (5 s) and the grenade's rolling slowdown (3 per second, no slider). Every slider has its own reset (↺, lit when the value has moved);
   hover a name to see where its start value comes from. The Export names the camera profile in use.
 - **Export** copies every value as JSON with the date and time, the build it came from, units in the names and
   the old game's own names beside them. The JSON also appears in a box, in case the browser blocks copying.
@@ -104,6 +116,7 @@ and Firefox needs a display (on Linux: `xvfb-run -a npm run check`).
 - `src/movement.ts`: the movement. `src/yard.ts`: the test blocks and collision.
 - `src/dummies.ts`: the dummies' loops. `src/push.ts`: soft pushing.
 - `src/weapons.ts`: the guns, the hitscan, the reload and the active reload. `src/fx.ts`: shot feedback.
+- `src/grenade.ts`: the grenade's flight, preview and blast. `src/nadefx.ts`: its look.
   `src/audio.ts`: the click. `src/hud.ts`: the readout, stamina, ammo and reload bar.
 - `src/camera.ts`: the follow camera. `src/input.ts`: keys and mouse.
 - `src/soldier.ts`, `src/guns.ts`, `src/look.ts`, `src/geom.ts`: the stand-in look.
