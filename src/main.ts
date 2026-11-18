@@ -112,7 +112,10 @@ store.onChange((key) => {
     switchGun(W, g, store);
   }
   if (key === null || key === 'tickRate') acc = 0;
-  if (key === null || key === 'adsMode') aiming = false;
+  if (store.get('adsMode') !== lastAdsMode) {
+    lastAdsMode = store.get('adsMode');
+    aiming = false;
+  }
   if (key === null || key === 'camTurn') camera.resetTurn();
   if (key === null || key === 'dummyHealth') for (const t of targets) if (t.downFor <= 0) t.health = store.num('dummyHealth');
 });
@@ -128,6 +131,10 @@ renderer.domElement.addEventListener('pointerdown', () => unlockAudio());
 const moveInput: MoveInput = { wishX: 0, wishZ: 0, sprint: false, jump: false, speedMult: 1 };
 /** Aiming down sights, decided at each simulation step from the right button (hold or toggle). */
 let aiming = false;
+let lastAdsMode = store.get('adsMode');
+input.onFocusLoss(() => {
+  aiming = false;
+});
 
 function readMoveInput() {
   const ax = camera.axes(store);
@@ -347,7 +354,7 @@ function frame(now: number) {
   const winFrom = gunValue(store, W.gun, 'ActiveStart') / 100;
   hud.updateGun(
     dt,
-    GUN_KEYS[W.gun].name + (aiming ? '  · aiming' : ''),
+    GUN_KEYS[W.gun].name,
     g.ammo,
     Math.max(1, Math.round(gunValue(store, W.gun, 'Mag'))),
     g.reloadLeft > 0 ? 1 - g.reloadLeft / g.reloadTotal : -1,
@@ -355,6 +362,7 @@ function frame(now: number) {
     winFrom,
     winFrom + gunValue(store, W.gun, 'ActiveWidth') / 100,
     g.active,
+    aiming,
   );
   if (W.activeNote) {
     hud.activeTap(W.activeNote);

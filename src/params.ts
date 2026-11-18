@@ -927,6 +927,7 @@ export class Store {
       if (raw) {
         const saved = JSON.parse(raw) as Record<string, unknown>;
         for (const p of PARAMS) if (p.key in saved) this.values[p.key] = sanitize(p, saved[p.key]);
+        this.fillAimCamera(saved, false);
       } else {
         const old = window.localStorage.getItem(OLD_STORE_KEY);
         if (old) {
@@ -944,6 +945,7 @@ export class Store {
             }
             if (p.key in saved) this.values[p.key] = sanitize(p, saved[p.key]);
           }
+          this.fillAimCamera(saved, cameraMoved);
           this.save();
           window.localStorage.removeItem(OLD_STORE_KEY);
         }
@@ -951,6 +953,22 @@ export class Store {
     } catch {
       // Storage blocked or unreadable: start from the start values.
     }
+  }
+
+  /**
+   * Saves made before aiming down sights existed have no aiming camera: take it from the profile or preset whose
+   * camera the save matches, so a saved Foxhole still slides; a moved camera from the first builds that matches
+   * none gets the old game's slide reach (its own soldier scale).
+   */
+  private fillAimCamera(saved: Record<string, unknown>, oldScaleCamera: boolean) {
+    if ('adsCam' in saved || 'adsPanMax' in saved) return;
+    const match = [...CAMERA_PROFILES, ...CAMERA_PRESETS].find((e) =>
+      Object.entries(e.values).every(([k, v]) => k === 'adsCam' || k === 'adsPanMax' || same(this.values[k], v)),
+    );
+    if (match) {
+      this.values.adsCam = match.values.adsCam;
+      this.values.adsPanMax = match.values.adsPanMax;
+    } else if (oldScaleCamera) this.values.adsPanMax = 16;
   }
 
   num(key: string): number {

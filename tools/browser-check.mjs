@@ -509,7 +509,38 @@ async function run(browserName) {
     await sleep(400);
     const tg2 = await T(() => window.__testlines.aiming());
     ok('toggle mode: a click aims, the next click lets go', tg1 === true && tg2 === false, `${tg1}, ${tg2}`);
+    // A toggled aim ends when the page loses focus; a camera preset click does not end it.
+    await page.mouse.click(aimSpot.x, aimSpot.y, { button: 'right' });
+    await sleep(300);
+    await T(() => window.__testlines.preset('Iso'));
+    await sleep(200);
+    const tg3 = await T(() => window.__testlines.aiming());
+    await T(() => window.dispatchEvent(new Event('blur')));
+    await sleep(300);
+    const tg4 = await T(() => window.__testlines.aiming());
+    ok('a toggled aim survives a preset click and ends on focus loss', tg3 === true && tg4 === false, `${tg3}, ${tg4}`);
     await T(() => window.__testlines.set('adsMode', 'hold'));
+    // Q aims too (Firefox opens its own menu on Shift + right click, and Shift sprints).
+    await page.mouse.click(aimSpot.x, aimSpot.y);
+    await page.keyboard.down('KeyQ');
+    await sleep(300);
+    const q1 = await T(() => window.__testlines.aiming());
+    await page.keyboard.up('KeyQ');
+    await sleep(300);
+    const q2 = await T(() => window.__testlines.aiming());
+    ok('holding Q aims down sights', q1 === true && q2 === false, `${q1}, ${q2}`);
+    // Flatten never tips the soldier's own feet off the bottom of the screen (Original profile, cursor at the top).
+    await T(() => window.__testlines.preset('Original'));
+    await T(() => window.__testlines.place(30, 30));
+    await sleep(1500);
+    const viewF = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
+    await page.mouse.move(viewF.l + viewF.w * 0.5, viewF.t + 3);
+    await page.keyboard.down('KeyQ');
+    await sleep(2500);
+    const feet = await T(() => window.__testlines.screenOf(30, 0, 30));
+    await page.keyboard.up('KeyQ');
+    ok('Flatten keeps the soldier\'s feet on screen', feet.y < viewF.t + viewF.h, `feet at ${feet.y.toFixed(0)} of ${(viewF.t + viewF.h).toFixed(0)}`);
+    await T(() => window.__testlines.preset('Iso'));
 
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
@@ -584,6 +615,19 @@ async function run(browserName) {
       cv.camHeight === 41.5 && cv.camLens === 12 && cv.camTurn === 45 && cv.lookBase === 5.5,
       `height ${cv.camHeight}, lens ${cv.camLens}, turn ${cv.camTurn}, look ${cv.lookBase}`,
     );
+    // A saved old Foxhole camera (from before aiming down sights) comes back with its Slide, and lit.
+    await T(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        'shamble-testlines.values.v1',
+        JSON.stringify({ camHeight: 52, camBack: 42, camLens: 18, camTurn: 45, camAngle: null, lookBase: 5.5, lookMin: 3.5, lookMax: 8, lookFwdRange: 26, lookBackRange: 16, lookSideMax: 6, posFwdMax: 3.2, posBackMax: 2.2, posSideMax: 2 }),
+      );
+    });
+    await page.reload();
+    await sleep(2000);
+    cv = await T(() => window.__testlines.values());
+    const litF = await page.$$eval('#panel .p-presets .p-btn.on', (bs) => bs.map((b) => b.textContent));
+    ok('a saved old Foxhole camera comes back sliding, and lit', cv.adsCam === 'pan' && cv.adsPanMax === 16 && litF.includes('Foxhole'), `${cv.adsCam}, ${cv.adsPanMax}, lit ${litF.join(',')}`);
     await T(() => window.__testlines.preset('Original'));
     await T(() => window.__testlines.set('walkSpeed', 6.3));
 

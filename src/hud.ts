@@ -56,6 +56,7 @@ export class Hud {
     windowFrom: number,
     windowTo: number,
     tap: '' | 'perfect' | 'miss',
+    aiming = false,
   ) {
     this.reloadWindow.style.left = `${(windowFrom * 100).toFixed(1)}%`;
     this.reloadWindow.style.width = `${(Math.max(0, Math.min(1, windowTo) - windowFrom) * 100).toFixed(1)}%`;
@@ -70,7 +71,7 @@ export class Hud {
       this.noteLife -= dt;
       if (this.noteLife <= 0) this.note.classList.remove('show');
     }
-    const text = `${name}  ${ammo} / ${mag}${reload >= 0 ? '  reloading' : ready ? '' : '  not ready'}`;
+    const text = `${name}  ${ammo} / ${mag}${reload >= 0 ? '  reloading' : ready ? '' : '  not ready'}${aiming ? '  · aiming' : ''}`;
     if (text !== this.lastAmmo) {
       this.ammoText.textContent = text;
       this.lastAmmo = text;

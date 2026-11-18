@@ -12,12 +12,14 @@ Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse
 right button aims down sights, R reloads, hold the middle button to turn the camera, 1 and 2 change guns (SMG,
 rifle), the backquote key (`) hides the panel.
 
-Aim down sights (the old game's rules): hold the right button (or switch it to click-to-toggle). While aiming
+Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
+Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q there. While aiming
 the soldier walks at 0.55 of his speed and cannot sprint, each gun's spread rests at its sights value, and the
 screen dead zone shrinks to 0.45. The camera reacts in one of three ways: Flatten (the view tips toward the
 cursor, no flatter than 28.5°), Slide (the camera slides toward the cursor, keeping the soldier on screen; the
-old Foxhole style) or Still. One difference from the old game: Flatten tips toward the point the cursor marks in
-the resting view, so the view settles instead of creeping on while the cursor is still. The camera profiles carry
+old Foxhole style) or Still. Two differences from the old game: Flatten tips toward the point the cursor marks in
+the resting view, so the view settles instead of creeping on while the cursor is still; and it never tips so far
+that the soldier's own feet leave the screen (the old game's 28.5° floor suited its own Iso+ camera). The camera profiles carry
 the reaction and the Slide reach (scaled like the look-ahead).
 
 Active reload (simplified, as Slice 1 has it): during a reload, tap R while the bar is inside the gold window and

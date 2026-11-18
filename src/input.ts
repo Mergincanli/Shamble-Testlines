@@ -1,6 +1,9 @@
 // Keyboard and mouse. Keys are read by position (KeyboardEvent.code), so WASD sits in the same place on any
 // layout. The page's own scrolling, middle-click scrolling and context menu are kept out of the way.
 
+/** The key that aims down sights, beside the right button. */
+export const AIM_KEY = 'KeyQ';
+
 export class Input {
   readonly keys = new Set<string>();
   /** Key presses since the last simulation step read them, so a short tap between steps is not lost. */
@@ -18,6 +21,7 @@ export class Input {
   private firePressed = false;
   private aimPressed = false;
   private onKeyHandlers: ((code: string, key: string) => void)[] = [];
+  private onFocusLossHandlers: (() => void)[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     const typing = () => {
@@ -29,20 +33,32 @@ export class Input {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
       if (!e.repeat) {
         this.pressed.add(e.code);
+        // Q aims down sights as well as the right button (in Firefox, Shift + right click always opens the
+        // browser's own menu, and Shift is the sprint key).
+        if (e.code === AIM_KEY) this.aimPressed = true;
         for (const h of this.onKeyHandlers) h(e.code, e.key);
       }
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => {
+    // Losing focus (another window, another tab) lets go of everything, presses included.
+    const letGo = () => {
       this.keys.clear();
       this.buttons = 0;
-    });
+      this.firePressed = false;
+      this.aimPressed = false;
+      this.pressed.clear();
+      for (const h of this.onFocusLossHandlers) h();
+    };
+    window.addEventListener('blur', letGo);
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        this.keys.clear();
-        this.buttons = 0;
-      }
+      if (document.hidden) letGo();
+    });
+    // No browser menu on a right click anywhere on the page (text fields keep theirs), as the old game did.
+    document.addEventListener('contextmenu', (e) => {
+      const t = e.target;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
     });
 
     canvas.addEventListener('pointermove', (e) => {
@@ -124,9 +140,14 @@ export class Input {
     return p;
   }
 
-  /** The right button is held on the view. */
+  /** The right button is held on the view, or the aim key. */
   aimHeld(): boolean {
-    return (this.buttons & 2) !== 0;
+    return (this.buttons & 2) !== 0 || this.keys.has(AIM_KEY);
+  }
+
+  /** Called when the page loses focus or is hidden. */
+  onFocusLoss(fn: () => void) {
+    this.onFocusLossHandlers.push(fn);
   }
 
   /** True if the right button went down since the last call (consumes it). */

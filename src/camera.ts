@@ -113,7 +113,7 @@ export class FollowCamera {
       const dz = this.lookT.z - this.desired.z;
       const dh = Math.hypot(dx, dz);
       const rest = this.panCam;
-      rest.fov = this.cam.fov;
+      rest.fov = P.num('camLens');
       rest.aspect = this.cam.aspect;
       rest.updateProjectionMatrix();
       rest.position.copy(this.desired);
@@ -127,7 +127,25 @@ export class FollowCamera {
         const toAim = Math.atan2(this.desired.y - hit.y, Math.max(0.01, Math.hypot(hit.x - this.desired.x, hit.z - this.desired.z)));
         const floor = (P.num('adsPitchFloor') * Math.PI) / 180;
         const tgt = Math.max(Math.min(floor, nat), Math.min(nat, toAim));
-        const eff = nat + (tgt - nat) * this.adsK;
+        let eff = nat + (tgt - nat) * this.adsK;
+        // Never tip so far that the soldier's feet leave the bottom of the screen: back off toward the resting
+        // angle until they are inside it (the same test Slide uses).
+        const feetOnScreen = (ang: number) => {
+          const f = h / Math.tan(ang) / dh;
+          rest.lookAt(this.desired.x + dx * f, this.lookT.y, this.desired.z + dz * f);
+          rest.updateMatrixWorld();
+          return this.probe.set(target.x, target.y, target.z).project(rest).y >= -0.9;
+        };
+        if (Math.abs(eff - nat) > 1e-4 && !feetOnScreen(eff)) {
+          let lo = 0;
+          let hi = 1;
+          for (let i = 0; i < 12; i++) {
+            const mid = (lo + hi) / 2;
+            if (feetOnScreen(nat + (eff - nat) * mid)) lo = mid;
+            else hi = mid;
+          }
+          eff = nat + (eff - nat) * lo;
+        }
         if (Math.abs(eff - nat) > 1e-4) {
           const f = h / Math.tan(eff) / dh;
           this.lookT.x = this.desired.x + dx * f;
@@ -146,7 +164,7 @@ export class FollowCamera {
         pz *= cap / pl;
       }
       const pc = this.panCam;
-      pc.fov = this.cam.fov;
+      pc.fov = P.num('camLens');
       pc.aspect = this.cam.aspect;
       pc.updateProjectionMatrix();
       for (let i = 0; i < 3; i++) {

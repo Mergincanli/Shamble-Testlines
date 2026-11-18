@@ -107,7 +107,7 @@ export class Panel {
       el(
         'div',
         'p-keys',
-        'WASD move · Shift sprint · Space jump · mouse aims · left button fires · right button aims down sights · R reloads (tap R again while the bar is in the gold window: the reload ends at once) · hold the middle button to turn the camera · 1 / 2 guns · ` panel',
+        'WASD move · Shift sprint · Space jump · mouse aims · left button fires · right button or Q aims down sights (in Firefox, Shift + right click opens the browser menu: use Q while sprinting) · R reloads (tap R again while the bar is in the gold window: the reload ends at once) · hold the middle button to turn the camera · 1 / 2 guns · ` panel',
       ),
     );
     this.root.append(scroll);
