@@ -108,13 +108,22 @@ export function stepGrenade(g: Grenade, dt: number, P: Store, stopAtContact = fa
   let tHit = 1;
   let normal: [number, number, number] | null = null;
   for (const b of BLOCKS) {
-    if (b.ramp) continue;
     const hit = segBox(p0, d, [b.minX - GRENADE_R, -1, b.minZ - GRENADE_R], [b.maxX + GRENADE_R, b.top + GRENADE_R, b.maxZ + GRENADE_R]);
-    if (hit && hit[0] < tHit) {
-      tHit = hit[0];
-      normal = [0, 0, 0];
-      normal[hit[1]] = hit[2];
+    if (!hit || hit[0] >= tHit) continue;
+    if (b.ramp) {
+      // A ramp's box only counts on its upright faces (the two sides and the high end), and only below the
+      // slope's height there; its top is the slope, handled after the move.
+      if (hit[1] === 1) continue;
+      const hx = p0[0] + d[0] * hit[0];
+      const hy = p0[1] + d[1] * hit[0];
+      const hz = p0[2] + d[2] * hit[0];
+      const qx = Math.min(b.maxX, Math.max(b.minX, hx));
+      const qz = Math.min(b.maxZ, Math.max(b.minZ, hz));
+      if (hy - GRENADE_R > rampHeight(b, qx, qz)) continue;
     }
+    tHit = hit[0];
+    normal = [0, 0, 0];
+    normal[hit[1]] = hit[2];
   }
   // The ground.
   const yEnd = p0[1] + d[1];
