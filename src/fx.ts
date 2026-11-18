@@ -1,8 +1,10 @@
-// Plain shot feedback, kept small on purpose: a tracer, a muzzle flash, an impact spark, a hit marker at the
+// Plain shot feedback, kept small on purpose, in the Art sheet's sun colour: a tracer, a muzzle flash, an impact
+// spark, a hit marker at the
 // cursor when a hit is confirmed, health bars over hurt dummies, and the view kick (a camera shake and a small
 // zoom punch per shot, as the old game's recoil did). Nothing here is from the old game's look; the punch of the
 // real feel kit is the game's own work.
 import * as THREE from 'three';
+import { PAL } from './look';
 
 const TRACER_LIFE = 0.08;
 const FLASH_LIFE = 0.05;
@@ -34,7 +36,7 @@ export class Fx {
     const box = new THREE.BoxGeometry(1, 1, 1);
     box.translate(0, 0, 0.5);
     for (let i = 0; i < 40; i++) {
-      const m = new THREE.Mesh(box, unlit('#FFF1B8', true));
+      const m = new THREE.Mesh(box, unlit(PAL.sun, true));
       m.visible = false;
       m.renderOrder = 5;
       scene.add(m);
@@ -42,13 +44,13 @@ export class Fx {
     }
     const star = new THREE.OctahedronGeometry(0.5, 0);
     for (let i = 0; i < 6; i++) {
-      const m = new THREE.Mesh(star, unlit('#FFF8DC'));
+      const m = new THREE.Mesh(star, unlit(PAL.sun));
       m.visible = false;
       scene.add(m);
       this.flashes.push({ mesh: m, life: 0, max: FLASH_LIFE });
     }
     for (let i = 0; i < 24; i++) {
-      const m = new THREE.Mesh(star, unlit('#FFE6A0'));
+      const m = new THREE.Mesh(star, unlit(PAL.sun));
       m.visible = false;
       scene.add(m);
       this.sparks.push({ mesh: m, life: 0, max: SPARK_LIFE });

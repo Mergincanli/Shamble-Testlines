@@ -141,8 +141,16 @@ function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
     },
     {
       kind: 'range', key: k('SpreadPerShot'), group: id, label: 'Spread added per shot', exportKey: 'spread_per_shot_rad', unit: 'rad',
-      min: 0, max: 0.05, step: 0.0005, start: g.spreadPerShot, digits: 4,
-      source: `Old game ${g.legacy}.spreadPerShot.`, legacy: `${g.legacy}.spreadPerShot`,
+      min: 0, max: 0.2, step: 0.0005, start: g.spreadPerShot, digits: 4,
+      note: (v) => {
+        const add = v[k('SpreadPerShot')] as number;
+        const back = (v[k('SpreadRecover')] as number) * (v[k('Interval')] as number);
+        return add > back
+          ? `builds up in sustained fire (+${add.toFixed(4)} a shot, ${back.toFixed(4)} recovered between shots)`
+          : `does not build up: the recovery takes back ${back.toFixed(4)} between shots`;
+      },
+      source: `Old game ${g.legacy}.spreadPerShot. The spread only builds up if this is more than the recovery takes back between two shots.`,
+      legacy: `${g.legacy}.spreadPerShot`,
     },
     {
       kind: 'range', key: k('SpreadMax'), group: id, label: 'Spread at most', exportKey: 'spread_max_rad', unit: 'rad',

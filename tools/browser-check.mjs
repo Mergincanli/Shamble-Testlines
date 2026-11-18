@@ -281,12 +281,14 @@ async function run(browserName) {
     await sleep(4600);
     dmy = (await T(() => window.__testlines.dummies()))[0];
     ok('a dropped dummy stands again with full health', !dmy.down && dmy.health === 100, `down ${dmy.down}, health ${dmy.health}`);
-    await T(() => window.__testlines.set('smgSpreadPerShot', 0.05));
+    ok('with the old numbers SMG shots leave at the rest spread', Math.abs(g1.lastShotSpread - 0.075) < 1e-9, g1.lastShotSpread.toFixed(4));
+    // With more added per shot than the recovery takes back, shots leave with a growing spread.
+    await T(() => window.__testlines.set('smgSpreadPerShot', 0.1));
     await page.mouse.down();
-    await sleep(500);
+    await sleep(600);
     const gs = await T(() => window.__testlines.gun());
     await page.mouse.up();
-    ok('with more spread per shot it grows while firing', gs.spread > 0.075 + 0.01, gs.spread.toFixed(4));
+    ok('with more spread per shot than recovers, it builds up', gs.lastShotSpread > 0.075 + 0.01, `a shot left with ${gs.lastShotSpread.toFixed(4)}`);
     await T(() => window.__testlines.set('smgSpreadPerShot', 0.005));
     // R reloads the SMG.
     await page.keyboard.press('KeyR');
@@ -324,6 +326,20 @@ async function run(browserName) {
     ok('a rifle click while sprinting fires after the delay', g1.shots - g0.shots === 1, `${g1.shots - g0.shots} shots`);
     await sleep(3700);
     await page.keyboard.press('Digit1');
+    await sleep(300);
+    // The same for the SMG: a normal click while sprinting fires once the gun is up.
+    await page.keyboard.down('ShiftLeft');
+    await page.keyboard.down('KeyS');
+    await sleep(600);
+    g0 = await T(() => window.__testlines.gun());
+    await page.mouse.down();
+    await sleep(100);
+    await page.mouse.up();
+    await sleep(700);
+    g1 = await T(() => window.__testlines.gun());
+    await page.keyboard.up('KeyS');
+    await page.keyboard.up('ShiftLeft');
+    ok('an SMG click while sprinting fires after the delay', g1.shots - g0.shots >= 1, `${g1.shots - g0.shots} shots`);
     // Sprinting: the gun is not ready while sprinting.
     await page.keyboard.down('ShiftLeft');
     await page.keyboard.down('KeyS');

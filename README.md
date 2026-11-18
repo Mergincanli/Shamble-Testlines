@@ -26,6 +26,16 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 - Steps per second: 30 (the game's rate) or 60. The picture is smoothed between steps. The jump follows its exact
   arc at each step, so its height is the same at either rate.
 
+## How the guns differ from the old game
+
+- Spread scatters shots sideways only (the old game scattered them up and down as well); shots go out level from
+  the gun's height.
+- A level shot still counts within 0.6 m above a dummy's head or below its feet, so the 0.55 m step and the foot
+  of the ramp work. How aiming at height works is open in the game.
+- Recoil is the old game's view kick (a camera shake and a small zoom punch per shot), not an aim kick.
+- With the old numbers the SMG's spread does not build up: its recovery takes back more between two shots than a
+  shot adds. The panel says so under "Spread added per shot".
+
 ## The look
 
 A light stand-in for the game's new art direction, from the Art texts in the game's repository: the Conscript

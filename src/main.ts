@@ -67,6 +67,8 @@ const dummyFall = dummies.map(() => 0);
 const dummyFlinch = dummies.map(() => 0);
 /** Knockback on a hit: drawn only, so it never moves a dummy off its loop. */
 const dummyKnock = dummies.map(() => new THREE.Vector2());
+/** Which way a hit dummy tips: forward (+1) when shot from behind, backward (-1) when shot from the front. */
+const dummyTip = dummies.map(() => -1);
 function dressDummies() {
   const other = otherFactions(store.get('faction') as Faction);
   dummies.forEach((d, i) => dummySoldiers[i].setFaction(other[d.side]));
@@ -76,6 +78,7 @@ const fx = new Fx(scene, dummies.length);
 const W = newWeapons(store, store.get('gun') as GunId);
 const events: ShotEvent[] = [];
 let shotsFired = 0;
+let lastShotSpread = 0;
 
 function resize() {
   const canvas = renderer.domElement;
@@ -258,6 +261,8 @@ function frame(now: number) {
         fx.hit(e.hit, e.killed, input.mouseX, input.mouseY);
         dummyFlinch[e.hit] = 1;
         if (len > 1e-6) {
+          const fy = dummyYaw[e.hit];
+          dummyTip[e.hit] = ((e.ex - e.ox) * Math.sin(fy) + (e.ez - e.oz) * Math.cos(fy)) > 0 ? 1 : -1;
           const k = dummyKnock[e.hit];
           k.x += ((e.ex - e.ox) / len) * 0.12;
           k.y += ((e.ez - e.oz) / len) * 0.12;
@@ -266,6 +271,7 @@ function frame(now: number) {
       }
     }
     shotsFired += events.length;
+    lastShotSpread = events[events.length - 1].spread;
     events.length = 0;
   }
 
@@ -303,7 +309,7 @@ function frame(now: number) {
     dummyFlinch[i] = Math.max(0, dummyFlinch[i] - dt * 8);
     const f = dummyFall[i];
     s.root.rotation.y = dummyYaw[i];
-    s.root.rotation.x = -(Math.PI / 2) * f * f * (3 - 2 * f) - 0.2 * dummyFlinch[i];
+    s.root.rotation.x = dummyTip[i] * ((Math.PI / 2) * f * f * (3 - 2 * f) + 0.2 * dummyFlinch[i]);
   });
   fx.updateBars(
     dt,
@@ -380,7 +386,14 @@ requestAnimationFrame(frame);
     prev = { ...cur };
     peakY = y;
   },
-  gun: () => ({ gun: W.gun, ...W.guns[W.gun], shots: shotsFired, readyIn: readyIn(W, store), queued: W.queued }),
+  gun: () => ({
+    gun: W.gun,
+    ...W.guns[W.gun],
+    shots: shotsFired,
+    readyIn: readyIn(W, store),
+    queued: W.queued,
+    lastShotSpread,
+  }),
   /** Where a world point is on the page, in CSS pixels. */
   screenOf: (x: number, y: number, z: number) => {
     const v = new THREE.Vector3(x, y, z).project(camera.cam);

@@ -37,7 +37,7 @@ export interface GunState {
 export interface WeaponsState {
   gun: GunId;
   guns: Record<GunId, GunState>;
-  /** A press of a once-per-press gun that waits for the gap between shots, a gun change or a sprint to end. */
+  /** A press that waits for the gap between shots, a gun change or the sprint-to-fire delay, then fires. */
   queued: boolean;
   /** Seconds since the soldier last sprinted (0 while sprinting), compared with each gun's sprint-to-fire delay. */
   sinceSprint: number;
@@ -56,6 +56,8 @@ export interface ShotEvent {
   hitBlock: boolean;
   damage: number;
   killed: boolean;
+  /** The spread this shot was fired with (its sideways scatter limit), in radians. */
+  spread: number;
 }
 
 export interface Target {
@@ -216,12 +218,12 @@ export function stepWeapons(
   W.sinceSprint = me.sprinting ? 0 : W.sinceSprint + dt;
   const sprintReady = W.sinceSprint >= v('SprintDelay') - 1e-9;
 
-  // A once-per-press gun keeps a press until it can fire: through the gap between shots, a gun change and the
-  // sprint-to-fire delay. A press during a reload, or with nothing in the magazine, is dropped.
-  if (!auto && inp.pressed) W.queued = g.reloadLeft <= 0 && g.ammo > 0;
-  if (!auto && (g.reloadLeft > 0 || g.ammo <= 0)) W.queued = false;
-  // An automatic gun fires while held, and a tap shorter than one step still fires once.
-  const wants = auto ? inp.held || inp.pressed : W.queued;
+  // A press is kept until the gun can fire: through the gap between shots, a gun change and the sprint-to-fire
+  // delay, so a click during a sprint fires once the gun is up. A press during a reload, or with nothing in the
+  // magazine, is dropped. An automatic gun also fires for as long as it is held.
+  if (inp.pressed) W.queued = g.reloadLeft <= 0 && g.ammo > 0;
+  if (g.reloadLeft > 0 || g.ammo <= 0) W.queued = false;
+  const wants = auto ? inp.held || W.queued : W.queued;
   const canFire = g.reloadLeft <= 0 && sprintReady && g.ammo > 0;
 
   if (wants && canFire) {
@@ -230,11 +232,9 @@ export function stepWeapons(
     let guard = 0;
     while (g.cooldown <= 1e-9 && g.ammo > 0 && guard++ < 16) {
       fireOne(W, me, inp.aimYaw, targets, P, events);
+      W.queued = false;
       g.cooldown += Math.max(0.01, v('Interval'));
-      if (!auto) {
-        W.queued = false;
-        break;
-      }
+      if (!auto) break;
     }
   }
   g.cooldown -= dt;
@@ -254,6 +254,7 @@ function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Targe
   const g = W.guns[gun];
   const v = (k: string) => gunValue(P, gun, k);
   g.ammo--;
+  const firedSpread = g.spread;
   const yaw = aimYaw + (rand() * 2 - 1) * g.spread;
   g.spread = Math.min(v('SpreadMax'), g.spread + v('SpreadPerShot'));
   const dx = Math.sin(yaw);
@@ -295,5 +296,6 @@ function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Targe
     hitBlock: !hitDummy && tb <= range,
     damage,
     killed,
+    spread: firedSpread,
   });
 }
