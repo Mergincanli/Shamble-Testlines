@@ -1,0 +1,259 @@
+// The tuning panel: one row per entry of the slider table, each with a reset; camera presets; Export and
+// "Reset all". Built from plain DOM, no library.
+import { BUILD, buildExport, copyText } from './exporter';
+import {
+  CAMERA_PRESETS,
+  GROUPS,
+  PARAMS,
+  type ChoiceParam,
+  type GroupId,
+  type Param,
+  type RangeParam,
+  type Store,
+  type ToggleParam,
+} from './params';
+
+type Refresher = () => void;
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function fmt(p: RangeParam, v: number): string {
+  return v.toFixed(p.digits);
+}
+
+export class Panel {
+  readonly root: HTMLDivElement;
+  private refreshers: Refresher[] = [];
+  private exportBox: HTMLDivElement;
+  private exportText: HTMLTextAreaElement;
+  private exportStatus: HTMLSpanElement;
+
+  constructor(private store: Store, extraGroups: Partial<Record<GroupId, (body: HTMLElement) => void>> = {}) {
+    this.root = el('div');
+    this.root.id = 'panel';
+
+    const head = el('div', 'p-head');
+    const title = el('div', 'p-title');
+    title.append(el('b', '', 'Shamble Testlines'), el('span', 'p-build', ` step ${BUILD.step} · ${BUILD.name}`));
+    const btns = el('div', 'p-btns');
+    const exportBtn = el('button', 'p-btn p-primary', 'Export');
+    exportBtn.title = 'Copy every current value as JSON, with the date';
+    const resetAll = el('button', 'p-btn', 'Reset all');
+    resetAll.title = 'Put every value back to its start value';
+    const hide = el('button', 'p-btn', 'Hide `');
+    hide.title = 'Hide or show this panel (backquote key)';
+    btns.append(exportBtn, resetAll, hide);
+    head.append(title, btns);
+    this.root.append(head);
+    this.root.append(el('div', 'p-note', 'Sandbox values, not decisions. Hover a name to see where its start value comes from.'));
+
+    this.exportBox = el('div', 'p-export');
+    this.exportBox.hidden = true;
+    this.exportStatus = el('span', 'p-export-status');
+    this.exportText = el('textarea');
+    this.exportText.readOnly = true;
+    this.exportText.spellcheck = false;
+    const close = el('button', 'p-btn', 'Close');
+    const selectAll = el('button', 'p-btn', 'Select all');
+    const exRow = el('div', 'p-export-row');
+    exRow.append(this.exportStatus, selectAll, close);
+    this.exportBox.append(exRow, this.exportText);
+    this.root.append(this.exportBox);
+
+    exportBtn.addEventListener('click', async () => {
+      const text = buildExport(this.store);
+      this.exportText.value = text;
+      this.exportBox.hidden = false;
+      const ok = await copyText(text);
+      this.exportStatus.textContent = ok ? 'Copied to the clipboard.' : 'Copy blocked by the browser: select the text below and copy it.';
+      this.exportText.scrollTop = 0;
+    });
+    selectAll.addEventListener('click', () => {
+      this.exportText.focus();
+      this.exportText.select();
+    });
+    close.addEventListener('click', () => {
+      this.exportBox.hidden = true;
+      this.exportText.blur();
+    });
+    resetAll.addEventListener('click', () => {
+      if (window.confirm('Put every value back to its start value?')) this.store.resetAll();
+    });
+    hide.addEventListener('click', () => this.toggle());
+
+    const scroll = el('div', 'p-scroll');
+    for (const g of GROUPS) {
+      const params = PARAMS.filter((p) => p.group === g.id);
+      if (!params.length && !extraGroups[g.id]) continue;
+      const sec = el('details', 'p-group');
+      sec.open = g.open;
+      const sum = el('summary', '', g.title);
+      sec.append(sum);
+      const body = el('div', 'p-body');
+      if (g.id === 'camera') body.append(this.presetRow());
+      for (const p of params) body.append(this.row(p));
+      extraGroups[g.id]?.(body);
+      sec.append(body);
+      scroll.append(sec);
+    }
+    scroll.append(
+      el(
+        'div',
+        'p-keys',
+        'WASD move · Shift sprint · Space jump · mouse aims · hold the middle button to turn the camera · 1 / 2 guns · ` panel',
+      ),
+    );
+    this.root.append(scroll);
+
+    // Keep the game's keys away from the panel's controls once the mouse lets go.
+    this.root.addEventListener('pointerup', (e) => {
+      const t = e.target as HTMLElement;
+      if (t instanceof HTMLInputElement && (t.type === 'range' || t.type === 'checkbox')) t.blur();
+      if (t instanceof HTMLButtonElement) t.blur();
+    });
+
+    store.onChange(() => this.refresh());
+    document.body.append(this.root);
+    document.body.classList.add('panel-open');
+  }
+
+  toggle() {
+    const hidden = this.root.classList.toggle('hidden');
+    document.body.classList.toggle('panel-open', !hidden);
+  }
+
+  refresh() {
+    for (const r of this.refreshers) r();
+  }
+
+  private presetRow(): HTMLElement {
+    const row = el('div', 'p-presets');
+    row.append(el('span', 'p-presets-label', 'Presets'));
+    for (const pr of CAMERA_PRESETS) {
+      const b = el('button', 'p-btn p-small', pr.name);
+      b.title = `The old game's ${pr.name} camera: height ${pr.values.camHeight}, distance ${pr.values.camBack}, lens ${pr.values.camLens}°, turn ${pr.values.camTurn}°`;
+      b.addEventListener('click', () => this.store.setMany(pr.values));
+      row.append(b);
+    }
+    return row;
+  }
+
+  private row(p: Param): HTMLElement {
+    if (p.kind === 'range') return this.rangeRow(p);
+    if (p.kind === 'choice') return this.choiceRow(p);
+    return this.toggleRow(p);
+  }
+
+  private resetBtn(p: Param): HTMLButtonElement {
+    const b = el('button', 'p-reset', '↺');
+    b.title = 'Reset to the start value';
+    b.addEventListener('click', () => this.store.reset(p.key));
+    return b;
+  }
+
+  private label(p: Param): HTMLElement {
+    const l = el('span', 'p-label', p.label);
+    l.title = p.source;
+    return l;
+  }
+
+  private rangeRow(p: RangeParam): HTMLElement {
+    const row = el('div', 'p-row');
+    const top = el('div', 'p-top');
+    const val = el('input', 'p-val');
+    val.type = 'text';
+    val.inputMode = 'decimal';
+    val.spellcheck = false;
+    const unit = el('span', 'p-unit', p.unit);
+    const reset = this.resetBtn(p);
+    top.append(this.label(p), val, unit, reset);
+    const slider = el('input', 'p-slider');
+    slider.type = 'range';
+    slider.min = String(p.min);
+    slider.max = String(p.max);
+    slider.step = String(p.step);
+    const note = el('div', 'p-sub');
+    row.append(top, slider, note);
+
+    const current = () => this.store.num(p.key);
+    const refresh = () => {
+      const raw = this.store.get(p.key);
+      const v = current();
+      if (document.activeElement !== val) val.value = raw === null ? `auto ${fmt(p, v)}` : fmt(p, v);
+      if (document.activeElement !== slider) slider.value = String(v);
+      const isStart = raw === p.start || (typeof raw === 'number' && typeof p.start === 'number' && Math.abs(raw - p.start) < 1e-9);
+      reset.classList.toggle('changed', !isStart);
+      const n = p.note ? p.note(this.store.values) : '';
+      note.textContent = n;
+      note.hidden = !n;
+    };
+    slider.addEventListener('input', () => this.store.set(p.key, parseFloat(slider.value)));
+    const commit = () => {
+      const n = parseFloat(val.value.replace(',', '.').replace(/^auto\s*/, ''));
+      if (Number.isFinite(n)) this.store.set(p.key, n);
+      refresh();
+    };
+    val.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        commit();
+        val.blur();
+      } else if (e.key === 'Escape') {
+        refresh();
+        val.blur();
+      }
+      e.stopPropagation();
+    });
+    val.addEventListener('blur', commit);
+    val.addEventListener('focus', () => val.select());
+    this.refreshers.push(refresh);
+    refresh();
+    return row;
+  }
+
+  private choiceRow(p: ChoiceParam): HTMLElement {
+    const row = el('div', 'p-row');
+    const top = el('div', 'p-top');
+    const seg = el('div', 'p-seg');
+    const buttons = p.options.map((o) => {
+      const b = el('button', 'p-segbtn', o.label);
+      b.addEventListener('click', () => this.store.set(p.key, o.value));
+      seg.append(b);
+      return b;
+    });
+    top.append(this.label(p), this.resetBtn(p));
+    row.append(top, seg);
+    const refresh = () => {
+      const v = this.store.get(p.key);
+      p.options.forEach((o, i) => buttons[i].classList.toggle('on', o.value === v));
+      (top.lastChild as HTMLElement).classList.toggle('changed', v !== p.start);
+    };
+    this.refreshers.push(refresh);
+    refresh();
+    return row;
+  }
+
+  private toggleRow(p: ToggleParam): HTMLElement {
+    const row = el('div', 'p-row');
+    const top = el('div', 'p-top');
+    const lab = el('label', 'p-check');
+    const box = el('input');
+    box.type = 'checkbox';
+    lab.append(box, this.label(p));
+    const reset = this.resetBtn(p);
+    top.append(lab, reset);
+    row.append(top);
+    box.addEventListener('change', () => this.store.set(p.key, box.checked));
+    const refresh = () => {
+      box.checked = this.store.get(p.key) === true;
+      reset.classList.toggle('changed', this.store.get(p.key) !== p.start);
+    };
+    this.refreshers.push(refresh);
+    refresh();
+    return row;
+  }
+}
