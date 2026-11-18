@@ -345,7 +345,7 @@ export const PARAMS: Param[] = [
     digits: 1,
     note: (v) => `${(100 * (1 - Math.exp(-(v.pushStrength as number) / Number(v.tickRate)))).toFixed(0)} % of the overlap undone per step`,
     source:
-      'No old number: the old game let soldiers pass through each other. START-RULES: "they push each other softly and never block". The push moves soldiers apart by a share of their overlap each step and never stops anyone; higher is stiffer.',
+      'No old number: the old game let soldiers pass through each other. START-RULES: "they push each other softly and never block". Each step the push moves soldiers apart by a share of their overlap; higher is stiffer. Head-on it turns partly sideways, and it never undoes more than half of a walking soldier\'s step, so nobody is ever stopped.',
   },
   {
     kind: 'range',

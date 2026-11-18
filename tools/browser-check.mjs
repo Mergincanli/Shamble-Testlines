@@ -224,6 +224,19 @@ async function run(browserName) {
     const dummyAlong = (11 + 11 - 8 - 8) / Math.SQRT2;
     ok('a standing dummy never blocks: the soldier gets past', along > dummyAlong + 1, `${along.toFixed(2)} m travelled; dummy at ${dummyAlong.toFixed(2)} m`);
     ok('the dummy is shoved aside', shoved > 0.2, `${shoved.toFixed(2)} m`);
+    // The same at the stiffest push: still never blocked.
+    await T(() => window.__testlines.set('pushStrength', 40));
+    await T(() => window.__testlines.placeDummy(0, 8, 8));
+    await T(() => window.__testlines.place(11, 11));
+    await sleep(200);
+    await page.keyboard.down('KeyW');
+    await sleep(1500);
+    await page.keyboard.up('KeyW');
+    await sleep(300);
+    const me3 = await T(() => window.__testlines.state());
+    const along3 = (11 + 11 - me3.x - me3.z) / Math.SQRT2;
+    ok('at the stiffest push a standing dummy still never blocks', along3 > dummyAlong + 1, `${along3.toFixed(2)} m travelled`);
+    await T(() => window.__testlines.set('pushStrength', 8));
     await T(() => window.__testlines.set('dummiesWalk', true));
 
     // Step rate switch.

@@ -42,7 +42,8 @@ scene.add(soldier.root);
 const dummies = makeDummies();
 const dummySoldiers = dummies.map((d, i) => {
   const s = new Soldier(otherFactions(store.get('faction') as Faction)[d.side]);
-  s.setGun(i % 2 ? 'smg' : 'rifle');
+  // Both factions carry both guns.
+  s.setGun(Math.floor(i / 2) % 2 ? 'smg' : 'rifle');
   scene.add(s.root);
   return s;
 });
@@ -142,11 +143,12 @@ function frame(now: number) {
     const walking = store.get('dummiesWalk') === true;
     for (const d of dummies) {
       d.prev = { ...d.state };
-      steerDummy(d, walking);
+      steerDummy(d, walking, stepDt);
       stepMover(d.state, d.input, stepDt, store);
     }
     softPush(
       [cur, ...dummies.map((d) => d.state)],
+      [true, ...dummies.map(() => true)],
       store.num('pushRadius'),
       store.num('pushStrength'),
       stepDt,

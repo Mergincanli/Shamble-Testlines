@@ -52,6 +52,9 @@ export interface Dummy {
   input: MoveInput;
   /** Which of the two other factions this dummy wears (0 or 1). */
   side: 0 | 1;
+  /** For getting unstuck: the closest it has come to its next point, and for how long it has not improved. */
+  best: number;
+  stalled: number;
 }
 
 function pointAt(loop: [number, number][], share: number): { x: number; z: number; seg: number } {
@@ -88,6 +91,8 @@ export function makeDummies(): Dummy[] {
       next,
       input: { wishX: 0, wishZ: 0, sprint: false, jump: false },
       side: (i % 2) as 0 | 1,
+      best: Infinity,
+      stalled: 0,
     };
   });
 }
@@ -98,11 +103,16 @@ export function otherFactions(mine: Faction): [Faction, Faction] {
   return [o[0], o[1]];
 }
 
+/** A dummy that has not come closer to its next point for this long goes back onto its loop. */
+const STALL_TIME = 2;
+
 /** Steer toward the next loop point; move on to the following point when close. */
-export function steerDummy(d: Dummy, walking: boolean) {
+export function steerDummy(d: Dummy, walking: boolean, dt: number) {
   if (!walking) {
     d.input.wishX = 0;
     d.input.wishZ = 0;
+    d.best = Infinity;
+    d.stalled = 0;
     return;
   }
   const n = d.loop.length;
@@ -114,6 +124,26 @@ export function steerDummy(d: Dummy, walking: boolean) {
     [tx, tz] = d.loop[d.next];
     dx = tx - d.state.x;
     dz = tz - d.state.z;
+    d.best = Infinity;
+    d.stalled = 0;
+  }
+  // Stuck (pushed behind a wall, say): put it back on its loop, at the point it last left.
+  const dist = Math.hypot(dx, dz);
+  if (dist < d.best - 0.05) {
+    d.best = dist;
+    d.stalled = 0;
+  } else if ((d.stalled += dt) > STALL_TIME) {
+    const [bx, bz] = d.loop[(d.next - d.dir + n) % n];
+    d.state.x = bx;
+    d.state.z = bz;
+    d.state.y = 0;
+    d.state.vx = d.state.vz = d.state.vy = 0;
+    d.state.grounded = true;
+    d.prev = { ...d.state };
+    d.best = Infinity;
+    d.stalled = 0;
+    dx = tx - bx;
+    dz = tz - bz;
   }
   const l = Math.hypot(dx, dz);
   d.input.wishX = l > 1e-6 ? dx / l : 0;
