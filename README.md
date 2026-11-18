@@ -20,7 +20,8 @@ by one; that is not built). Its model is the sandbox's own minimal shape (no Art
 the rifle.
 
 The grenade (hold G, let go to throw) follows the old game: a tap throws at 13 m/s, a full 1 s charge at 26 m/s,
-always at 41.3° above level toward the cursor; gravity 20; a 1.5 s fuse from the throw; a 6.5 m blast doing 140
+always at 41.3° above level toward the cursor, from the soldier's middle at 1.5 m (the sandbox's pick: a lob from
+right behind the cover wall clears it); gravity 20; a 1.5 s fuse from the throw; a 6.5 m blast doing 140
 damage at the centre, falling off evenly to nothing at the edge and needing a clear line from the blast; and the
 view lurches away from a blast (the old camera kick: strength 24, reach 34 m, spring 110, damping 12). While G is
 held, dots in the faction's Top colour show the arc to where it first lands; the preview runs the very step
@@ -69,7 +70,8 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
   are the sandbox's own picks, because the old game has no number for them: the body radius (from the Art
   brief's soldier), push strength and push radius, the sprint-to-fire delays (0.15 s SMG, 0.25 s rifle, 0.3 s
   shotgun), the active-reload window (40 % to 60 %), the shotgun's falloff (none), the press rule below
-  (0.15 s, no slider), the grenade refill (5 s) and the grenade's rolling slowdown (3 per second, no slider). Every slider has its own reset (↺, lit when the value has moved);
+  (0.15 s, no slider), the grenade refill (5 s), the grenade's rolling slowdown (3 per second, no slider) and where a throw starts (the
+  soldier's middle at 1.5 m, no slider). Every slider has its own reset (↺, lit when the value has moved);
   hover a name to see where its start value comes from. The Export names the camera profile in use.
 - **Export** copies every value as JSON with the date and time, the build it came from, units in the names and
   the old game's own names beside them. The JSON also appears in a box, in case the browser blocks copying.

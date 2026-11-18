@@ -677,6 +677,21 @@ async function run(browserName) {
     await sleep(300);
     nd1 = await T(() => window.__testlines.nades());
     ok('a quick double tap throws two grenades', nd1.thrown - nd0.thrown === 2, `${nd1.thrown - nd0.thrown} thrown, held ${nd0.held} -> ${nd1.held}`);
+    // A held key's auto-repeat is not a new press: one hold throws one grenade. (Refill first: the blast check
+    // below needs a grenade in hand.)
+    await T(() => window.__testlines.set('nadeRefill', 0.5));
+    await sleep(2000);
+    await T(() => window.__testlines.set('nadeRefill', 5));
+    nd0 = await T(() => window.__testlines.nades());
+    await page.keyboard.down('KeyG');
+    await sleep(300);
+    await page.keyboard.down('KeyG');
+    await page.keyboard.down('KeyG');
+    await sleep(300);
+    await page.keyboard.up('KeyG');
+    await sleep(800);
+    nd1 = await T(() => window.__testlines.nades());
+    ok('a held G with key repeats throws one grenade', nd1.thrown - nd0.thrown === 1, `${nd1.thrown - nd0.thrown} thrown`);
     // Let every grenade go off before the next check (the slow software renderer runs behind the clock).
     for (let i = 0; i < 80; i++) {
       if ((await T(() => window.__testlines.nades())).flying.length === 0) break;

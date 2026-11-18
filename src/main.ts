@@ -255,9 +255,9 @@ function simStep(dt: number) {
   if (cur.y > peakY) peakY = cur.y;
 }
 
-/** Where a throw leaves the hand: a little in front of the soldier, at throwing height, short of any block. */
+/** Where a throw starts: the soldier's middle, at throwing height. */
 function throwOrigin(): [number, number, number] {
-  return throwStart(cur.x, cur.y, cur.z, aimYaw);
+  return throwStart(cur.x, cur.y, cur.z);
 }
 
 /**

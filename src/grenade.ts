@@ -148,15 +148,12 @@ function sweep(p0: V3, d: V3): Hit | null {
 }
 
 /**
- * Where a throw leaves the hand: 0.4 m in front of the soldier at throwing height, pulled back toward his middle
- * if a block is in the way (so a throw against a tall block never starts inside it).
+ * Where a throw starts: the soldier's middle, at throwing height. His body keeps this point clear of every block,
+ * and the arc rises out of it, so a throw from right behind the cover wall clears it, while a block taller than
+ * the throw sends the grenade back.
  */
-export function throwStart(x: number, y: number, z: number, aimYaw: number): V3 {
-  const from: V3 = [x, y + THROW_HEIGHT, z];
-  const d: V3 = [Math.sin(aimYaw) * 0.4, 0, Math.cos(aimYaw) * 0.4];
-  const hit = sweep(from, d);
-  const t = hit ? Math.max(0, hit.t - 0.05) : 1;
-  return [from[0] + d[0] * t, from[1], from[2] + d[2] * t];
+export function throwStart(x: number, y: number, z: number): V3 {
+  return [x, y + THROW_HEIGHT, z];
 }
 
 /**
