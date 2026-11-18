@@ -335,13 +335,22 @@ function frame(now: number) {
     store.get('staminaOn') === true,
   );
   const g = W.guns[W.gun];
+  const winFrom = gunValue(store, W.gun, 'ActiveStart') / 100;
   hud.updateGun(
+    dt,
     GUN_KEYS[W.gun].name,
     g.ammo,
     Math.max(1, Math.round(gunValue(store, W.gun, 'Mag'))),
     g.reloadLeft > 0 ? 1 - g.reloadLeft / g.reloadTotal : -1,
     readyIn(W, store) <= 0,
+    winFrom,
+    winFrom + gunValue(store, W.gun, 'ActiveWidth') / 100,
+    g.active,
   );
+  if (W.activeNote) {
+    hud.activeTap(W.activeNote);
+    W.activeNote = '';
+  }
 
   // The view kick goes on last, so it never moves the aim.
   fx.shakeOffset(shake);

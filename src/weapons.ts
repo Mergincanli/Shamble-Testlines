@@ -32,6 +32,8 @@ export interface GunState {
   spread: number;
   reloadLeft: number;
   reloadTotal: number;
+  /** The active reload: one tap per reload; 'perfect' ends it at once, 'miss' leaves a normal reload. */
+  active: '' | 'perfect' | 'miss';
 }
 
 export interface WeaponsState {
@@ -41,6 +43,8 @@ export interface WeaponsState {
   queued: boolean;
   /** Seconds since the soldier last sprinted (0 while sprinting), compared with each gun's sprint-to-fire delay. */
   sinceSprint: number;
+  /** The last active-reload tap's result, for the HUD to show once; the HUD clears it. */
+  activeNote: '' | 'perfect' | 'miss';
 }
 
 export interface ShotEvent {
@@ -78,8 +82,9 @@ export function newWeapons(P: Store, gun: GunId): WeaponsState {
     spread: gunValue(P, g, 'SpreadHip'),
     reloadLeft: 0,
     reloadTotal: 0,
+    active: '',
   });
-  return { gun, guns: { smg: mk('smg'), rifle: mk('rifle') }, queued: false, sinceSprint: 1e9 };
+  return { gun, guns: { smg: mk('smg'), rifle: mk('rifle') }, queued: false, sinceSprint: 1e9, activeNote: '' };
 }
 
 /** The old game's pause after a gun change before the first shot. */
@@ -205,10 +210,19 @@ export function stepWeapons(
   const base = v('SpreadHip');
   g.spread = Math.max(base, Math.min(v('SpreadMax'), g.spread - v('SpreadRecover') * dt));
 
-  // Reload in progress.
+  // Reload in progress. The active reload (LOOP_V2 7, simplified for Slice 1): the first tap of R during a reload
+  // is judged; inside the window the reload ends at once, outside it the reload just carries on (no jam).
   if (g.reloadLeft > 0) {
+    if (inp.reload && g.active === '') {
+      const done = 1 - g.reloadLeft / g.reloadTotal;
+      const from = v('ActiveStart') / 100;
+      const to = from + v('ActiveWidth') / 100;
+      g.active = done >= from && done <= to ? 'perfect' : 'miss';
+      W.activeNote = g.active;
+      if (g.active === 'perfect') g.reloadLeft = dt;
+    }
     g.reloadLeft -= dt;
-    if (g.reloadLeft <= 0) {
+    if (g.reloadLeft <= 1e-9) {
       g.reloadLeft = 0;
       g.ammo = mag;
     }
@@ -247,6 +261,7 @@ export function stepWeapons(
 export function startReload(g: GunState, seconds: number) {
   g.reloadTotal = Math.max(0.05, seconds);
   g.reloadLeft = g.reloadTotal;
+  g.active = '';
 }
 
 function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Target[], P: Store, events: ShotEvent[]) {

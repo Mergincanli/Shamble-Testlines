@@ -12,6 +12,10 @@ Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse
 reloads, hold the middle button to turn the camera, 1 and 2 change guns (SMG, rifle), the backquote key (`) hides
 the panel.
 
+Active reload (simplified, as Slice 1 has it): during a reload, tap R while the bar is inside the gold window and
+the reload ends at once. A miss is a normal reload, with no jam; one try per reload. The window's start and width
+are sliders per gun, as shares of the reload time.
+
 What is in it: a test yard with steps, a cover wall, ledges and a ramp; your soldier; eleven dummies walking loops
 in the other two factions' colours, which push softly and never block; the SMG and the rifle, firing at the
 dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped dummy stands again after 4 s).

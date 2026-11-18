@@ -298,6 +298,53 @@ async function run(browserName) {
     await sleep(2200);
     g1 = await T(() => window.__testlines.gun());
     ok('the reload fills the magazine (1.9 s)', g1.ammo === 36 && g1.reloadLeft === 0, `${g1.ammo} rounds`);
+    // The active reload. For the check: a 4 s reload and a window from 30 % to 70 %, and the tap goes in once the
+    // bar passes 33 %, so a tap that reaches the page a frame or two late still lands.
+    await T(() => window.__testlines.set('smgReload', 4));
+    await T(() => window.__testlines.set('smgActiveStart', 30));
+    await T(() => window.__testlines.set('smgActiveWidth', 40));
+    await page.mouse.down();
+    await sleep(300);
+    await page.mouse.up();
+    await page.keyboard.press('KeyR');
+    let gr = await T(() => window.__testlines.gun());
+    let doneAtTap = 0;
+    for (let i = 0; i < 100; i++) {
+      gr = await T(() => window.__testlines.gun());
+      doneAtTap = gr.reloadTotal ? 1 - gr.reloadLeft / gr.reloadTotal : 0;
+      if (gr.reloadLeft > 0 && doneAtTap >= 0.33) break;
+      await sleep(30);
+    }
+    await page.keyboard.press('KeyR');
+    await sleep(250);
+    gr = await T(() => window.__testlines.gun());
+    ok(
+      'a tap of R inside the window ends the reload at once',
+      gr.active === 'perfect' && gr.reloadLeft === 0 && gr.ammo === 36,
+      `${gr.active}, tapped at about ${(doneAtTap * 100).toFixed(0)} %, ${gr.ammo} rounds`,
+    );
+    // A tap too early is a miss: the reload carries on to its full time, and a second tap does nothing.
+    await page.mouse.down();
+    await sleep(300);
+    await page.mouse.up();
+    await page.keyboard.press('KeyR');
+    await sleep(150);
+    await page.keyboard.press('KeyR');
+    await sleep(250);
+    gr = await T(() => window.__testlines.gun());
+    ok('a tap outside the window is a miss and the reload goes on', gr.active === 'miss' && gr.reloadLeft > 0, `${gr.active}, ${gr.reloadLeft.toFixed(2)} s left`);
+    await sleep(500);
+    await page.keyboard.press('KeyR');
+    await sleep(250);
+    gr = await T(() => window.__testlines.gun());
+    ok('only one try per reload', gr.active === 'miss' && gr.reloadLeft > 0, `${gr.active}, ${gr.reloadLeft.toFixed(2)} s left`);
+    await sleep(3200);
+    gr = await T(() => window.__testlines.gun());
+    ok('after a miss the reload ends at its normal time', gr.reloadLeft === 0 && gr.ammo === 36, `${gr.ammo} rounds`);
+    await T(() => window.__testlines.set('smgReload', 1.9));
+    await T(() => window.__testlines.set('smgActiveStart', 40));
+    await T(() => window.__testlines.set('smgActiveWidth', 20));
+
     // The rifle: one shot per click, then it reloads by itself (magazine of 1, 3.5 s).
     await page.keyboard.press('Digit2');
     await sleep(400);
@@ -311,6 +358,15 @@ async function run(browserName) {
     await sleep(3600);
     g1 = await T(() => window.__testlines.gun());
     ok('the rifle is loaded again after its reload', g1.ammo === 1, `${g1.ammo} rounds`);
+    // The rifle's reload starts by itself after its one round; a tap in the window (40 % to 60 % of 3.5 s) ends it.
+    await page.mouse.down();
+    await sleep(60);
+    await page.mouse.up();
+    await sleep(1400 + 350);
+    await page.keyboard.press('KeyR');
+    await sleep(250);
+    g1 = await T(() => window.__testlines.gun());
+    ok('a perfect tap ends the rifle\'s automatic reload', g1.active === 'perfect' && g1.ammo === 1, `${g1.active}, ${g1.ammo} rounds`);
     // A rifle click while sprinting waits out the sprint-to-fire delay, then fires.
     await page.keyboard.down('ShiftLeft');
     await page.keyboard.down('KeyS');

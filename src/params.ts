@@ -125,7 +125,7 @@ function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
     {
       kind: 'range', key: k('Reload'), group: id, label: 'Reload time', exportKey: 'reload_time_s', unit: 's',
       min: 0.2, max: 8, step: 0.05, start: g.reload, digits: 2,
-      source: `Old game ${g.legacy}.reload. R reloads; an empty magazine reloads by itself.`, legacy: `${g.legacy}.reload`,
+      source: `Old game ${g.legacy}.reload. R reloads; an empty magazine reloads by itself. A second tap of R during the reload is the active reload.`, legacy: `${g.legacy}.reload`,
     },
     {
       kind: 'range', key: k('Recoil'), group: id, label: 'Recoil (view kick)', exportKey: 'recoil_view_kick', unit: '',
@@ -162,6 +162,24 @@ function gunParams(id: 'smg' | 'rifle', g: GunStart): Param[] {
       kind: 'range', key: k('SpreadRecover'), group: id, label: 'Spread recovery', exportKey: 'spread_recovery_rad_per_s', unit: 'rad/s',
       min: 0, max: 5, step: 0.05, start: g.spreadRecover, digits: 2,
       source: `Old game ${g.legacy}.spreadDecay: the spread falls back toward rest by this much each second.`, legacy: `${g.legacy}.spreadDecay`,
+    },
+    {
+      kind: 'range', key: k('ActiveStart'), group: id, label: 'Active reload: window starts at', exportKey: 'active_reload_window_start_pct', unit: '%',
+      min: 0, max: 100, step: 1, start: 40, digits: 0,
+      note: (v) => {
+        const t = v[k('Reload')] as number;
+        const a = (v[k('ActiveStart')] as number) / 100;
+        const b = Math.min(1, a + (v[k('ActiveWidth')] as number) / 100);
+        return `tap R between ${(a * t).toFixed(2)} s and ${(b * t).toFixed(2)} s into the reload`;
+      },
+      source:
+        'No old number. LOOP_V2 7 (simplified for Slice 1): tap R during a reload; inside the window the reload ends at once, a miss is a normal reload, one try per reload. A share of the reload time.',
+    },
+    {
+      kind: 'range', key: k('ActiveWidth'), group: id, label: 'Active reload: window width', exportKey: 'active_reload_window_width_pct', unit: '%',
+      min: 1, max: 100, step: 1, start: 20, digits: 0,
+      note: (v) => `${(((v[k('ActiveWidth')] as number) / 100) * (v[k('Reload')] as number)).toFixed(2)} s wide`,
+      source: 'No old number. LOOP_V2 7 asks for a gentle active reload, so it starts wide. A share of the reload time.',
     },
     {
       kind: 'range', key: k('Range'), group: id, label: 'Range', exportKey: 'range_m', unit: 'm',
