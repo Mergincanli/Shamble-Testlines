@@ -32,10 +32,11 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 
 ## The panel
 
-- Most sliders start at the old game's number. A few are the sandbox's own picks, because the old game has no
-  number for them: the body radius (from the Art brief's soldier), push strength and push radius, the two
-  sprint-to-fire delays (0.15 s SMG, 0.25 s rifle) and the active-reload window (40 % to 60 %). Every slider
-  has its own reset (↺, lit when the value has moved); hover a name to see where its start value comes from.
+- The camera starts on the Original profile (above). Most other sliders start at the old game's number. A few
+  are the sandbox's own picks, because the old game has no number for them: the body radius (from the Art
+  brief's soldier), push strength and push radius, the two sprint-to-fire delays (0.15 s SMG, 0.25 s rifle) and
+  the active-reload window (40 % to 60 %). Every slider has its own reset (↺, lit when the value has moved);
+  hover a name to see where its start value comes from. The Export names the camera profile in use.
 - **Export** copies every value as JSON with the date and time, the build it came from, units in the names and
   the old game's own names beside them. The JSON also appears in a box, in case the browser blocks copying.
 - Values are kept in the browser between visits. **Reset all** puts everything back to the start values.

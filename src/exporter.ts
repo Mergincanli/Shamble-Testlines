@@ -1,8 +1,8 @@
 // The Export: every current value as JSON, with the date, the build it came from, units in the names, and the
 // old game's own names beside them, so the numbers can be handed to the Advisor as they are.
-import { GROUPS, PARAMS, type Store } from './params';
+import { CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
-export const BUILD = { step: 4, name: 'Reload' };
+export const BUILD = { step: '4.1', name: 'Camera profiles' };
 
 function localStamp(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -98,6 +98,8 @@ export function buildExport(store: Store): string {
     what: 'Shamble Testlines feel values',
     note: 'Sandbox values, not decisions. Start values are the old game\'s numbers unless the sandbox says otherwise.',
     build: `step ${BUILD.step} (${BUILD.name})`,
+    camera_profile:
+      [...CAMERA_PROFILES, ...CAMERA_PRESETS].find((p) => profileActive(p.values, store.values))?.name ?? 'custom',
     exported: localStamp(now),
     exported_utc: now.toISOString(),
     values,
