@@ -5,7 +5,7 @@
 import type { GunId } from './guns';
 import type { MoverState } from './movement';
 import type { Store } from './params';
-import { BLOCKS, bottomOf, rampHeight } from './yard';
+import { BLOCKS, bottomOf, rampHeight, rayWorld } from './yard';
 
 /** Height of the shot above the feet: the gun's height in the aiming pose. */
 export const SHOT_HEIGHT = 1.36;
@@ -198,6 +198,107 @@ export function castLevel(
   return { t: idx >= 0 ? tt : Math.min(tb, range), hit: idx, hitBlock: idx < 0 && tb <= range };
 }
 
+/** The point a shot is aimed at (the cursor's), or null for level shots. */
+export type AimPoint = { x: number; y: number; z: number } | null;
+
+/**
+ * Where the first standing target's body (a cylinder from its feet up HIT_HEIGHT, HIT_RADIUS round) meets a ray, as
+ * a distance along it, and which: the cursor's ray and the aimed shots.
+ */
+export function rayBodies(
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  targets: Target[],
+): [number, number] {
+  let best = Infinity;
+  let idx = -1;
+  const a = dx * dx + dz * dz;
+  targets.forEach((t, i) => {
+    if (t.downFor > 0) return;
+    const s = t.state;
+    const fx = ox - s.x;
+    const fz = oz - s.z;
+    const c = fx * fx + fz * fz - HIT_RADIUS * HIT_RADIUS;
+    // Starting inside the cylinder (point blank) counts as a hit at once, if within its height.
+    if (c <= 0 && oy >= s.y && oy <= s.y + HIT_HEIGHT) {
+      if (0 < best) {
+        best = 0;
+        idx = i;
+      }
+      return;
+    }
+    const tryT = (t0: number) => {
+      if (t0 < 0 || t0 >= best) return;
+      const y = oy + dy * t0;
+      if (y >= s.y && y <= s.y + HIT_HEIGHT) {
+        best = t0;
+        idx = i;
+      }
+    };
+    if (a > 1e-12) {
+      const b = 2 * (fx * dx + fz * dz);
+      const disc = b * b - 4 * a * c;
+      if (disc >= 0) {
+        const q = Math.sqrt(disc);
+        tryT((-b - q) / (2 * a));
+        tryT((-b + q) / (2 * a));
+      }
+    }
+    // Through the top or the bottom (a steep shot).
+    if (Math.abs(dy) > 1e-9) {
+      for (const cap of [s.y + HIT_HEIGHT, s.y]) {
+        const t0 = (cap - oy) / dy;
+        const px = fx + dx * t0;
+        const pz = fz + dz * t0;
+        if (px * px + pz * pz <= HIT_RADIUS * HIT_RADIUS) tryT(t0);
+      }
+    }
+  });
+  return [best, idx];
+}
+
+/**
+ * One shot ray from the gun: level along a yaw (the guns' first rule), or, with an aim point, from the gun toward
+ * it in 3D with the scatter as a sideways turn, stopping at a body, a block, the ramp, the ground or the range.
+ */
+export function castShot(
+  me: MoverState,
+  yaw: number,
+  aim: AimPoint,
+  range: number,
+  targets: Target[],
+): { ox: number; oy: number; oz: number; ex: number; ey: number; ez: number; t: number; hit: number; hitBlock: boolean } {
+  const oy = me.y + SHOT_HEIGHT;
+  if (!aim) {
+    const dx = Math.sin(yaw);
+    const dz = Math.cos(yaw);
+    const c = castLevel(me.x, me.z, oy, dx, dz, range, targets);
+    return { ox: me.x, oy, oz: me.z, ex: me.x + dx * c.t, ey: oy, ez: me.z + dz * c.t, t: c.t, hit: c.hit, hitBlock: c.hitBlock };
+  }
+  const h = Math.hypot(aim.x - me.x, aim.z - me.z);
+  const pitch = Math.atan2(aim.y - oy, Math.max(h, 1e-6));
+  const cp = Math.cos(pitch);
+  const dx = Math.sin(yaw) * cp;
+  const dy = Math.sin(pitch);
+  const dz = Math.cos(yaw) * cp;
+  const w = rayWorld(me.x, oy, me.z, dx, dy, dz);
+  const tw = w ? Math.hypot(w.x - me.x, w.y - oy, w.z - me.z) : Infinity;
+  const [tb, idx] = rayBodies(me.x, oy, me.z, dx, dy, dz, targets);
+  const t = Math.min(range, tw, tb);
+  const hit = tb <= t && idx >= 0 ? idx : -1;
+  return { ox: me.x, oy, oz: me.z, ex: me.x + dx * t, ey: oy + dy * t, ez: me.z + dz * t, t, hit, hitBlock: hit < 0 && tw <= range };
+}
+
+/** The yaw a shot leaves at: toward the aim point when there is one (and it is not right underfoot), else the aim. */
+export function shotYaw(me: MoverState, aimYaw: number, aim: AimPoint): number {
+  if (!aim || Math.hypot(aim.x - me.x, aim.z - me.z) < 0.3) return aimYaw;
+  return Math.atan2(aim.x - me.x, aim.z - me.z);
+}
+
 /**
  * Where a shot from the soldier's gun along the aim (no scatter) ends, and what stops it: the guns' own cast, for
  * the sight line, so the line and the shot always agree.
@@ -207,12 +308,9 @@ export function traceAim(
   aimYaw: number,
   range: number,
   targets: Target[],
+  aim: AimPoint = null,
 ): { ox: number; oy: number; oz: number; ex: number; ey: number; ez: number; hit: number; hitBlock: boolean } {
-  const oy = me.y + SHOT_HEIGHT;
-  const dx = Math.sin(aimYaw);
-  const dz = Math.cos(aimYaw);
-  const c = castLevel(me.x, me.z, oy, dx, dz, range, targets);
-  return { ox: me.x, oy, oz: me.z, ex: me.x + dx * c.t, ey: oy, ez: me.z + dz * c.t, hit: c.hit, hitBlock: c.hitBlock };
+  return castShot(me, shotYaw(me, aimYaw, aim), aim, range, targets);
 }
 
 /** Where a level ray first meets a standing target's cylinder: [distance, index], or [Infinity, -1]. */
@@ -251,6 +349,8 @@ export interface TriggerInput {
   aimYaw: number;
   /** Aiming down sights: the spread rests at the gun's sights value. */
   ads: boolean;
+  /** The point the shot is aimed at (shots aimed at the point under the cursor), or null/absent for level shots. */
+  aimAt?: AimPoint;
 }
 
 /**
@@ -318,7 +418,7 @@ export function stepWeapons(
     // step rate, and the first gap after a pause is never short.
     let guard = 0;
     while (g.cooldown <= 1e-9 && g.ammo > 0 && guard++ < 16) {
-      fireOne(W, me, inp.aimYaw, targets, P, events);
+      fireOne(W, me, inp.aimYaw, inp.aimAt ?? null, targets, P, events);
       W.queued = false;
       g.cooldown += Math.max(0.01, v('Interval'));
       if (!auto) break;
@@ -342,7 +442,7 @@ export function startReload(g: GunState, seconds: number) {
   g.graceLeft = 0;
 }
 
-function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Target[], P: Store, events: ShotEvent[]) {
+function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, aim: AimPoint, targets: Target[], P: Store, events: ShotEvent[]) {
   const gun = W.gun;
   const g = W.guns[gun];
   const v = (k: string) => gunValue(P, gun, k);
@@ -356,13 +456,12 @@ function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Targe
   const hit = new Set<number>();
   let damage = 0;
   let killed = false;
+  const baseYaw = shotYaw(me, aimYaw, aim);
   for (let i = 0; i < pellets; i++) {
-    const yaw = aimYaw + (rand() * 2 - 1) * firedSpread;
-    const dx = Math.sin(yaw);
-    const dz = Math.cos(yaw);
-    const tb = rayBlocks(me.x, me.z, dx, dz, oy, range);
-    const [tt, idx] = rayTargets(me.x, me.z, dx, dz, oy, targets, Math.min(range, tb));
-    const t = idx >= 0 ? tt : Math.min(tb, range);
+    const yaw = baseYaw + (rand() * 2 - 1) * firedSpread;
+    const c = castShot(me, yaw, aim, range, targets);
+    const t = c.t;
+    const idx = c.hit;
     if (idx >= 0) {
       let dmg = v('Damage');
       if (GUN_KEYS[gun].falloff) {
@@ -381,7 +480,7 @@ function fireOne(W: WeaponsState, me: MoverState, aimYaw: number, targets: Targe
         target.downFor = Math.max(RISE_TIME + 0.05, P.num('dummyDownTime'));
       }
     }
-    rays.push({ ex: me.x + dx * t, ey: oy, ez: me.z + dz * t, hit: idx, hitBlock: idx < 0 && tb <= range });
+    rays.push({ ex: c.ex, ey: c.ey, ez: c.ez, hit: idx, hitBlock: c.hitBlock });
   }
   g.spread = Math.min(v('SpreadMax'), g.spread + v('SpreadPerShot'));
   events.push({ gun, ox: me.x, oy, oz: me.z, rays, hits: [...hit], damage, killed, spread: firedSpread });

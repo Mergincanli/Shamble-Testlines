@@ -39,6 +39,10 @@ async function run(browserName) {
     await sleep(2500);
     const T = (fn, ...args) => page.evaluate(fn, ...args);
     ok('page boots with the test hook', await T(() => !!window.__testlines));
+    // Shots aim at the point under the cursor from the start; the gun checks below were written for level shots, so
+    // they set level, and the aiming-at-height checks set the point again.
+    ok('shots start aimed at the point under the cursor', (await T(() => window.__testlines.values())).aimAt === 'point', String((await T(() => window.__testlines.values())).aimAt));
+    await T(() => window.__testlines.set('aimAt', 'level'));
     await page.screenshot({ path: `${shots}/${browserName}-start.png` });
     // The camera starts on the Original profile; the movement checks below were written for the old Iso turn.
     let cv = await T(() => window.__testlines.values());
@@ -604,6 +608,67 @@ async function run(browserName) {
       await sleep(300);
       await T(() => window.__testlines.placeDummy(0, 4, 4));
     }
+    await T(() => window.__testlines.set('dummiesWalk', true));
+    await T(() => window.__testlines.preset('Iso'));
+
+    // Aiming at height: a dummy standing on the 2.5 m ledge, 3 m from the soldier on the ground. Aimed at the point
+    // under the cursor the shot rises to it; level, it hits the ledge's face. A shot at open ground ends on it.
+    await T(() => window.__testlines.set('dummiesWalk', false));
+    await T(() => window.__testlines.preset('Original'));
+    const shootLedge = async (mode) => {
+      await T((m) => window.__testlines.set('aimAt', m), mode);
+      await T(() => window.__testlines.place(-10, -2));
+      await T(() => window.__testlines.placeDummy(0, -13, -2, 2.5));
+      await sleep(1200);
+      for (let k = 0; k < 3; k++) {
+        const sp = await T(() => window.__testlines.screenOf(-13, 3.6, -2));
+        await page.mouse.move(sp.x, sp.y);
+        await sleep(400);
+      }
+      const g0 = await T(() => window.__testlines.gun());
+      await page.mouse.down();
+      await sleep(60);
+      await page.mouse.up();
+      for (let i = 0; i < 20 && (await T(() => window.__testlines.gun())).shots === g0.shots; i++) await sleep(100);
+      await sleep(200);
+      return { d: (await T(() => window.__testlines.dummies()))[0], end: (await T(() => window.__testlines.gun())).lastShotEnd };
+    };
+    const lvl = await shootLedge('level');
+    const pnt = await shootLedge('point');
+    ok('a dummy on the 2.5 m ledge: level, the shot hits the ledge face; aimed at the point, it hits the dummy', lvl.d.health === 100 && pnt.d.health < 100, `level: dummy ${lvl.d.health.toFixed(0)}, shot ended at y ${lvl.end.y.toFixed(2)}; point: dummy ${pnt.d.health.toFixed(0)}, ended at y ${pnt.end.y.toFixed(2)}`);
+    // The sight line aimed at it stands a mark up from the ledge top to its end.
+    await page.mouse.down({ button: 'right' });
+    await sleep(1200);
+    for (let k = 0; k < 2; k++) {
+      const sp = await T(() => window.__testlines.screenOf(-13, 3.6, -2));
+      await page.mouse.move(sp.x, sp.y);
+      await sleep(400);
+    }
+    const slH = await T(() => window.__testlines.sight());
+    await page.mouse.up({ button: 'right' });
+    // (The camera tips toward the cursor while aiming, so the line may end on the dummy or on the ledge's face.)
+    ok('aimed at height, the sight line ends up there with a mark up from the floor', slH.visible && slH.end.y > 0.5 && Math.abs(slH.height - (slH.end.y - (slH.end.y > 2.55 && slH.end.x < -11.9 ? 2.5 : 0))) < 0.05 && slH.height > 0.3, `end y ${slH.end.y.toFixed(2)}, mark ${slH.height.toFixed(2)} m`);
+    // Open ground 8 m out: the shot ends on the ground.
+    await T(() => window.__testlines.place(30, 30));
+    await T(() => window.__testlines.placeDummy(0, 4, 4));
+    await sleep(1200);
+    {
+      const fw = await T(() => window.__testlines.axes());
+      for (let k = 0; k < 3; k++) {
+        const sp = await T((x, z) => window.__testlines.screenOf(x, 0, z), 30 + fw.fwdX * 8, 30 + fw.fwdZ * 8);
+        await page.mouse.move(sp.x, sp.y);
+        await sleep(400);
+      }
+      const cp = await T(() => window.__testlines.cursorPoint());
+      const g0 = await T(() => window.__testlines.gun());
+      await page.mouse.down();
+      await sleep(60);
+      await page.mouse.up();
+      for (let i = 0; i < 20 && (await T(() => window.__testlines.gun())).shots === g0.shots; i++) await sleep(100);
+      const e = (await T(() => window.__testlines.gun())).lastShotEnd;
+      ok('aimed at open ground, the shot ends on the ground at the cursor\'s distance', Math.abs(e.y) < 0.02 && Math.abs(Math.hypot(e.x - 30, e.z - 30) - Math.hypot(cp.x - 30, cp.z - 30)) < 0.5, `end y ${e.y.toFixed(3)}, ${Math.hypot(e.x - 30, e.z - 30).toFixed(2)} m against ${Math.hypot(cp.x - 30, cp.z - 30).toFixed(2)} m`);
+    }
+    await T(() => window.__testlines.set('aimAt', 'level'));
     await T(() => window.__testlines.set('dummiesWalk', true));
     await T(() => window.__testlines.preset('Iso'));
 

@@ -389,7 +389,7 @@ export const PARAMS: Param[] = [
   },
   {
     kind: 'range', key: 'coverHeight', group: 'metrics', label: 'Waist-high cover: height', exportKey: 'cover_height_m', unit: 'm', min: 0.3, max: 2, step: 0.05, start: 1.0, digits: 2,
-    note: (v) => ((v.coverHeight as number) < 1.36 ? 'level shots (1.36 m) fly over it' : 'stops level shots (1.36 m)'),
+    note: (v) => ((v.coverHeight as number) < 1.36 ? 'level shots (1.36 m) fly over it; aimed shots may hit it' : 'stops level shots (1.36 m)'),
     source: "The sandbox's pick, an ordinary real size: waist height on a 1.8 m man, about 1.0 m. Not a decision.",
   },
   {
@@ -465,6 +465,20 @@ export const PARAMS: Param[] = [
     ],
     start: 'smg',
     source: 'The SMG is judged first (build plan, FIRST-SOLDIER).',
+  },
+  {
+    kind: 'choice',
+    key: 'aimAt',
+    group: 'soldier',
+    label: 'Shots aim at',
+    exportKey: 'shots_aim_at',
+    options: [
+      { value: 'point', label: 'The point under the cursor' },
+      { value: 'level', label: 'Level, at gun height' },
+    ],
+    start: 'point',
+    source:
+      "Old game behaviour: shots fly from the gun toward the point the cursor's ray meets (a soldier, a block's top or side, the ground), so a ledge or a soldier on it can be aimed at. Level keeps every shot at 1.36 m. How aiming at height works is open in the game (LOOP_V2 section 9): a sandbox option, not a decision. The Hornet's gun stays level.",
   },
 
   // Movement

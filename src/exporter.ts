@@ -5,7 +5,7 @@ import { ROOM_LAYOUT } from './metrics';
 import { HORNET } from './hornet';
 import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
-export const BUILD = { step: 'B', name: 'Hornet' };
+export const BUILD = { step: 'C', name: 'Sight line and aiming at height' };
 
 /** Measured at the last frame (set by the main loop): the soldier's height and his size on screen. */
 export const MEASURED = { soldierHeightM: 0, soldierOnScreenPx: 0, viewHeightPx: 0 };

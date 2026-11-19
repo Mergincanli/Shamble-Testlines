@@ -1,13 +1,15 @@
 // The sight line while aiming down sights (the old game's described behaviour: a line from the gun to where the
 // shot would stop; its look here is the sandbox's own): a thin line from the gun as drawn to the end of the
 // shot's own cast, in the faction's Top colour, in the sun colour when it rests on a dummy, with a dot where it
-// stops (on a block, a dummy or at the gun's range).
+// stops (on a block, a dummy or at the gun's range), and a thin upright mark from the floor up to that point when
+// it is above the floor (aiming at height).
 import * as THREE from 'three';
 import { PAL, UNIFORM, type Faction } from './look';
 
 export class SightLine {
   private line: THREE.Mesh;
   private dot: THREE.Mesh;
+  private mark: THREE.Mesh;
   private lineMat: THREE.MeshBasicMaterial;
   private dotMat: THREE.MeshBasicMaterial;
   private top = new THREE.Color(UNIFORM.soviets.top);
@@ -22,19 +24,32 @@ export class SightLine {
     this.dotMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, depthWrite: false });
     this.dot = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), this.dotMat);
     this.dot.renderOrder = 6;
-    this.line.visible = this.dot.visible = false;
-    scene.add(this.line, this.dot);
+    const up = new THREE.BoxGeometry(1, 1, 1);
+    up.translate(0, 0.5, 0);
+    this.mark = new THREE.Mesh(up, this.dotMat);
+    this.mark.renderOrder = 6;
+    this.line.visible = this.dot.visible = this.mark.visible = false;
+    scene.add(this.line, this.dot, this.mark);
   }
 
   setFaction(f: Faction) {
     this.top.set(UNIFORM[f].top);
   }
 
-  /** Show the line from `from` to `to` (onDummy: it rests on a dummy), or hide it with null. */
-  show(from: THREE.Vector3 | null, to: THREE.Vector3, onDummy: boolean) {
+  /**
+   * Show the line from `from` to `to` (onDummy: it rests on a dummy; floor: the floor's height under its end, for
+   * the upright mark), or hide it with null.
+   */
+  show(from: THREE.Vector3 | null, to: THREE.Vector3, onDummy: boolean, floor = to.y) {
     if (!from) {
-      this.line.visible = this.dot.visible = false;
+      this.line.visible = this.dot.visible = this.mark.visible = false;
       return;
+    }
+    const rise = to.y - floor;
+    this.mark.visible = rise > 0.15;
+    if (this.mark.visible) {
+      this.mark.position.set(to.x, floor, to.z);
+      this.mark.scale.set(0.025, rise, 0.025);
     }
     const c = onDummy ? this.sun : this.top;
     this.lineMat.color.copy(c);

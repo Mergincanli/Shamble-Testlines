@@ -53,8 +53,11 @@ flight and the fuse run in steps of 1/120 s at either step rate, so a throw flie
 Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
 Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q to aim
 there, and stop sprinting to throw a grenade (the menu drops the throw). While aiming
-the soldier walks at 0.55 of his speed and cannot sprint, each gun's spread rests at its sights value, and the
-screen dead zone shrinks to 0.45. The camera reacts in one of three ways: Flatten (the view tips toward the
+the soldier walks at 0.55 of his speed and cannot sprint, each gun's spread rests at its sights value, the
+screen dead zone shrinks to 0.45, and a sight line runs from the gun to where the shot would stop: a dummy, a block,
+the ground or the gun's range (the old game's described behaviour; the look is the sandbox's own: the faction's Top
+colour, the sun colour on a dummy, a dot where it stops, and a thin upright mark from the floor when it ends up
+in the air or on a dummy). It is the shot's own cast, so the line and the shot agree; a switch turns it off. The camera reacts in one of three ways: Flatten (the view tips toward the
 cursor, no flatter than 28.5°), Slide (the camera slides toward the cursor, keeping the soldier on screen; the
 old Foxhole style) or Still. Two differences from the old game: Flatten tips toward the point the cursor marks in
 the resting view, so the view settles instead of creeping on while the cursor is still; and it never tips so far
@@ -131,8 +134,8 @@ sizes beside the sliders (derived, metrics_room_built), with the room's layout a
 (constants). The walls over the door and over the window float: his head bumps the lintel if he jumps in the
 doorway, a door lower than his 1.80 m stops him, he cannot step onto the sill (no headroom), grenades bounce off
 the lintel's underside and fly through the window. With the old jump reach (3.07 m) he can jump onto a 3.0 m wall;
-raise the wall above the reach to stop that. Level shots fly at 1.36 m, so the 1.0 m cover and the 0.9 m sill do
-not stop them (how aiming at height works is open in the game). The stair is walked on a slope through the middle
+raise the wall above the reach to stop that. A level shot (at 1.36 m) flies over the 1.0 m cover and the 0.9 m sill;
+aimed at the point under the cursor, a shot at something behind them passes over or hits them along its line. The stair is walked on a slope through the middle
 of each tread (his body is wider than a tread, so stepping each one would lurch), with the steps drawn over it: his
 feet are at most half a rise above or below a drawn tread. On any slope he is brought onto the block at its head
 by walking up (not by an early step-up, and its face is no wall to him), a slope rising faster than he can step
@@ -160,10 +163,16 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 
 ## How the guns differ from the old game
 
-- Spread scatters shots sideways only (the old game scattered them up and down as well); shots go out level from
-  the gun's height.
-- A level shot still counts within 0.6 m above a dummy's head or below its feet, so the 0.55 m step and the foot
-  of the ramp work. How aiming at height works is open in the game.
+- Shots aim at the point under the cursor (the Soldier group's "Shots aim at", as the old game): the first dummy,
+  block, ramp or ground the cursor's ray meets. Each shot flies from the gun at 1.36 m toward that point in a
+  straight line, and stops at the first body, block, ramp or ground on its way, or at the gun's range. So a dummy on
+  a ledge can be shot from below; a shot at open ground ends on it at the cursor; and from below, the middle of a
+  high ledge's top is out of the gun's sight (it sits lower than the camera), so the shot meets the face where its
+  line crosses it, as the sight line shows. Switched to "Level, at gun height", every shot flies level at 1.36 m as
+  before, and a level shot still counts within 0.6 m above a dummy's head or below its feet (so the 0.55 m step and
+  the foot of the ramp work). How aiming at height works is open in the game (LOOP_V2 section 9): a sandbox option,
+  not a decision. The Hornet's gun stays level.
+- Spread scatters shots sideways only (the old game scattered them up and down as well).
 - Recoil is the old game's view kick (a camera shake and a small zoom punch per shot), not an aim kick.
 - A click in the gap between two shots is kept only if the gap has at most 0.15 s left (then it fires as the gap
   ends); earlier clicks do nothing. The old game dropped every click in the gap. Clicks during the sprint-to-fire

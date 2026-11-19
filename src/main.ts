@@ -29,13 +29,15 @@ import {
   newWeapons,
   readyIn,
   RISE_TIME,
+  rayBodies,
   stepWeapons,
   switchGun,
   traceAim,
+  type AimPoint,
   type ShotEvent,
   type Target,
 } from './weapons';
-import { artGrid, buildYard, rayWorld, resolveWalls, setBodyHeight, surfaceAt } from './yard';
+import { artGrid, buildYard, floorBelow, rayWorld, resolveWalls, setBodyHeight, surfaceAt } from './yard';
 
 const store = new Store();
 
@@ -109,12 +111,17 @@ const hornetModel = new HornetModel(scene);
 // The sight line while aiming down sights.
 const sight = new SightLine(scene);
 sight.setFaction(store.get('faction') as Faction);
-let sightState: { visible: boolean; end: { x: number; y: number; z: number }; onDummy: boolean; blocked: boolean } = {
+let sightState: { visible: boolean; end: { x: number; y: number; z: number }; onDummy: boolean; blocked: boolean; height: number } = {
   visible: false,
   end: { x: 0, y: 0, z: 0 },
   onDummy: false,
   blocked: false,
+  height: 0,
 };
+/** The point under the cursor (the first body, block, ramp or ground the cursor's ray meets), found each frame. */
+let cursorPoint: AimPoint = null;
+/** Shots aim at the point under the cursor, or fly level. */
+const aimPoint3 = (): AimPoint => (store.get('aimAt') === 'point' ? cursorPoint : null);
 const sightFrom = new THREE.Vector3();
 const sightTo = new THREE.Vector3();
 let riding = false;
@@ -145,6 +152,7 @@ const events: ShotEvent[] = [];
 let shotsFired = 0;
 let lastShotSpread = 0;
 let lastShotRays = 0;
+let lastShotEnd = { x: 0, y: 0, z: 0 };
 /** The arc drawn at the last frame, and the arc shown just before the last throw (for the scripted checks). */
 let lastPreview: Flight | null = null;
 let lastThrow: { preview: Flight | null; target: { x: number; y: number; z: number } } | null = null;
@@ -326,7 +334,7 @@ function simStep(dt: number) {
     stepWeapons(
       W,
       cur,
-      { held: input.fireHeld() && !nadeReady, pressed: firePress && !nadeReady, reload: input.takePress('KeyR'), aimYaw, ads: aiming },
+      { held: input.fireHeld() && !nadeReady, pressed: firePress && !nadeReady, reload: input.takePress('KeyR'), aimYaw, ads: aiming, aimAt: aimPoint3() },
       targets,
       dt,
       store,
@@ -609,6 +617,13 @@ function frame(now: number) {
   const ro = raycaster.ray.origin;
   const rd = raycaster.ray.direction;
   nadeTarget = rayWorld(ro.x, ro.y, ro.z, rd.x, rd.y, rd.z);
+  // The shots' aim point: the nearer of a standing dummy's body (where it really stands) and that surface.
+  {
+    const [tb] = rayBodies(ro.x, ro.y, ro.z, rd.x, rd.y, rd.z, targets);
+    const tw = nadeTarget ? Math.hypot(nadeTarget.x - ro.x, nadeTarget.y - ro.y, nadeTarget.z - ro.z) : Infinity;
+    const t = Math.min(tb, tw);
+    cursorPoint = Number.isFinite(t) ? { x: ro.x + rd.x * t, y: ro.y + rd.y * t, z: ro.z + rd.z * t } : null;
+  }
 
   // Effects age first; then this frame's shots start theirs, so they are drawn at full strength. The tracer
   // leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
@@ -686,6 +701,10 @@ function frame(now: number) {
       }
     }
     lastShotRays = events[events.length - 1].rays.length;
+    {
+      const r0 = events[events.length - 1].rays[0];
+      lastShotEnd = { x: r0.ex, y: r0.ey, z: r0.ez };
+    }
     shotsFired += events.length;
     lastShotSpread = events[events.length - 1].spread;
     events.length = 0;
@@ -710,12 +729,12 @@ function frame(now: number) {
   }
   // The sight line while aiming down sights: the shot's own cast from where the soldier is, drawn from his muzzle.
   if (aiming && !riding && !nadeReady && store.get('sightLine') === true) {
-    const t = traceAim(cur, aimYaw, gunValue(store, W.gun, 'Range'), targets);
+    const t = traceAim(cur, aimYaw, gunValue(store, W.gun, 'Range'), targets, aimPoint3());
     soldier.root.updateMatrixWorld(true);
     soldier.muzzleWorld(sightFrom);
     sightTo.set(t.ex, t.ey, t.ez);
-    sight.show(sightFrom, sightTo, t.hit >= 0);
-    sightState = { visible: true, end: { x: t.ex, y: t.ey, z: t.ez }, onDummy: t.hit >= 0, blocked: t.hitBlock };
+    sight.show(sightFrom, sightTo, t.hit >= 0, floorBelow(t.ex, t.ez, t.ey));
+    sightState = { visible: true, end: { x: t.ex, y: t.ey, z: t.ez }, onDummy: t.hit >= 0, blocked: t.hitBlock, height: t.ey - floorBelow(t.ex, t.ez, t.ey) };
   } else {
     sight.show(null, sightTo, false);
     sightState = { ...sightState, visible: false };
@@ -845,8 +864,8 @@ requestAnimationFrame(frame);
     return { x: camera.cam.position.x, y: camera.cam.position.y, z: camera.cam.position.z, pitch: (Math.asin(-d.y) * 180) / Math.PI };
   },
   /** Put a dummy somewhere, at rest and at full health (for the scripted checks only). */
-  placeDummy: (i: number, x: number, z: number) => {
-    Object.assign(dummies[i].state, newMover(x, z));
+  placeDummy: (i: number, x: number, z: number, y = 0) => {
+    Object.assign(dummies[i].state, newMover(x, z), { y });
     dummies[i].prev = { ...dummies[i].state };
     targets[i].health = store.num('dummyHealth');
     targets[i].downFor = 0;
@@ -886,6 +905,8 @@ requestAnimationFrame(frame);
       prev = { ...cur };
     }
   },
+  /** The point under the cursor at the last frame (the shots' aim point when they aim at it). */
+  cursorPoint: () => cursorPoint,
   /** The sight line as drawn at the last frame. */
   sight: () => ({ ...sightState }),
   /** The soldier's measured height and size on screen at the last frame. */
@@ -914,6 +935,7 @@ requestAnimationFrame(frame);
     queued: W.queued,
     lastShotSpread,
     lastShotRays,
+    lastShotEnd,
   }),
   /** Where a world point is on the page, in CSS pixels. */
   screenOf: (x: number, y: number, z: number) => {
