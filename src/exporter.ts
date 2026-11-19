@@ -1,6 +1,8 @@
 // The Export: every current value as JSON, with the date, the build it came from, units in the names, and the
 // old game's own names beside them, so the numbers can be handed to the Advisor as they are.
-import { CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
+import { GRID_COLOURS, GRID_LOOK } from './look';
+import { ROOM_LAYOUT } from './metrics';
+import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
 export const BUILD = { step: 'A', name: 'Grid and metrics room' };
 
@@ -30,7 +32,7 @@ export function buildExport(store: Store): string {
       const v = store.get(p.key);
       if (p.kind === 'range') {
         out[p.exportKey] = v === null ? 'auto' : round(v as number, Math.max(p.digits, 3));
-      } else if (p.kind === 'choice' && p.key === 'tickRate') {
+      } else if (p.kind === 'choice' && (p.key === 'tickRate' || p.key === 'gridStep')) {
         out[p.exportKey] = Number(v);
       } else {
         out[p.exportKey] = v;
@@ -52,6 +54,20 @@ export function buildExport(store: Store): string {
     camera_view_angle_at_rest_deg: round(n('camAngle'), 2),
     camera_angle_to_the_feet_deg: round((Math.atan2(n('camHeight'), Math.max(0.001, n('camBack'))) * 180) / Math.PI, 2),
     camera_straight_distance_m: round(Math.hypot(n('camHeight'), n('camBack')), 2),
+    metrics_room_built: (() => {
+      const d = builtOpening(store.values, 'door');
+      const w = builtOpening(store.values, 'window');
+      return {
+        door_width_m: round(d.width, 3),
+        door_height_m: round(d.height, 3),
+        window_width_m: round(w.width, 3),
+        window_sill_m: round(w.sill, 3),
+        window_height_m: round(w.height, 3),
+        stair_height_m: round(n('stairRise') * Math.round(n('stairSteps')), 3),
+        stair_angle_deg: round((Math.atan2(n('stairRise'), n('stairTread')) * 180) / Math.PI, 1),
+        note: 'The sizes as built: a slider asking for more than its wall allows is held back (see layout).',
+      };
+    })(),
   };
 
   // The old game's names, for the values that have one (radians where the old game used radians).
@@ -107,6 +123,10 @@ export function buildExport(store: Store): string {
     exported_utc: now.toISOString(),
     values,
     derived,
+    constants: {
+      metrics_room_layout: ROOM_LAYOUT,
+      grid_look: { ...GRID_LOOK, colours: GRID_COLOURS },
+    },
     measured: {
       soldier_height_m: round(MEASURED.soldierHeightM, 3),
       soldier_on_screen_px: round(MEASURED.soldierOnScreenPx, 1),

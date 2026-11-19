@@ -179,8 +179,9 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
     s.y = surf;
     s.vy = 0;
     s.grounded = true;
-  } else if (wasGrounded && s.y - surf <= SNAP_DOWN + Math.hypot(s.x - startX, s.z - startZ) * slopeUnder(s.x, s.z, rs)) {
-    // Down a slope the drop per step grows with the speed and the slope: stay on it at either step rate.
+  } else if (wasGrounded && s.y - surf <= SNAP_DOWN + (Math.hypot(s.x - startX, s.z - startZ) + rs) * slopeUnder(s.x, s.z, rs)) {
+    // Down a slope the drop per step grows with the speed and the slope (and the foot circle's width, which holds
+    // him on an edge a little past it): stay on it at either step rate.
     s.y = surf;
     s.vy = 0;
     s.grounded = true;

@@ -72,6 +72,18 @@ export const GRID_COLOURS: Record<string, string> = {
 };
 export type GridGroup = 'ground' | 'blocks' | 'room';
 
+/** The grid's fixed look (in the Export): line widths, how dark the lines are, where the thin ones fade. */
+export const GRID_LOOK = {
+  thick_line_m: 0.04,
+  thick_line_min_px: 2,
+  thick_line_shade: 0.36,
+  thin_line_m: 0.012,
+  thin_line_min_px: 1,
+  thin_line_shade: 0.74,
+  thin_lines_fade_from_px: 10,
+  thin_lines_gone_at_px: 5,
+};
+
 /** Shared values of every gridded material: on or off, the thin step, and each surface group's colour. */
 export const GRID = {
   on: { value: 1 },
@@ -91,7 +103,16 @@ const GRID_VERT_BODY = `
 vGridPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
 vGridN = normalize(mat3(modelMatrix) * objectNormal);
 `;
+const glf = (n: number) => (Number.isInteger(n) ? n.toFixed(1) : String(n));
 const GRID_FRAG_HEAD = `
+#define GONE ${glf(GRID_LOOK.thin_lines_gone_at_px)}
+#define FROM ${glf(GRID_LOOK.thin_lines_fade_from_px)}
+#define THIN_HALF ${glf(GRID_LOOK.thin_line_m / 2)}
+#define THIN_PX ${glf(GRID_LOOK.thin_line_min_px)}
+#define THICK_HALF ${glf(GRID_LOOK.thick_line_m / 2)}
+#define THICK_PX ${glf(GRID_LOOK.thick_line_min_px)}
+#define THIN_SHADE ${glf(GRID_LOOK.thin_line_shade)}
+#define THICK_SHADE ${glf(GRID_LOOK.thick_line_shade)}
 varying vec3 vGridPos;
 varying vec3 vGridN;
 uniform float uGridOn;
@@ -113,13 +134,13 @@ if (uGridOn > 0.5) {
   vec2 p = (an.y >= an.x && an.y >= an.z) ? vGridPos.xz : (an.x >= an.z ? vGridPos.zy : vGridPos.xy);
   vec2 fwp = fwidth(p);
   float px = max(max(fwp.x, fwp.y), 1e-6);
-  // Thin lines fade out where they would be closer than about 5 pixels.
-  float fade = clamp((uGridMinor / px - 5.0) / 5.0, 0.0, 1.0);
-  float minor = gridLines(p, uGridMinor, 0.006, 1.0) * fade;
-  float major = gridLines(p, 1.0, 0.02, 2.0);
+  // Thin lines fade out where they would be closer than GONE..FROM pixels.
+  float fade = clamp((uGridMinor / px - GONE) / (FROM - GONE), 0.0, 1.0);
+  float minor = gridLines(p, uGridMinor, THIN_HALF, THIN_PX) * fade;
+  float major = gridLines(p, 1.0, THICK_HALF, THICK_PX);
   vec3 c = uGridBase;
-  c = mix(c, c * 0.74, minor);
-  c = mix(c, c * 0.36, major);
+  c = mix(c, c * THIN_SHADE, minor);
+  c = mix(c, c * THICK_SHADE, major);
   diffuseColor.rgb = c;
 }
 `;

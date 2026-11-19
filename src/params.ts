@@ -83,6 +83,19 @@ export type Values = Record<string, Value>;
 
 const LN10 = Math.log(10);
 
+/**
+ * The opening a metrics room wall really gets (door: sill 0): no wider than its wall less 0.2 m, its sill at
+ * least 0.1 m under the wall's top, and at least 0.05 m of wall over it. The room is built from this, and the
+ * notes and the Export report it when a slider asks for more.
+ */
+export function builtOpening(v: Values, which: 'door' | 'window'): { width: number; sill: number; height: number } {
+  const wallH = v.roomWallHeight as number;
+  const width = Math.min(v[which === 'door' ? 'doorWidth' : 'windowWidth'] as number, (v.roomWallLength as number) - 0.2);
+  const sill = which === 'door' ? 0 : Math.min(Math.max(0, v.windowSill as number), wallH - 0.1);
+  const top = Math.min(sill + (v[which === 'door' ? 'doorHeight' : 'windowHeight'] as number), wallH - 0.05);
+  return { width, sill, height: top - sill };
+}
+
 /** How far a grenade thrown at this speed flies on flat ground, from the throwing height (for the notes). */
 function nadeRange(v: Values, speed: number): number {
   const a = ((v.nadeAngle as number) * Math.PI) / 180;
@@ -327,24 +340,49 @@ export const PARAMS: Param[] = [
     source: "The sandbox's pick, an ordinary real size: a brick wall with plaster. Not a decision.",
   },
   {
+    kind: 'range', key: 'roomWallLength', group: 'metrics', label: 'Wall length (door wall, window wall)', exportKey: 'wall_length_m', unit: 'm', min: 1.5, max: 8, step: 0.1, start: 4, digits: 1,
+    source: "The sandbox's pick: a 4 m stretch of wall either side of the opening. Not a decision.",
+  },
+  {
     kind: 'range', key: 'doorWidth', group: 'metrics', label: 'Doorway: width', exportKey: 'door_width_m', unit: 'm', min: 0.6, max: 3, step: 0.05, start: 1.0, digits: 2,
-    note: (v) => ((v.doorWidth as number) > 2 * (v.bodyRadius as number) ? `${((v.doorWidth as number) - 2 * (v.bodyRadius as number)).toFixed(2)} m wider than his body` : 'narrower than his body: he cannot pass'),
+    note: (v) => {
+      const o = builtOpening(v, 'door');
+      const built = Math.abs(o.width - (v.doorWidth as number)) > 1e-9 ? `built ${o.width.toFixed(2)} m (the wall is ${(v.roomWallLength as number).toFixed(1)} m); ` : '';
+      return built + (o.width > 2 * (v.bodyRadius as number) ? `${(o.width - 2 * (v.bodyRadius as number)).toFixed(2)} m wider than his body` : 'narrower than his body: he cannot pass');
+    },
     source: "The owner's start: a door about 1.0 m wide.",
   },
   {
     kind: 'range', key: 'doorHeight', group: 'metrics', label: 'Doorway: height', exportKey: 'door_height_m', unit: 'm', min: 1.6, max: 4, step: 0.05, start: 2.1, digits: 2,
+    note: (v) => {
+      const o = builtOpening(v, 'door');
+      const built = Math.abs(o.height - (v.doorHeight as number)) > 1e-9 ? `built ${o.height.toFixed(2)} m (5 cm of wall stays over it); ` : '';
+      return built + (o.height < 1.8 ? 'lower than his 1.80 m: he cannot pass' : `${(o.height - 1.8).toFixed(2)} m over his head`);
+    },
     source: "The owner's start: a door about 2.1 m high.",
   },
   {
     kind: 'range', key: 'windowWidth', group: 'metrics', label: 'Window: width', exportKey: 'window_width_m', unit: 'm', min: 0.3, max: 3.5, step: 0.05, start: 1.2, digits: 2,
+    note: (v) => {
+      const o = builtOpening(v, 'window');
+      return Math.abs(o.width - (v.windowWidth as number)) > 1e-9 ? `built ${o.width.toFixed(2)} m (the wall is ${(v.roomWallLength as number).toFixed(1)} m)` : '';
+    },
     source: "The sandbox's pick, an ordinary real size: a 1.2 m window. Not a decision.",
   },
   {
     kind: 'range', key: 'windowHeight', group: 'metrics', label: 'Window: height', exportKey: 'window_height_m', unit: 'm', min: 0.3, max: 3, step: 0.05, start: 1.2, digits: 2,
+    note: (v) => {
+      const o = builtOpening(v, 'window');
+      return Math.abs(o.height - (v.windowHeight as number)) > 1e-9 ? `built ${o.height.toFixed(2)} m (5 cm of wall stays over it)` : '';
+    },
     source: "The sandbox's pick, an ordinary real size: a 1.2 m window. Not a decision.",
   },
   {
     kind: 'range', key: 'windowSill', group: 'metrics', label: 'Window: sill height', exportKey: 'window_sill_m', unit: 'm', min: 0, max: 2, step: 0.05, start: 0.9, digits: 2,
+    note: (v) => {
+      const o = builtOpening(v, 'window');
+      return Math.abs(o.sill - (v.windowSill as number)) > 1e-9 ? `built ${o.sill.toFixed(2)} m (10 cm under the wall's top)` : '';
+    },
     source: "The sandbox's pick, an ordinary real size: a 0.9 m sill. Not a decision.",
   },
   {
@@ -376,6 +414,10 @@ export const PARAMS: Param[] = [
   {
     kind: 'range', key: 'stairWidth', group: 'metrics', label: 'Stair: width', exportKey: 'stair_width_m', unit: 'm', min: 0.6, max: 4, step: 0.05, start: 1.2, digits: 2,
     source: "The sandbox's pick, an ordinary real size: a 1.2 m stair. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'stairLanding', group: 'metrics', label: 'Stair: landing depth (past the last tread)', exportKey: 'stair_landing_m', unit: 'm', min: 0.5, max: 4, step: 0.1, start: 1.5, digits: 1,
+    source: "The sandbox's pick: room to stand and turn at the top. Not a decision.",
   },
 
   // Simulation

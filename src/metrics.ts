@@ -3,28 +3,37 @@
 // Every size is a slider (params.ts, group 'metrics'); the pieces join the collision world as blocks (the wall
 // over the door and over the window float), and are rebuilt whenever a size changes. They stand in a row along
 // z at x 20, their faces toward +x, where the Original camera looks from. The stair is walked on a slope through
-// its nosings (the soldier's body is wider than a tread, so stepping each one would lurch), with the steps drawn
-// over it.
+// the middle of each tread (the soldier's body is wider than a tread, so stepping each one would lurch), with the
+// steps drawn over it: his feet are at most half a rise above or below a drawn tread.
 import * as THREE from 'three';
 import { hullOf } from './geom';
 import { gridToon, INK_BLOCK, PAL } from './look';
-import type { Store } from './params';
+import { builtOpening, type Store } from './params';
 import { BLOCKS, blockMesh, type Block } from './yard';
 
-/** The plane of the walls, and where along z each piece stands (its centre). */
+/** The plane of the walls, where along z each piece stands (its centre), and the stair's first riser. */
 export const ROOM_X = 20;
 const DOOR_Z = -11;
 const WINDOW_Z = -17;
 const COVER_Z = -22.5;
 const STAIR_Z = -27.5;
-/** Each wall is 4 m long (the sandbox's pick); the stair's first riser is 1.5 m in front of the wall plane. */
-const WALL_LEN = 4;
 const STAIR_X0 = ROOM_X + 1.5;
-const LANDING = 1.5;
+/** The layout, for the Export (the sizes are sliders; these place the pieces). */
+export const ROOM_LAYOUT = {
+  wall_plane_x_m: ROOM_X,
+  door_wall_centre_z_m: DOOR_Z,
+  window_wall_centre_z_m: WINDOW_Z,
+  cover_centre_z_m: COVER_Z,
+  stair_centre_z_m: STAIR_Z,
+  stair_first_riser_x_m: STAIR_X0,
+  stair_slope: 'through the middle of each tread',
+  opening_limits: 'no wider than the wall less 0.2 m; sill at least 0.1 m under the top; at least 0.05 m of wall over it',
+};
 
 /** The pieces' blocks for the current sizes, with dependent sizes kept possible and empty pieces left out. */
 export function roomBlocks(P: Store): Block[] {
   const wallH = P.num('roomWallHeight');
+  const wallLen = P.num('roomWallLength');
   const t = P.num('roomWallThick');
   const x0 = ROOM_X - t / 2;
   const x1 = ROOM_X + t / 2;
@@ -34,35 +43,36 @@ export function roomBlocks(P: Store): Block[] {
     out.push({ minX, maxX, minZ, maxZ, top, ...(bottom > 0 ? { bottom } : {}), ...extra });
   };
   // A wall with an opening (door: sill 0): full height either side, a sill below, a floating wall above.
-  const opening = (cz: number, width: number, sill: number, height: number) => {
-    const w = Math.min(width, WALL_LEN - 0.2);
-    const s = Math.min(Math.max(0, sill), wallH - 0.1);
-    const top = Math.min(s + height, wallH - 0.05);
-    const a = cz - WALL_LEN / 2;
-    const b = cz + WALL_LEN / 2;
-    add(x0, x1, a, cz - w / 2, 0, wallH);
-    add(x0, x1, cz + w / 2, b, 0, wallH);
-    add(x0, x1, cz - w / 2, cz + w / 2, 0, s);
-    add(x0, x1, cz - w / 2, cz + w / 2, top, wallH);
+  const opening = (cz: number, which: 'door' | 'window') => {
+    const o = builtOpening(P.values, which);
+    const a = cz - wallLen / 2;
+    const b = cz + wallLen / 2;
+    add(x0, x1, a, cz - o.width / 2, 0, wallH);
+    add(x0, x1, cz + o.width / 2, b, 0, wallH);
+    add(x0, x1, cz - o.width / 2, cz + o.width / 2, 0, o.sill);
+    add(x0, x1, cz - o.width / 2, cz + o.width / 2, o.sill + o.height, wallH);
   };
-  opening(DOOR_Z, P.num('doorWidth'), 0, P.num('doorHeight'));
-  opening(WINDOW_Z, P.num('windowWidth'), P.num('windowSill'), P.num('windowHeight'));
+  opening(DOOR_Z, 'door');
+  opening(WINDOW_Z, 'window');
   // Waist-high cover, its face toward the camera like the walls.
   const ct = P.num('coverThick');
   const cl = P.num('coverLength');
   add(ROOM_X - ct / 2, ROOM_X + ct / 2, COVER_Z - cl / 2, COVER_Z + cl / 2, 0, P.num('coverHeight'));
-  // The stair: rising toward -x from its first riser, to a landing the depth of the last tread plus 1.5 m. It
-  // is walked on a hidden slope through the step nosings (from one tread in front of the first riser, at the
-  // ground, to the last riser's top).
+  // The stair: rising toward -x from its first riser, to a landing the depth of the last tread plus the landing
+  // slider. It is walked on a hidden slope through the middle of each tread: from the ground half a tread in
+  // front of the first riser to the landing's height half a tread into the landing (which, being a full block,
+  // carries him from its front edge on).
   const rise = P.num('stairRise');
   const tread = P.num('stairTread');
   const n = Math.round(P.num('stairSteps'));
   const sw = P.num('stairWidth');
   const z0 = STAIR_Z - sw / 2;
   const z1 = STAIR_Z + sw / 2;
-  const highX = STAIR_X0 - (n - 1) * tread;
-  add(highX, STAIR_X0 + tread, z0, z1, 0, n * rise, { ramp: { axis: 'x', low: STAIR_X0 + tread, high: highX }, hidden: true });
-  add(highX - LANDING, highX, z0, z1, 0, n * rise);
+  const landingX = STAIR_X0 - (n - 1) * tread;
+  const lowX = STAIR_X0 + tread / 2;
+  const highX = landingX - tread / 2;
+  add(highX, lowX, z0, z1, 0, n * rise, { ramp: { axis: 'x', low: lowX, high: highX }, hidden: true });
+  add(landingX - P.num('stairLanding'), landingX, z0, z1, 0, n * rise);
   return out;
 }
 
@@ -80,6 +90,8 @@ export class MetricsRoom {
   private group = new THREE.Group();
   private blocks: Block[] = [];
   private key = '';
+  private wallMat = gridToon(PAL.plaster, 'room');
+  private lowMat = gridToon(PAL.stone, 'room');
 
   constructor(
     scene: THREE.Scene,
@@ -105,8 +117,8 @@ export class MetricsRoom {
     }
     this.blocks = roomBlocks(this.store);
     BLOCKS.push(...this.blocks);
-    const wallMat = gridToon(PAL.plaster, 'room');
-    const lowMat = gridToon(PAL.stone, 'room');
+    const wallMat = this.wallMat;
+    const lowMat = this.lowMat;
     for (const b of this.blocks) {
       if (b.hidden) continue;
       const m = blockMesh(b, b.top - (b.bottom ?? 0) > 2 || (b.bottom ?? 0) > 0 ? wallMat : lowMat);
@@ -124,6 +136,7 @@ export class MetricsRoom {
 const KEYS = [
   'roomWallHeight',
   'roomWallThick',
+  'roomWallLength',
   'doorWidth',
   'doorHeight',
   'windowWidth',
@@ -136,4 +149,5 @@ const KEYS = [
   'stairTread',
   'stairSteps',
   'stairWidth',
+  'stairLanding',
 ];

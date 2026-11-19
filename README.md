@@ -83,19 +83,25 @@ a share of the view's height; the Export carries both. To compare him with the g
 squares you read: the camera looks down at an angle, so against a wall half a metre behind him he reads about
 0.35 m short.
 
-The metrics room stands beside the yard at x 20 (walk there from the start along +x and a little -z), its faces
-toward the default camera: a doorway and a window in two 4 m walls, a waist-high cover and a stair to a landing.
-Start sizes: the door 1.0 m wide and 2.1 m high (the owner's); everything else is the sandbox's pick of an ordinary
-real size, not a decision: walls 3.0 m high and 0.2 m thick, the window 1.2 x 1.2 m on a 0.9 m sill, the cover
-1.0 m high, 2.4 m long and 0.3 m thick, the stair 8 steps of 18 cm rise and 28 cm tread, 1.2 m wide, to a landing.
-Every size is a slider and goes into the Export; the room is rebuilt as you drag. The walls over the door and over
-the window float: his head bumps the lintel if he jumps in the doorway, he cannot step onto the sill (no headroom),
-grenades bounce off the lintel's underside and fly through the window. With the old jump reach (3.07 m) he can
-jump onto a 3.0 m wall; raise the wall above the reach to stop that. Level shots fly at 1.36 m, so the 1.0 m cover
-and the 0.9 m sill do not stop them (how aiming at height works is open in the game). The stair is walked on a
-slope through its step nosings (his body is wider than a tread, so stepping each one would lurch), with the steps
-drawn over it; stairs steeper than about 50° cannot be walked up. On any slope, the block at its head is reached by
-walking up, not by an early step-up, and he stays on a slope running down it at either step rate.
+The metrics room stands beside the yard at x 20, from z -9 to z -28 (the start is at 0, 0: on the default camera
+that is toward the camera and to the right, S and D), its faces toward the default camera: a doorway and a window in two short walls, a
+waist-high cover and a stair to a landing. It is free-standing pieces, as in a level blockout's metrics room, not
+an enclosed room. Start sizes: the door 1.0 m wide and 2.1 m high (the owner's); everything else is the sandbox's
+pick of an ordinary real size, not a decision: walls 3.0 m high, 0.2 m thick and 4 m long, the window 1.2 x 1.2 m
+on a 0.9 m sill, the cover 1.0 m high, 2.4 m long and 0.3 m thick, the stair 8 steps of 18 cm rise and 28 cm tread,
+1.2 m wide, to a landing 1.5 m deep. Every size is a slider and goes into the Export; the room is rebuilt as you
+drag. An opening is held to fit its wall (no wider than the wall less 0.2 m, at least 5 cm of wall over it, the
+sill at least 10 cm under the top): the slider's note then says what is built, and the Export lists the built
+sizes beside the sliders (derived, metrics_room_built), with the room's layout and the grid's fixed look numbers
+(constants). The walls over the door and over the window float: his head bumps the lintel if he jumps in the
+doorway, a door lower than his 1.80 m stops him, he cannot step onto the sill (no headroom), grenades bounce off
+the lintel's underside and fly through the window. With the old jump reach (3.07 m) he can jump onto a 3.0 m wall;
+raise the wall above the reach to stop that. Level shots fly at 1.36 m, so the 1.0 m cover and the 0.9 m sill do
+not stop them (how aiming at height works is open in the game). The stair is walked on a slope through the middle
+of each tread (his body is wider than a tread, so stepping each one would lurch), with the steps drawn over it: his
+feet are at most half a rise above or below a drawn tread. On any slope he is brought onto the block at its head
+by walking up (not by an early step-up, and its face is no wall to him), a slope rising faster than he can step
+holds him back along itself, and running down an ordinary stair he stays on it at either step rate.
 
 What is in it: a test yard with steps, a cover wall, ledges and a ramp; your soldier; eleven dummies walking loops
 in the other two factions' colours, which push softly and never block; the SMG and the rifle, firing at the

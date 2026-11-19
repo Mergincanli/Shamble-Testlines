@@ -187,7 +187,8 @@ function headroom(x: number, z: number, r: number, top: number): boolean {
   for (const f of BLOCKS) {
     const fb = bottomOf(f);
     if (fb <= top + 1e-6 || fb >= top + BODY_HEIGHT - 1e-6) continue;
-    if (overlaps(f, x, z, r)) return false;
+    // (A hair inside the body's edge, so touching a wall face exactly does not count as under it.)
+    if (overlaps(f, x, z, r - 1e-6)) return false;
   }
   return true;
 }
@@ -201,7 +202,7 @@ export function ceilingAt(x: number, z: number, r: number, feet: number): number
   for (const b of BLOCKS) {
     const bb = bottomOf(b);
     if (bb <= 0 || bb < feet + BODY_HEIGHT - 1e-3 || bb >= c) continue;
-    if (overlaps(b, x, z, r)) c = bb;
+    if (overlaps(b, x, z, r - 1e-6)) c = bb;
   }
   return c;
 }
@@ -236,19 +237,12 @@ export function stepUpTarget(
   vz: number,
 ): { top: number; qx: number; qz: number } | null {
   let best: { top: number; qx: number; qz: number } | null = null;
-  // Standing on a slope, a block level with the slope's top (the platform at the head of the ramp, a stair's
-  // landing) is reached by walking up the slope, not by stepping up early because the body touches it.
-  const slopeTops: number[] = [];
-  for (const b of BLOCKS) {
-    if (!b.ramp || !overlaps(b, x, z, r)) continue;
-    const h = heightNear(b, x, z);
-    if (h >= feet - 0.05 && h <= feet + stepUp + EPS) slopeTops.push(b.top);
-  }
+  const heads = slopesUnderfoot(x, z, r, feet, stepUp);
   for (const b of BLOCKS) {
     if (!overlaps(b, x, z, r)) continue;
     const top = heightNear(b, x, z);
     if (top <= feet + 1e-6 || top > feet + stepUp + EPS) continue;
-    if (!b.ramp && slopeTops.some((t) => Math.abs(t - top) < 0.01)) continue;
+    if (atSlopeHead(b, x, z, heads, stepUp)) continue;
     // Not onto a floating block from under it, nor onto a top with no headroom.
     if (bottomOf(b) > feet + 1e-6 || !headroom(x, z, r, top)) continue;
     const qx = Math.min(b.maxX, Math.max(b.minX, x));
@@ -258,6 +252,34 @@ export function stepUpTarget(
     if (!best || top > best.top) best = { top, qx, qz };
   }
   return best;
+}
+
+/** The slopes a body stands on (the ramp near it is within a step, plus its rise across the body, of its feet). */
+function slopesUnderfoot(x: number, z: number, r: number, feet: number, stepUp: number): Block[] {
+  const out: Block[] = [];
+  for (const b of BLOCKS) {
+    if (!b.ramp || !overlaps(b, x, z, r)) continue;
+    const h = heightNear(b, x, z);
+    const acrossBody = (r * b.top) / Math.abs(b.ramp.high - b.ramp.low);
+    if (h >= feet - 0.05 && h <= feet + stepUp + acrossBody + EPS) out.push(b);
+  }
+  return out;
+}
+
+/**
+ * True if block b, level with the top of a slope the body stands on, meets that slope at its head where the body
+ * touches b (the platform at the head of the ramp, a stair's landing): it is reached by walking up the slope, not
+ * by an early step-up, and it is no wall. A block beside the slope's lower part is not.
+ */
+function atSlopeHead(b: Block, x: number, z: number, heads: Block[], stepUp: number): boolean {
+  if (b.ramp || bottomOf(b) > 0) return false;
+  const qx = Math.min(b.maxX, Math.max(b.minX, x));
+  const qz = Math.min(b.maxZ, Math.max(b.minZ, z));
+  for (const s of heads) {
+    if (Math.abs(s.top - b.top) > 0.01) continue;
+    if (heightNear(s, qx, qz) >= b.top - stepUp) return true;
+  }
+  return false;
 }
 
 /** The steepest slope (rise per metre) of any ramp under a circle of radius r at (x, z), or 0. */
@@ -277,18 +299,39 @@ export function slopeUnder(x: number, z: number, r: number): number {
 export function resolveWalls(x: number, z: number, r: number, feet: number, stepUp: number): [number, number] {
   for (let pass = 0; pass < 3; pass++) {
     let moved = false;
+    const heads = slopesUnderfoot(x, z, r, feet, stepUp);
     for (const b of BLOCKS) {
       // Wholly above the head: no wall (a jump under it bumps the head instead).
       if (bottomOf(b) >= feet + BODY_HEIGHT - 1e-6) continue;
       // Low enough to step onto (from no lower than its underside, with headroom on top): no wall either.
       const top = heightNear(b, x, z);
       if (top <= feet + stepUp + EPS && bottomOf(b) <= feet + 1e-6 && headroom(x, z, r, top)) continue;
+      // The block at the head of the slope he is walking up (a stair's landing): the slope brings him to it.
+      if (atSlopeHead(b, x, z, heads, stepUp)) continue;
       const qx = Math.min(b.maxX, Math.max(b.minX, x));
       const qz = Math.min(b.maxZ, Math.max(b.minZ, z));
       let dx = x - qx;
       let dz = z - qz;
       const d2 = dx * dx + dz * dz;
       if (d2 >= r * r) continue;
+      if (b.ramp) {
+        // Within the slope's width, rising faster than a step-up per step (or past its top end before the feet
+        // got there): back down the slope to the height he can reach, rather than out of its nearest face
+        // (which can throw him half a metre back).
+        const rr = b.ramp;
+        const across = rr.axis === 'x' ? z : x;
+        if (across >= (rr.axis === 'x' ? b.minZ : b.minX) && across <= (rr.axis === 'x' ? b.maxZ : b.maxX)) {
+          const t = Math.min(1, Math.max(0, (feet + stepUp) / b.top));
+          const c = rr.low + t * (rr.high - rr.low);
+          const along = rr.axis === 'x' ? x : z;
+          if ((rr.high - rr.low) * (along - c) > 0) {
+            if (rr.axis === 'x') x = c;
+            else z = c;
+            moved = true;
+          }
+          continue;
+        }
+      }
       if (d2 > 1e-12) {
         const d = Math.sqrt(d2);
         dx /= d;

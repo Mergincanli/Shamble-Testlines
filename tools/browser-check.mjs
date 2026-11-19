@@ -859,7 +859,7 @@ async function run(browserName) {
     } catch {}
     ok('Export gives JSON with date, build and values', !!doc && !!doc.exported && doc.build.startsWith('step') && doc.values.movement.walk_speed_m_per_s === 6.3, doc ? doc.exported : 'no JSON');
     ok('Export carries the old game\'s names', !!doc && Math.abs(doc.old_game_terms['T.jumpV'] - 11) < 0.01, doc ? String(doc.old_game_terms['T.jumpV']) : '');
-    ok('Export carries the room sizes, the grid and the measured soldier', !!doc && doc.values.metrics_room?.door_width_m === 1 && doc.values.metrics_room?.door_height_m === 2.1 && doc.values.measuring_grid?.grid_thin_step_m === '0.5' && Math.abs(doc.measured?.soldier_height_m - 1.8) < 0.005 && doc.measured?.soldier_on_screen_px > 20, doc ? JSON.stringify(doc.measured) : '');
+    ok('Export carries the room sizes, the grid and the measured soldier', !!doc && doc.values.metrics_room?.door_width_m === 1 && doc.values.metrics_room?.door_height_m === 2.1 && doc.values.measuring_grid?.grid_thin_step_m === 0.5 && doc.derived?.metrics_room_built?.door_height_m === 2.1 && !!doc.constants?.metrics_room_layout && Math.abs(doc.measured?.soldier_height_m - 1.8) < 0.005 && doc.measured?.soldier_on_screen_px > 20, doc ? JSON.stringify(doc.measured) : '');
 
     // Values survive a reload; Reset all restores them.
     await page.reload();
