@@ -998,7 +998,8 @@ async function run(browserName) {
       await sleep(300);
       const px0 = await T((a, b, w, h) => window.__testlines.pixels(a, b, w, h), x0, y0, bw, bh);
       ok('at frame 7 the explosion shows a white-hot core above the burst point, fire round it, and no chroma blue', px.blue === 0 && px.hot > 1000 && px.fire > 1000 && px0.hot === 0 && px.hotY < sA.y - 20 && Math.abs(px.hotX - sA.x) < 60, `in a ${bw.toFixed(0)} x ${bh.toFixed(0)} px box: blue ${px.blue}, white-hot ${px.hot} (without it ${px0.hot}), fire ${px.fire}, core middle ${px.hotX ? `${(px.hotX - sA.x).toFixed(0)}, ${(px.hotY - sA.y).toFixed(0)}` : '-'} px from the burst point`);
-      ok('the sheet\'s own deep red and orange show as drawn (the colours are not converted twice)', px.deep > 300 && px.orange > 300 && px0.deep < 30 && px0.orange < 30, `deep red ${px.deep} (without it ${px0.deep}), orange ${px.orange} (without it ${px0.orange})`);
+      // (Counted against the same box without the explosion: the soldier's own reds may be in it.)
+      ok('the sheet\'s own deep red and orange show as drawn (the colours are not converted twice)', px.deep - px0.deep > 300 && px.orange - px0.orange > 300, `deep red ${px.deep} (without it ${px0.deep}), orange ${px.orange} (without it ${px0.orange})`);
     }
     // At a steep camera (Classic, about 56 degrees, turned to look at the 3.5 m ledge's open side), a burst against
     // the ledge's face shows its white-hot core as fully as on open ground: standing upright in front of the burst,
