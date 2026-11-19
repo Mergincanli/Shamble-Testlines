@@ -436,8 +436,8 @@ function throwOrigin(): [number, number, number] {
 
 /**
  * The grenade buttons, first thing in a step, so a throw leaves for exactly the target, from exactly the place the
- * arc showed at the last frame. Hold the right button (or G) to aim, let go to throw. A let-go throws, then a press
- * starts aiming the next one (so a quick double click throws two).
+ * arc showed at the last frame. G or F readies a grenade (or puts it away); with one ready, hold the right button
+ * to aim, let go to throw, and it is back to the gun.
  */
 function nadeInput(rightPress: boolean, rightRelease: boolean) {
   // G or F readies a grenade (the gun goes away and aiming down sights ends), or puts it away again, dropping a
