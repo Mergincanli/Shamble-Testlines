@@ -55,7 +55,10 @@ played as one flat picture: the star flash, the white-hot fireball, the cooling 
 and in even steps (no blending between frames), over 1 s (the last three frames are empty, so it shows for about
 0.8 s of that). The picture is 8 m wide at the burst (the fireball at its widest is about 0.7 of that). It stands
 upright, turned toward the camera, and is stretched up by 1 / cos of the camera's height angle over it (at most 4
-times), so it keeps the sheet's shape on screen. Its ground line, measured on the sheet (0.867 of a frame from the
+times). From a far camera (Original) it then keeps the sheet's shape and size on screen; from a close, steep camera
+(Indie, Tactical) its upper part is nearer the camera than its base, so it shows about 11 % taller and 17 % wider
+than a picture facing the camera would (the price of never being cut by a wall behind; the width slider sets the
+size). Its ground line, measured on the sheet (0.867 of a frame from the
 top), sits on the burst point. It is drawn 2 m nearer the camera along the line to it, and shrunk to keep its size
 on screen, so the floor under the burst does not cut it; standing upright in front of the burst, it never reaches a
 wall behind it, while a block between the camera and the burst still covers it (a wall nearer the camera than the

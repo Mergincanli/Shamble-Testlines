@@ -1,7 +1,8 @@
 // The grenade's explosion from the owner's own sprite sheet (art/explosion-sheet.png: 4 x 4 frames on chroma blue,
 // keyed at build time by tools/key-sheet.mjs into src/assets/explosion-keyed.png). Each explosion is one flat
 // picture standing upright and turned toward the camera, stretched up by how steeply the camera looks down at it
-// (so it keeps the sheet's shape on screen), stepping through the frames in reading order (no blending between
+// (from a far camera it then keeps the sheet's shape on screen; from a close, steep one its upper part, being nearer
+// the camera, shows somewhat larger), stepping through the frames in reading order (no blending between
 // frames: the sheet's own comic steps). The picture's ground line (measured on the sheet) sits on the burst point;
 // the picture is drawn nearer the camera along the line to it, and shrunk to keep its size on screen, so the floor
 // under the burst does not cut it, and, standing upright in front of the burst, it never reaches a wall behind it.
@@ -180,7 +181,8 @@ export class Explosions {
       const pull = Math.min(Math.max(0, look.pull), dist * 0.5);
       p.mesh.position.copy(p.at).addScaledVector(d, pull / dist);
       // Upright, turned about the vertical toward the camera; stretched up by 1 / cos of the camera's height angle
-      // over it, so its height on screen matches the sheet's shape.
+      // over it, so its height on screen matches the sheet's shape (from a far camera: from a close, steep one the
+      // upper part is nearer and shows larger).
       p.mesh.rotation.set(0, Math.atan2(d.x, d.z), 0);
       p.stretch = Math.min(EXPLOSION_MAX_STRETCH, dist / Math.max(flat, 1e-6));
       p.scale = (look.width * (dist - pull)) / dist;
