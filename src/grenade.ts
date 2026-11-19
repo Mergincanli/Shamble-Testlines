@@ -7,7 +7,7 @@
 // the path shown. Numbers from the old game (T.grenade*, the grenade's launch angle and top speed); written fresh.
 import type { Store } from './params';
 import type { MoverState } from './movement';
-import { BLOCKS, rampHeight } from './yard';
+import { BLOCKS, bottomOf, rampHeight } from './yard';
 
 /** The grenade's size for collisions, and how high the throw leaves the hand. */
 export const GRENADE_R = 0.1;
@@ -182,15 +182,17 @@ function sweep(p0: V3, d: V3): Hit | null {
   const R = GRENADE_R;
   let best: Hit | null = null;
   for (const b of BLOCKS) {
-    const hit = segBox(p0, d, [b.minX - R, -1, b.minZ - R], [b.maxX + R, b.top + R, b.maxZ + R]);
+    const lowY = bottomOf(b) > 0 ? bottomOf(b) - R : -1;
+    const hit = segBox(p0, d, [b.minX - R, lowY, b.minZ - R], [b.maxX + R, b.top + R, b.maxZ + R]);
     if (!hit || (best && hit[0] >= best.t)) continue;
     const [t, axis, sign] = hit;
     const hy = p0[1] + d[1] * t;
     if (axis === 1) {
-      // A block's top, entered from above, is a floor (so a steep fall cannot clip through a top edge). The
-      // top of a ramp's box is not its surface: the slope is found as a floor after the move.
-      if (sign !== 1 || b.ramp) continue;
-      best = { t, n: [0, 1, 0] };
+      // A block's top, entered from above, is a floor (so a steep fall cannot clip through a top edge); a
+      // floating block's underside, entered from below, is a ceiling. The top of a ramp's box is not its
+      // surface: the slope is found as a floor after the move.
+      if (b.ramp) continue;
+      best = { t, n: [0, sign, 0] };
       continue;
     }
     if (b.ramp) {
@@ -367,7 +369,7 @@ export function clearLine(ax: number, ay: number, az: number, bx: number, by: nu
       }
       continue;
     }
-    const hit = segBox(p0, d, [b.minX, 0, b.minZ], [b.maxX, b.top, b.maxZ]);
+    const hit = segBox(p0, d, [b.minX, bottomOf(b), b.minZ], [b.maxX, b.top, b.maxZ]);
     if (hit && hit[0] < 1) return false;
   }
   return true;

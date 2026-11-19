@@ -12,8 +12,26 @@ export interface Block {
   minZ: number;
   maxZ: number;
   top: number;
+  /** Where the block starts above the ground (0 if left out): a wall over a doorway or a window floats. */
+  bottom?: number;
   /** Ramps rise along an axis from `low` to `high` (coordinates on that axis). */
   ramp?: { axis: 'x' | 'z'; low: number; high: number };
+  /** Collides but is not drawn (the slope a stair's steps are walked on). */
+  hidden?: boolean;
+}
+
+/** Where a block starts above the ground. */
+export function bottomOf(b: Block): number {
+  return b.bottom ?? 0;
+}
+
+/**
+ * The soldier's height, for headroom: under a floating block he bumps his head, and he cannot step onto a top
+ * with less room than this above it. Set from the stand-in's measured height at start.
+ */
+export let BODY_HEIGHT = 1.8;
+export function setBodyHeight(h: number) {
+  BODY_HEIGHT = h;
 }
 
 export const YARD_HALF = 60;
@@ -79,7 +97,7 @@ export function rayWorld(
   for (const b of BLOCKS) {
     if (!b.ramp) {
       // Slab test against the block's box: the entry point.
-      const lo = [b.minX, 0, b.minZ];
+      const lo = [b.minX, bottomOf(b), b.minZ];
       const hi = [b.maxX, b.top, b.maxZ];
       let t0 = 0;
       let t1 = Infinity;
@@ -164,6 +182,30 @@ function overlaps(b: Block, x: number, z: number, r: number): boolean {
   return dx * dx + dz * dz < r * r;
 }
 
+/** True if a body of radius r standing on height `top` at (x, z) has its full height free above it. */
+function headroom(x: number, z: number, r: number, top: number): boolean {
+  for (const f of BLOCKS) {
+    const fb = bottomOf(f);
+    if (fb <= top + 1e-6 || fb >= top + BODY_HEIGHT - 1e-6) continue;
+    if (overlaps(f, x, z, r)) return false;
+  }
+  return true;
+}
+
+/**
+ * The lowest underside of a floating block over a body of radius r whose head (feet + BODY_HEIGHT) is below it,
+ * or Infinity: a jump stops there.
+ */
+export function ceilingAt(x: number, z: number, r: number, feet: number): number {
+  let c = Infinity;
+  for (const b of BLOCKS) {
+    const bb = bottomOf(b);
+    if (bb <= 0 || bb < feet + BODY_HEIGHT - 1e-3 || bb >= c) continue;
+    if (overlaps(b, x, z, r)) c = bb;
+  }
+  return c;
+}
+
 /**
  * The highest surface under a body of radius r that it can stand on from its feet height: the ground, or any
  * block it overlaps whose top is no more than step-up above the feet.
@@ -198,6 +240,8 @@ export function stepUpTarget(
     if (!overlaps(b, x, z, r)) continue;
     const top = heightNear(b, x, z);
     if (top <= feet + 1e-6 || top > feet + stepUp + EPS) continue;
+    // Not onto a floating block from under it, nor onto a top with no headroom.
+    if (bottomOf(b) > feet + 1e-6 || !headroom(x, z, r, top)) continue;
     const qx = Math.min(b.maxX, Math.max(b.minX, x));
     const qz = Math.min(b.maxZ, Math.max(b.minZ, z));
     // Moving towards it (or already over it).
@@ -215,7 +259,11 @@ export function resolveWalls(x: number, z: number, r: number, feet: number, step
   for (let pass = 0; pass < 3; pass++) {
     let moved = false;
     for (const b of BLOCKS) {
-      if (heightNear(b, x, z) <= feet + stepUp + EPS) continue;
+      // Wholly above the head: no wall (a jump under it bumps the head instead).
+      if (bottomOf(b) >= feet + BODY_HEIGHT - 1e-6) continue;
+      // Low enough to step onto (from no lower than its underside, with headroom on top): no wall either.
+      const top = heightNear(b, x, z);
+      if (top <= feet + stepUp + EPS && bottomOf(b) <= feet + 1e-6 && headroom(x, z, r, top)) continue;
       const qx = Math.min(b.maxX, Math.max(b.minX, x));
       const qz = Math.min(b.maxZ, Math.max(b.minZ, z));
       let dx = x - qx;

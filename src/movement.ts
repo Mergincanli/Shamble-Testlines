@@ -2,7 +2,7 @@
 // and described behaviour: speed eases toward the wanted speed (one rate to speed up, one to stop), sprint
 // drains stamina, the jump starts from the speed that gives the chosen reach, and blocks no taller than the
 // step-up are walked onto, on the ground and in the air.
-import { resolveWalls, stepUpTarget, surfaceAt } from './yard';
+import { BODY_HEIGHT, ceilingAt, resolveWalls, stepUpTarget, surfaceAt } from './yard';
 import type { Store } from './params';
 
 export interface MoverState {
@@ -112,6 +112,13 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
     s.y += s.vy * dt - 0.5 * g * dt * dt;
     s.vy -= g * dt;
     testFeet = vy0 > 0 && s.vy <= 0 ? Math.max(s.y, y0 + (vy0 * vy0) / (2 * g)) : s.y;
+    // A floating block overhead (a lintel, the wall over a window): the head bumps it and the rise stops.
+    const ceil = ceilingAt(s.x, s.z, r, y0) - BODY_HEIGHT;
+    if (s.y > ceil) {
+      s.y = ceil;
+      if (s.vy > 0) s.vy = 0;
+    }
+    testFeet = Math.min(testFeet, ceil);
   }
   // Move, then leave any block that is too tall from the new feet height (after this step's arc, so a
   // ledge stops being a wall at the very step the jump reaches it).

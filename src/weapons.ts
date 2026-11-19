@@ -5,7 +5,7 @@
 import type { GunId } from './guns';
 import type { MoverState } from './movement';
 import type { Store } from './params';
-import { BLOCKS, rampHeight } from './yard';
+import { BLOCKS, bottomOf, rampHeight } from './yard';
 
 /** Height of the shot above the feet: the gun's height in the aiming pose. */
 export const SHOT_HEIGHT = 1.36;
@@ -144,7 +144,8 @@ function rand(): number {
 function rayBlocks(ox: number, oz: number, dx: number, dz: number, y: number, max: number): number {
   let best = Infinity;
   for (const b of BLOCKS) {
-    if (b.top <= y) continue;
+    // A level shot passes over a block lower than it and under a floating one higher than it.
+    if (b.top <= y || bottomOf(b) > y) continue;
     // Slab test in x and z.
     let t0 = 0;
     let t1 = max;
