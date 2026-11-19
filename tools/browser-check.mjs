@@ -897,9 +897,19 @@ async function run(browserName) {
     await sleep(400);
     await page.mouse.up({ button: 'right' });
     let peakKick = 0;
+    // (The explosion and the fragments are read the moment the blast is seen: they last about a second, and at the
+    // check's frame rate the kick readings below take longer than that.)
+    let exAtBlast = null;
+    let bitsAtBlast = null;
+    let blastSeen = null;
     for (let i = 0; i < 120; i++) {
       const n = await nades();
       peakKick = Math.max(peakKick, n.kick);
+      if (n.blasts > nd0.blasts && !exAtBlast) {
+        exAtBlast = await T(() => window.__testlines.explosions());
+        bitsAtBlast = await T(() => window.__testlines.blastBits());
+        blastSeen = n.lastBlast;
+      }
       if (n.blasts > nd0.blasts && peakKick > 0) break;
       await sleep(30);
     }
@@ -913,9 +923,9 @@ async function run(browserName) {
     ok('a blast this close kicks the camera', peakKick > 0.05, `peak kick ${peakKick.toFixed(2)} m`);
     // The blast plays the owner's explosion sheet (the start look) at the burst point, and fragments fly.
     {
-      const lb = (await nades()).lastBlast;
-      const ex = await T(() => window.__testlines.explosions());
-      const bits = await T(() => window.__testlines.blastBits());
+      const lb = blastSeen;
+      const ex = exAtBlast ?? { ready: false, plays: [] };
+      const bits = bitsAtBlast ?? { plain: -1, fragments: 0 };
       const q = ex.plays[0];
       ok('the blast plays the explosion sheet at the burst point (not the plain flash), and fragments fly', ex.ready && ex.plays.length === 1 && !!lb && Math.hypot(q.at.x - lb.at.x, q.at.y - lb.at.y, q.at.z - lb.at.z) < 1e-9 && q.frame >= 0 && q.frame < 16 && bits.plain === 0 && bits.fragments > 0, `sheet ready ${ex.ready}, playing ${ex.plays.length}${q ? ` at frame ${q.frame}` : ''}, plain ${bits.plain}, fragments ${bits.fragments}`);
     }
