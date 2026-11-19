@@ -3,6 +3,7 @@
 import { GRID_COLOURS, GRID_LOOK } from './look';
 import { ROOM_LAYOUT } from './metrics';
 import { HORNET } from './hornet';
+import { AIM_DEAD_ZONE, HEIGHT_GRACE, HIT_HEIGHT, HIT_RADIUS, SHOT_HEIGHT } from './weapons';
 import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
 export const BUILD = { step: 'C', name: 'Sight line and aiming at height' };
@@ -128,6 +129,14 @@ export function buildExport(store: Store): string {
       metrics_room_layout: ROOM_LAYOUT,
       hornet: HORNET,
       grid_look: { ...GRID_LOOK, colours: GRID_COLOURS },
+      shot_geometry: {
+        gun_height_m: SHOT_HEIGHT,
+        hit_cylinder_radius_m: HIT_RADIUS,
+        hit_cylinder_height_m: HIT_HEIGHT,
+        level_shot_height_grace_m: HEIGHT_GRACE,
+        aim_dead_zone_m: AIM_DEAD_ZONE,
+        note: 'Shots leave from the gun height above the feet; a dummy is hit inside the upright cylinder from its feet. Level shots still count within the grace above its head or below its feet. Aiming at the point, an aim point closer than the dead zone (on the ground) keeps the aim the soldier had.',
+      },
     },
     measured: {
       soldier_height_m: round(MEASURED.soldierHeightM, 3),

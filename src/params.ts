@@ -936,7 +936,7 @@ export const PARAMS: Param[] = [
     label: 'Sight line while aiming (to where the shot stops)',
     exportKey: 'sight_line',
     start: true,
-    source: "Old game behaviour (a line from the gun to where the shot would stop while aiming down sights); its look here is the sandbox's own: the faction's Top colour, the sun colour on a dummy.",
+    source: "Old game behaviour, as described: a line from the muzzle to the aim point while aiming down sights. Ending it where the shot would stop instead, and its look (the faction's Top colour, the sun colour on a dummy), are the sandbox's own.",
   },
   {
     kind: 'range',

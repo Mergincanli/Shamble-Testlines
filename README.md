@@ -55,9 +55,10 @@ Shift + right click always opens the browser's own menu, which no page can stop;
 there, and stop sprinting to throw a grenade (the menu drops the throw). While aiming
 the soldier walks at 0.55 of his speed and cannot sprint, each gun's spread rests at its sights value, the
 screen dead zone shrinks to 0.45, and a sight line runs from the gun to where the shot would stop: a dummy, a block,
-the ground or the gun's range (the old game's described behaviour; the look is the sandbox's own: the faction's Top
-colour, the sun colour on a dummy, a dot where it stops, and a thin upright mark from the floor when it ends up
-in the air or on a dummy). It is the shot's own cast, so the line and the shot agree; a switch turns it off. The camera reacts in one of three ways: Flatten (the view tips toward the
+the ground or the gun's range (the old game's line, as described, ran from the muzzle to the aim point; ending it
+where the shot stops, and its look, are the sandbox's own: the faction's Top colour, the sun colour on a dummy, a
+dot where it stops, and a thin upright mark from the floor beneath it whenever its end is above that floor). It is
+the shot's own cast, so the line and the shot agree; a switch turns it off. The camera reacts in one of three ways: Flatten (the view tips toward the
 cursor, no flatter than 28.5°), Slide (the camera slides toward the cursor, keeping the soldier on screen; the
 old Foxhole style) or Still. Two differences from the old game: Flatten tips toward the point the cursor marks in
 the resting view, so the view settles instead of creeping on while the cursor is still; and it never tips so far
@@ -168,10 +169,13 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
   straight line, and stops at the first body, block, ramp or ground on its way, or at the gun's range. So a dummy on
   a ledge can be shot from below; a shot at open ground ends on it at the cursor; and from below, the middle of a
   high ledge's top is out of the gun's sight (it sits lower than the camera), so the shot meets the face where its
-  line crosses it, as the sight line shows. Switched to "Level, at gun height", every shot flies level at 1.36 m as
+  line crosses it, as the sight line shows. The soldier faces the point too (within 0.3 m of him, where no
+  direction can be read, he and the shot keep the facing he had). Switched to "Level, at gun height", every shot flies level at 1.36 m as
   before, and a level shot still counts within 0.6 m above a dummy's head or below its feet (so the 0.55 m step and
   the foot of the ramp work). How aiming at height works is open in the game (LOOP_V2 section 9): a sandbox option,
   not a decision. The Hornet's gun stays level.
+- The sight line ends where the shot would stop (a dummy, a block, the ground or the gun's range), so it shows
+  what the shot meets on its way; the old game's line, as described, ran from the muzzle to the aim point.
 - Spread scatters shots sideways only (the old game scattered them up and down as well).
 - Recoil is the old game's view kick (a camera shake and a small zoom punch per shot), not an aim kick.
 - A click in the gap between two shots is kept only if the gap has at most 0.15 s left (then it fires as the gap

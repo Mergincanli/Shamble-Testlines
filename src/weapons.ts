@@ -17,6 +17,8 @@ export const HIT_HEIGHT = 1.8;
  * a little way up the ramp can hit dummies on the ground. How aiming at height works is open in the game.
  */
 export const HEIGHT_GRACE = 0.6;
+/** Aiming at the point: closer to the soldier than this (measured along the ground), the shot and his facing keep the aim he had. */
+export const AIM_DEAD_ZONE = 0.3;
 /** After a reload starts by itself, R presses this soon are not judged as the active-reload tap. */
 export const AUTO_RELOAD_GRACE = 0.25;
 /** The last part of a dummy's down time is it getting up: not hittable, not walking yet. */
@@ -248,13 +250,17 @@ export function rayBodies(
         tryT((-b + q) / (2 * a));
       }
     }
-    // Through the top or the bottom (a steep shot).
+    // Through the top or the bottom (a steep shot). The height there is the cap's own by construction, so it is not
+    // checked again (rounding could lose a hit on top of the head and send the ray on to the body's far side).
     if (Math.abs(dy) > 1e-9) {
       for (const cap of [s.y + HIT_HEIGHT, s.y]) {
         const t0 = (cap - oy) / dy;
         const px = fx + dx * t0;
         const pz = fz + dz * t0;
-        if (px * px + pz * pz <= HIT_RADIUS * HIT_RADIUS) tryT(t0);
+        if (t0 >= 0 && t0 < best && px * px + pz * pz <= HIT_RADIUS * HIT_RADIUS) {
+          best = t0;
+          idx = i;
+        }
       }
     }
   });
@@ -295,7 +301,7 @@ export function castShot(
 
 /** The yaw a shot leaves at: toward the aim point when there is one (and it is not right underfoot), else the aim. */
 export function shotYaw(me: MoverState, aimYaw: number, aim: AimPoint): number {
-  if (!aim || Math.hypot(aim.x - me.x, aim.z - me.z) < 0.3) return aimYaw;
+  if (!aim || Math.hypot(aim.x - me.x, aim.z - me.z) < AIM_DEAD_ZONE) return aimYaw;
   return Math.atan2(aim.x - me.x, aim.z - me.z);
 }
 
@@ -354,8 +360,9 @@ export interface TriggerInput {
 }
 
 /**
- * One fixed step of the player's gun. Shots go out level from the soldier at gun height, along the aim with
- * the current spread as a sideways angle, and are resolved at once (the sandbox has no network).
+ * One fixed step of the player's gun. Shots go out from the soldier at gun height, level along the aim or (aiming
+ * at the point) toward the point under the cursor, with the current spread as a sideways angle, and are resolved at
+ * once (the sandbox has no network).
  */
 export function stepWeapons(
   W: WeaponsState,

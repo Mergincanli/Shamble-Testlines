@@ -1,8 +1,8 @@
-// The sight line while aiming down sights (the old game's described behaviour: a line from the gun to where the
-// shot would stop; its look here is the sandbox's own): a thin line from the gun as drawn to the end of the
-// shot's own cast, in the faction's Top colour, in the sun colour when it rests on a dummy, with a dot where it
-// stops (on a block, a dummy or at the gun's range), and a thin upright mark from the floor up to that point when
-// it is above the floor (aiming at height).
+// The sight line while aiming down sights. The old game, as described, drew a line from the muzzle to the aim
+// point; here it runs to where the shot would stop, and its look is the sandbox's own (both are the sandbox's
+// choices): a thin line from the gun as drawn to the end of the shot's own cast, in the faction's Top colour, in
+// the sun colour when it rests on a dummy, with a dot where it stops (on a block, a dummy or at the gun's range),
+// and a thin upright mark from the floor beneath its end whenever that end is above the floor (aiming at height).
 import * as THREE from 'three';
 import { PAL, UNIFORM, type Faction } from './look';
 

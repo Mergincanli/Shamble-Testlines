@@ -23,6 +23,7 @@ import { CAMERA_PRESETS, CAMERA_PROFILES, Store } from './params';
 import { softPush } from './push';
 import { Soldier } from './soldier';
 import {
+  AIM_DEAD_ZONE,
   castLevel,
   GUN_KEYS,
   gunValue,
@@ -590,16 +591,10 @@ function frame(now: number) {
   // Off the view (on the panel, outside the window) the cursor stops pushing the camera; the aim stays.
   camera.update(dt, renderPos, input.over ? input.ndcX : 0, input.over ? input.ndcY : 0, store, aiming);
 
-  // Face the cursor (cast through the steady camera, before the shake is added).
+  // The cursor's ray, cast through the steady camera (before the shake is added): the facing and the aim point.
   camera.cam.updateMatrixWorld();
   ndc.set(input.ndcX, input.ndcY);
   raycaster.setFromCamera(ndc, camera.cam);
-  aimPlane.constant = -(renderPos.y + (riding ? HORNET.gun_height_m : 1.36));
-  if (raycaster.ray.intersectPlane(aimPlane, aimPoint)) {
-    const dx = aimPoint.x - renderPos.x;
-    const dz = aimPoint.z - renderPos.z;
-    if (dx * dx + dz * dz > 0.09) aimYaw = Math.atan2(dx, dz);
-  }
   // The soldier's size on screen, from the steady camera: feet to the top of his head, in CSS pixels.
   {
     const r = renderer.domElement.getBoundingClientRect();
@@ -623,6 +618,17 @@ function frame(now: number) {
     const tw = nadeTarget ? Math.hypot(nadeTarget.x - ro.x, nadeTarget.y - ro.y, nadeTarget.z - ro.z) : Infinity;
     const t = Math.min(tb, tw);
     cursorPoint = Number.isFinite(t) ? { x: ro.x + rd.x * t, y: ro.y + rd.y * t, z: ro.z + rd.z * t } : null;
+  }
+  // Facing: aiming at the point (on foot), toward that point, the way the shot goes; otherwise (level shots, the
+  // Hornet, the cursor on the sky) toward where the cursor's ray crosses gun height. Within 0.3 m of him he keeps
+  // the facing he had.
+  const facePoint = aimPoint3() && !riding ? cursorPoint : null;
+  aimPlane.constant = -(renderPos.y + (riding ? HORNET.gun_height_m : 1.36));
+  const onPlane = raycaster.ray.intersectPlane(aimPlane, aimPoint) !== null;
+  if (facePoint || onPlane) {
+    const dx = (facePoint ? facePoint.x : aimPoint.x) - renderPos.x;
+    const dz = (facePoint ? facePoint.z : aimPoint.z) - renderPos.z;
+    if (dx * dx + dz * dz > AIM_DEAD_ZONE * AIM_DEAD_ZONE) aimYaw = Math.atan2(dx, dz);
   }
 
   // Effects age first; then this frame's shots start theirs, so they are drawn at full strength. The tracer

@@ -636,18 +636,21 @@ async function run(browserName) {
     const lvl = await shootLedge('level');
     const pnt = await shootLedge('point');
     ok('a dummy on the 2.5 m ledge: level, the shot hits the ledge face; aimed at the point, it hits the dummy', lvl.d.health === 100 && pnt.d.health < 100, `level: dummy ${lvl.d.health.toFixed(0)}, shot ended at y ${lvl.end.y.toFixed(2)}; point: dummy ${pnt.d.health.toFixed(0)}, ended at y ${pnt.end.y.toFixed(2)}`);
-    // The sight line aimed at it stands a mark up from the ledge top to its end.
+    // The sight line aimed at it ends on the dummy, with a mark up from the ledge top to its end. (The camera tips
+    // toward the cursor while aiming, so the cursor is put back on the dummy's chest until the aim point is on it.)
     await page.mouse.down({ button: 'right' });
     await sleep(1200);
-    for (let k = 0; k < 2; k++) {
+    let cpH = null;
+    for (let k = 0; k < 8; k++) {
       const sp = await T(() => window.__testlines.screenOf(-13, 3.6, -2));
       await page.mouse.move(sp.x, sp.y);
       await sleep(400);
+      cpH = await T(() => window.__testlines.cursorPoint());
+      if (k >= 1 && cpH && cpH.y > 2.6 && Math.hypot(cpH.x + 13, cpH.z + 2) < 0.35) break;
     }
     const slH = await T(() => window.__testlines.sight());
     await page.mouse.up({ button: 'right' });
-    // (The camera tips toward the cursor while aiming, so the line may end on the dummy or on the ledge's face.)
-    ok('aimed at height, the sight line ends up there with a mark up from the floor', slH.visible && slH.end.y > 0.5 && Math.abs(slH.height - (slH.end.y - (slH.end.y > 2.55 && slH.end.x < -11.9 ? 2.5 : 0))) < 0.05 && slH.height > 0.3, `end y ${slH.end.y.toFixed(2)}, mark ${slH.height.toFixed(2)} m`);
+    ok('aimed at a dummy on the 2.5 m ledge, the sight line rises to end on it, with a mark up from the ledge top', cpH && cpH.y > 2.6 && slH.visible && slH.onDummy && slH.end.y > 2.8 && Math.abs(slH.height - (slH.end.y - 2.5)) < 0.05, `aim point y ${cpH ? cpH.y.toFixed(2) : 'none'}; line on a dummy ${slH.onDummy}, end y ${slH.end.y.toFixed(2)}, mark ${slH.height.toFixed(2)} m`);
     // Open ground 8 m out: the shot ends on the ground.
     await T(() => window.__testlines.place(30, 30));
     await T(() => window.__testlines.placeDummy(0, 4, 4));
