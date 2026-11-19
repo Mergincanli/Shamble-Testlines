@@ -33,9 +33,9 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'smg', title: 'SMG (key 1)', open: true, exportName: 'smg' },
   { id: 'rifle', title: 'Rifle (key 2)', open: false, exportName: 'rifle' },
   { id: 'shotgun', title: 'Shotgun (key 3)', open: false, exportName: 'shotgun' },
-  { id: 'nade', title: 'Grenade (hold the right button or G, let go to throw)', open: true, exportName: 'grenade' },
+  { id: 'nade', title: 'Grenade (G or F readies it; then hold the right button, let go to throw)', open: true, exportName: 'grenade' },
   { id: 'hornet', title: 'Hornet (E rides it: W/S drive, A/D turn; left button: tap for pellets, hold for the beam)', open: true, exportName: 'hornet' },
-  { id: 'ads', title: 'Aim down sights (Q)', open: true, exportName: 'aim_down_sights' },
+  { id: 'ads', title: 'Aim down sights (right button or Q)', open: true, exportName: 'aim_down_sights' },
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
   { id: 'mouse', title: 'Mouse', open: true, exportName: 'mouse' },
@@ -750,20 +750,6 @@ export const PARAMS: Param[] = [
 
 
   // The frag grenade (old game: the G key, T_CHARGE.nade, T.grenade*, the camera kick T.camKick*).
-  {
-    kind: 'choice',
-    key: 'rightButton',
-    group: 'nade',
-    label: 'Right button',
-    exportKey: 'right_button',
-    options: [
-      { value: 'grenade', label: 'Grenade' },
-      { value: 'aim', label: 'Aim down sights' },
-    ],
-    start: 'grenade',
-    source:
-      "The owner's pick: hold the right button to aim a grenade, let go to throw (G does the same either way). Aiming down sights is then on Q; the old game had it on the right button, which this switch brings back.",
-  },
   { kind: 'range', key: 'nadeCount', group: 'nade', label: 'Grenades carried', exportKey: 'grenades_carried', unit: '', min: 1, max: 10, step: 1, start: 3, digits: 0, source: 'Old game T.grenadeMax.', legacy: 'T.grenadeMax' },
   { kind: 'range', key: 'nadeRefill', group: 'nade', label: 'One grenade back every', exportKey: 'grenade_refill_s', unit: 's', min: 0.5, max: 60, step: 0.5, start: 5, digits: 1, source: "No old number (the old game refilled at the terminal): the sandbox's own pick, so you can keep throwing." },
   {
@@ -794,7 +780,7 @@ export const PARAMS: Param[] = [
   // The Hornet (the owner's description; every number the sandbox's pick)
   {
     kind: 'range', key: 'hornetTopSpeed', group: 'hornet', label: 'Top speed', exportKey: 'top_speed_m_per_s', unit: 'm/s', min: 2, max: 40, step: 0.5, start: 12, digits: 1,
-    source: "The sandbox's pick: faster than a sprint (9 m/s), an early light vehicle. Not a decision.",
+    source: "The sandbox's pick: faster than the soldier's sprint (7.65 m/s), an early light vehicle. Not a decision.",
   },
   {
     kind: 'range', key: 'hornetAccel', group: 'hornet', label: 'Acceleration', exportKey: 'acceleration_m_per_s2', unit: 'm/s²', min: 1, max: 40, step: 0.5, start: 7, digits: 1,
@@ -821,12 +807,17 @@ export const PARAMS: Param[] = [
   },
   {
     kind: 'range', key: 'hornetRadius', group: 'hornet', label: 'Body radius (walls)', exportKey: 'body_radius_m', unit: 'm', min: 0.2, max: 1.2, step: 0.01, start: 0.45, digits: 2,
-    note: (v) => (2 * (v.hornetRadius as number) < (v.doorWidth as number) ? 'fits the doorway' : 'too wide for the doorway'),
+    note: (v) => {
+      const door = builtOpening(v, 'door');
+      const rider = 0.25 + 1.8;
+      if (2 * (v.hornetRadius as number) >= door.width) return 'too wide for the doorway';
+      return door.height >= rider ? 'fits the doorway' : `fits its width, but the rider (${rider.toFixed(2)} m) is taller than the door`;
+    },
     source: "The sandbox's pick: narrow enough for the 1.0 m doorway. Not a decision.",
   },
   {
     kind: 'range', key: 'hornetStepUp', group: 'hornet', label: 'Step-up (curbs, the stair)', exportKey: 'step_up_m', unit: 'm', min: 0, max: 0.6, step: 0.01, start: 0.3, digits: 2,
-    source: "The sandbox's pick: it rolls over a curb and up the stair, not up the 0.55 m step. Not a decision.",
+    source: "The sandbox's pick: it rolls up a low step (to 0.3 m), the stair and the ramp, not up the 0.55 m step. Not a decision.",
   },
   {
     kind: 'range', key: 'hornetLeanFwd', group: 'hornet', label: 'Lean forward when speeding up', exportKey: 'lean_forward_deg', unit: '°', min: 0, max: 45, step: 0.5, start: 12, digits: 1,
@@ -892,6 +883,10 @@ export const PARAMS: Param[] = [
   {
     kind: 'range', key: 'hornetKickSlide', group: 'hornet', label: 'Full-charge shot: slides back', exportKey: 'kick_slide_m', unit: 'm', min: 0, max: 1, step: 0.01, start: 0.06, digits: 2,
     source: "The sandbox's pick: the owner's: a few centimetres only, away from the shot. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetKickBrake', group: 'hornet', label: 'Full-charge shot: brakes it by', exportKey: 'kick_brake_m_per_s', unit: 'm/s', min: 0, max: 20, step: 0.5, start: 3, digits: 1,
+    source: "The sandbox's pick (the owner's: the knock back should brake it a little): takes this much speed off, never adds any. Not a decision.",
   },
   {
     kind: 'range', key: 'hornetWeakTime', group: 'hornet', label: 'Weak moment after a full-charge shot', exportKey: 'weak_time_s', unit: 's', min: 0, max: 4, step: 0.05, start: 0.9, digits: 2,

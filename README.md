@@ -8,11 +8,11 @@ Nothing here is the game, and no value here is a decision.
 `play/testlines.html` is the whole sandbox in one file. Save it and double-click it: it opens in your browser
 with no install, no server and no internet.
 
-Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, hold
-the right button (or G) to aim a grenade at the cursor and let go to throw, Q aims down sights, R reloads, hold the
-middle button to turn the camera, 1, 2 and 3 change guns (SMG, rifle, shotgun), E gets on and off the Hornet, the
-backquote key (`) hides the panel. The Grenade group's "Right button" switch gives the right button back to aiming
-down sights, as in the old game (G still throws).
+Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, the
+right button (or Q) aims down sights, G or F readies a grenade (then hold the right button to aim it at the cursor
+and let go to throw), R reloads, hold the middle button to turn the camera, 1, 2 and 3 change guns (SMG, rifle,
+shotgun), E gets on and off the Hornet, the backquote key (`) hides the panel. Each gun's range is a slider in its
+own group (Rifle and Shotgun start folded).
 
 The shotgun (key 3, the Peacekeeper's) starts from the old game's Bagpipe: 8 pellets of 11 damage, 0.85 s between
 shots, 2 shells, a 2.6 s reload, 34 m range, spread 0.1 (0.05 aiming). One pull is one round, one click, one view
@@ -21,10 +21,14 @@ Bagpipe had none. Its reload fills both shells at once, as the old game's did (d
 by one; that is not built). Its model is the sandbox's own minimal shape (no Art text covers it yet), held like
 the rifle.
 
-The grenade (the owner's design): hold the right button (or G) and an arc shows the whole flight to the point
+The grenade (the owner's design): press G or F to ready one (with one in hand): the gun goes away (the left button
+does nothing) and aiming down sights ends. Then hold the right button and an arc shows the whole flight to the point
 under the cursor (the ground, a block's top or side, the ramp): dots along the path, a bigger dot at each bounce,
 and where it goes off a small ring with the blast's reach round it on the floor (smaller for a burst in the air, as
-damage is measured to the feet; none if it goes off higher than the blast radius). Let go and it throws; the grenade
+damage is measured to the feet; none if it goes off higher than the blast radius). Let go and it throws, and it is
+back to the gun (the sandbox's pick); G or F again, a gun key, getting on the Hornet or the page losing focus puts a
+readied grenade away and drops a throw being aimed. The throw needs a fresh press of the right button after G or F.
+The grenade
 flies exactly that arc, bounces exactly there and goes off exactly there (the arc runs the very step function the
 grenade flies by, with the same target and place). Aim at a wall's face and it bounces off it. The plain arc is kept
 whenever it lands at the cursor before the fuse runs out; if it would hit something first (the edge of a ledge,
@@ -46,9 +50,9 @@ old game lost speed per frame); a grenade comes to rest only on level ground (on
 flight and the fuse run in steps of 1/120 s at either step rate, so a throw flies and goes off the same at 30 or
 60. The soldier has no health, so blasts do not hurt him.
 
-Aim down sights (the old game's rules): hold Q, or the right button when it is set to aim (or switch to
-click-to-toggle). In Firefox, Shift + right click always opens the browser's own menu, which no page can stop;
-since Shift sprints, use Q (or G, for the grenade) there. While aiming
+Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
+Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q to aim
+there, and stop sprinting to throw a grenade (the menu drops the throw). While aiming
 the soldier walks at 0.55 of his speed and cannot sprint, each gun's spread rests at its sights value, and the
 screen dead zone shrinks to 0.45. The camera reacts in one of three ways: Flatten (the view tips toward the
 cursor, no flatter than 28.5°), Slide (the camera slides toward the cursor, keeping the soldier on screen; the
@@ -59,26 +63,31 @@ the reaction and the Slide reach (scaled like the look-ahead).
 
 The Hornet (the owner's description; no Art text or old number covers it, so every number is the sandbox's pick,
 not a decision): an early Empire vehicle on one wheel with a gun above it, waiting near the start at (6, 1). Walk
-up to it (a hint shows within 2 m) and press E to ride it; E again gets off, onto a free spot beside it. It is not
-solid while it stands (the soldier walks through it). Riding: W drives forward, S brakes and then backs up, A and D
+up to it (a hint shows within 2 m, with no wall between) and press E to ride it; E again gets off, onto a free spot
+beside it with no wall between (not while it is in the air), keeping his stamina. Pressed away from it, E does
+nothing. It is not solid while it stands (the soldier walks through it). Riding: W drives forward, S brakes and then backs up, A and D
 turn it on the spot or on the move (12 m/s top speed, 7 m/s² to get there, 14 m/s² braking, 4 m/s backwards, 140°
 a second). It drives on the soldiers' own ground rules with its own body (0.45 m radius, so it fits the 1.0 m
-doorway; 0.3 m step-up, so it rolls over a curb and up the stair and the ramp but not the 0.55 m step; the rider on
+doorway; 0.3 m step-up, so it rolls up a low step, the stair and the ramp but not the 0.55 m step; the rider on
 its footplates stands 2.05 m, just under the 2.1 m lintel), in sub-steps no longer than half its radius, so no
-speed carries it through a wall. It pushes the dummies aside and is not pushed. The lean is in the picture only:
+speed carries it through a wall; pressed against a wall it loses the speed it cannot use at a steady rate (the same
+drag at either step rate). It pushes the dummies softly, as the soldiers do (at speed it passes close by them), and
+is not pushed. The lean is in the picture only:
 the body pitches forward as it speeds up (12° at full throttle) and back as it brakes or starts backwards (22° at
 full braking); a spring rights it (recovery 7/s, settling 0.35), so it swings past the lean (as if it will fall)
 and settles. Nothing the Hornet does reads the lean: where it goes and where its shots land are the same with any
-lean setting (a scripted check proves it). The gun turns to the cursor and fires level from 1.25 m. A tap of the
+lean setting (checked with a simulation run while building it, at 30 and 60 steps, every lean slider at its
+lowest and at its highest). The gun turns to the cursor and fires level from 1.25 m. A tap of the
 left button fires 8 pellets (12 damage each, 22 m, spread ±8° without charge); holding it charges (1 s), and the
 pellets close in as it charges; let go at full charge and it fires one slug as a short purple beam (120 damage,
 40 m, spread at full charge 0). A full-charge shot tips the body away from the shot (35°, the tip is in the
-picture only; aimed behind, it tips forward) and slides the Hornet 6 cm away from the shot, the one movement a shot
-makes (the same 6 cm at either step rate; a wall stops it); then comes a weak moment (0.9 s): it cannot fire and
-turns at 0.3 of its rate. 0.45 s between shots. A button held through the gap or the weak moment starts charging as
-soon as the gun is ready; a let-go before then does nothing. Pellets against infantry and the beam against
+picture only; aimed behind, it tips forward), slides the Hornet 6 cm away from the shot (the same 6 cm at either
+step rate; a wall stops it) and brakes it a little (3 m/s off its speed; it never adds speed); then comes a weak
+moment (0.9 s): it cannot fire and turns at 0.3 of its rate. 0.45 s between shots. A button held through the gap or
+the weak moment starts charging as soon as the gun is ready; a let-go before then does nothing, and a quick
+re-press never fires inside the gap or the weak moment. Pellets against infantry and the beam against
 vehicles is an idea, not settled: the two damages are separate sliders. Getting on or off, or the page losing
-focus, drops a charge. While riding, the soldier's own gun, grenades and aiming down sights wait; the size readout
+focus, drops a charge, and a button still held then does not charge until it has been let go. While riding, the soldier's own gun, grenades and aiming down sights wait; the size readout
 measures him on the footplates. Its look is a blockout in the Empire's colours with the ink line, and is not
 judged here.
 

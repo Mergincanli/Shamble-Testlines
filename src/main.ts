@@ -22,6 +22,7 @@ import { CAMERA_PRESETS, CAMERA_PROFILES, Store } from './params';
 import { softPush } from './push';
 import { Soldier } from './soldier';
 import {
+  castLevel,
   GUN_KEYS,
   gunValue,
   newWeapons,
@@ -172,11 +173,9 @@ store.onChange((key) => {
     switchGun(W, g, store);
   }
   if (key === null || key === 'tickRate') acc = 0;
-  if (store.get('adsMode') !== lastAdsMode || store.get('rightButton') !== lastRightButton) {
+  if (store.get('adsMode') !== lastAdsMode) {
     lastAdsMode = store.get('adsMode');
-    lastRightButton = store.get('rightButton');
     aiming = false;
-    endNadeAim();
   }
   if (key === null || key === 'camTurn') camera.resetTurn();
   if (key === null || key === 'dummyHealth') for (const t of targets) if (t.downFor <= 0) t.health = store.num('dummyHealth');
@@ -188,18 +187,21 @@ input.onKey((code, key) => {
   if (code === 'Digit1') store.set('gun', 'smg');
   if (code === 'Digit2') store.set('gun', 'rifle');
   if (code === 'Digit3') store.set('gun', 'shotgun');
+  // A gun key puts a readied grenade away (and drops a throw being aimed).
+  if (code === 'Digit1' || code === 'Digit2' || code === 'Digit3') putNadeAway();
 });
 renderer.domElement.addEventListener('pointerdown', () => unlockAudio());
 
 const moveInput: MoveInput = { wishX: 0, wishZ: 0, sprint: false, jump: false, speedMult: 1 };
-/** Aiming down sights, decided at each simulation step from Q (and the right button when set to aim). */
+/** Aiming down sights, decided at each simulation step from the right button (unless a grenade is ready) and Q. */
 let aiming = false;
 let lastAdsMode = store.get('adsMode');
-let lastRightButton = store.get('rightButton');
+/** A grenade is in hand (G or F): the right button aims and throws it, and the gun is put away. */
+let nadeReady = false;
 input.onFocusLoss(() => {
   aiming = false;
-  // A throw being aimed is dropped, not thrown, when the page loses focus; so is the Hornet's charge.
-  endNadeAim();
+  // A readied grenade goes away (a throw being aimed is dropped) when the page loses focus; so does the Hornet's charge.
+  putNadeAway();
   clearHornetGun(hornet);
 });
 input.onForcedMenu(() => endNadeAim());
@@ -211,8 +213,11 @@ function endNadeAim() {
   lastPreview = null;
 }
 
-/** The right button aims a grenade (the start) or aims down sights. */
-const rightIsGrenade = () => store.get('rightButton') !== 'aim';
+/** Put a readied grenade away: back to the gun, and any throw being aimed is dropped. */
+function putNadeAway() {
+  nadeReady = false;
+  endNadeAim();
+}
 
 function readMoveInput(rightPress: boolean) {
   const ax = camera.axes(store);
@@ -237,8 +242,8 @@ function readMoveInput(rightPress: boolean) {
   const l = Math.hypot(x, z);
   moveInput.wishX = l > 1e-6 ? x / l : 0;
   moveInput.wishZ = l > 1e-6 ? z / l : 0;
-  // Aiming down sights: Q (and the right button, when it is set to aim), held or toggled.
-  const rightAims = !rightIsGrenade();
+  // Aiming down sights: the right button (unless a grenade is ready) and Q, held or toggled.
+  const rightAims = !nadeReady;
   const aimPress = input.takePress(AIM_KEY) || (rightAims && rightPress);
   if (store.get('adsMode') === 'toggle') {
     if (aimPress) aiming = !aiming;
@@ -247,7 +252,7 @@ function readMoveInput(rightPress: boolean) {
   // Firing stops the sprint, and so do a press waiting for the gun to come up (after the gun's sprint-to-fire
   // delay) and aiming down sights.
   moveInput.sprint =
-    (input.down('ShiftLeft') || input.down('ShiftRight')) && (!input.fireHeld() || nadeAiming) && !W.queued && !aiming;
+    (input.down('ShiftLeft') || input.down('ShiftRight')) && (!input.fireHeld() || nadeReady) && !W.queued && !aiming;
   // Held Space keeps jumping on landing, as the old game; a tap between two steps is not lost.
   moveInput.jump = input.takePress('Space') || input.down('Space');
 }
@@ -276,8 +281,9 @@ function simStep(dt: number) {
   if (riding) {
     // On the Hornet: W/S throttle, A/D turn, the left button its gun; the soldier's own keys wait.
     aiming = false;
-    for (const k of ['KeyG', AIM_KEY, 'KeyR', 'Space']) input.takePress(k);
+    for (const k of ['KeyG', 'KeyF', AIM_KEY, 'KeyR', 'Space']) input.takePress(k);
     input.takeRelease('KeyG');
+    input.takeRelease('KeyF');
     stepHornet(
       hornet,
       {
@@ -300,13 +306,13 @@ function simStep(dt: number) {
     readMoveInput(rightPress);
     nadeInput(rightPress, rightRelease);
     stepMover(cur, moveInput, dt, store);
-    // While a throw is aimed the gun is held: the left button does nothing.
+    // While a grenade is ready the gun is put away: the left button does nothing.
     const firePress = input.takeFirePress();
     input.takeFireRelease();
     stepWeapons(
       W,
       cur,
-      { held: input.fireHeld() && !nadeAiming, pressed: firePress && !nadeAiming, reload: input.takePress('KeyR'), aimYaw, ads: aiming },
+      { held: input.fireHeld() && !nadeReady, pressed: firePress && !nadeReady, reload: input.takePress('KeyR'), aimYaw, ads: aiming },
       targets,
       dt,
       store,
@@ -347,9 +353,21 @@ function simStep(dt: number) {
   if (cur.y > peakY) peakY = cur.y;
 }
 
-/** True if the soldier stands within reach of the Hornet (and at about its height). */
+/** True if a waist-high line between two points on the ground meets no block. */
+function clearBetween(ax: number, az: number, bx: number, bz: number, y: number): boolean {
+  const d = Math.hypot(bx - ax, bz - az);
+  if (d < 1e-6) return true;
+  return castLevel(ax, az, y + 1, (bx - ax) / d, (bz - az) / d, d, []).t >= d - 1e-6;
+}
+
+/** True if the soldier stands within reach of the Hornet (at about its height, with no wall between them). */
 function nearHornet(): boolean {
-  return Math.hypot(cur.x - hornet.body.x, cur.z - hornet.body.z) <= store.num('hornetMountRange') && Math.abs(cur.y - hornet.body.y) < 1;
+  const b = hornet.body;
+  return (
+    Math.hypot(cur.x - b.x, cur.z - b.z) <= store.num('hornetMountRange') &&
+    Math.abs(cur.y - b.y) < 1 &&
+    clearBetween(cur.x, cur.z, b.x, b.z, Math.max(cur.y, b.y))
+  );
 }
 
 /**
@@ -357,14 +375,15 @@ function nearHornet(): boolean {
  * way the soldier's and the Hornet's held buttons, charge and aims are let go.
  */
 function toggleRide() {
+  // Nothing happens away from it, nor getting off while it is in the air.
+  if (!riding ? !nearHornet() || !cur.grounded : !hornet.body.grounded) return;
   input.takeFirePress();
   input.takeFireRelease();
   clearHornetGun(hornet);
   W.queued = false;
   aiming = false;
-  endNadeAim();
+  putNadeAway();
   if (!riding) {
-    if (!nearHornet() || !cur.grounded) return;
     riding = true;
     hornetModel.seat.add(soldier.root);
     soldier.root.position.set(0, 0, 0);
@@ -390,12 +409,21 @@ function toggleRide() {
     const x = b.x + ox * d;
     const z = b.z + oz * d;
     const [rx, rz] = resolveWalls(x, z, r, b.y, store.num('stepUp'));
-    if (Math.hypot(rx - x, rz - z) < 1e-6 && Math.abs(surfaceAt(x, z, 0.15, b.y + 0.3, store.num('stepUp')) - b.y) < store.num('stepUp')) {
+    if (
+      Math.hypot(rx - x, rz - z) < 1e-6 &&
+      Math.abs(surfaceAt(x, z, 0.15, b.y + 0.3, store.num('stepUp')) - b.y) < store.num('stepUp') &&
+      clearBetween(b.x, b.z, x, z, b.y)
+    ) {
       spot = { x, z };
       break;
     }
   }
-  Object.assign(cur, newMover(spot.x, spot.z), { y: surfaceAt(spot.x, spot.z, 0.15, b.y + 0.3, store.num('stepUp')) });
+  // A fresh body on the spot, keeping his stamina as it was.
+  Object.assign(cur, newMover(spot.x, spot.z), {
+    y: surfaceAt(spot.x, spot.z, 0.15, b.y + 0.3, store.num('stepUp')),
+    stamina: cur.stamina,
+    staminaLocked: cur.staminaLocked,
+  });
   prev = { ...cur };
   scene.add(soldier.root);
   soldier.setGunVisible(true);
@@ -412,11 +440,25 @@ function throwOrigin(): [number, number, number] {
  * starts aiming the next one (so a quick double click throws two).
  */
 function nadeInput(rightPress: boolean, rightRelease: boolean) {
-  const right = rightIsGrenade();
-  const pressed = input.takePress('KeyG') || (right && rightPress);
-  const released = input.takeRelease('KeyG') || (right && rightRelease);
-  const held = input.down('KeyG') || (right && input.rightHeld());
-  if (nadeAiming && (released || !held)) {
+  // G or F readies a grenade (the gun goes away and aiming down sights ends), or puts it away again, dropping a
+  // throw being aimed. With none in hand, nothing.
+  const toggle = input.takePress('KeyG') || input.takePress('KeyF');
+  input.takeRelease('KeyG');
+  input.takeRelease('KeyF');
+  if (toggle) {
+    if (nadeReady) putNadeAway();
+    else if (nadesHeld > 0) {
+      nadeReady = true;
+      aiming = false;
+      // A shot waiting for the gun to come up is let go: the gun is put away.
+      W.queued = false;
+    }
+    // The right button pressed with that key starts nothing: the throw needs a fresh press.
+    return;
+  }
+  if (!nadeReady) return;
+  const held = input.rightHeld();
+  if (nadeAiming && (rightRelease || !held)) {
     // The arc drawn at the last frame, if it was drawn from here; with none drawn yet (a click within one frame),
     // the throw is worked out now for the target under the cursor; with no target at all, it is dropped.
     const o = throwOrigin();
@@ -429,13 +471,11 @@ function nadeInput(rightPress: boolean, rightRelease: boolean) {
       nadesHeld--;
       nadesThrown++;
     }
-    endNadeAim();
+    // Thrown: back to the gun.
+    putNadeAway();
+    return;
   }
-  if (pressed && !nadeAiming && nadesHeld > 0) {
-    nadeAiming = true;
-    // A shot waiting for the gun to come up is let go: the gun is held while the throw is aimed.
-    W.queued = false;
-  }
+  if (rightPress && !nadeAiming && nadesHeld > 0) nadeAiming = true;
 }
 
 /** One step of the grenades: the refill, the flights, the blasts, the camera kick. */
@@ -707,7 +747,8 @@ function frame(now: number) {
   const g = W.guns[W.gun];
   const winFrom = gunValue(store, W.gun, 'ActiveStart') / 100;
   hud.hint(!riding && nearHornet() ? 'E: ride the Hornet' : '');
-  if (riding) hud.updateHornet(hornet.speed, hornet.charging ? hornet.charge : -1, hornet.cooldown <= 0 && hornet.weak <= 0, hornet.weak > 0);
+  if (riding)
+    hud.updateHornet(Math.sign(hornet.speed) * Math.hypot(cur.vx, cur.vz), hornet.charging ? hornet.charge : -1, hornet.cooldown <= 0 && hornet.weak <= 0, hornet.weak > 0);
   else hud.updateGun(
     dt,
     GUN_KEYS[W.gun].name,
@@ -725,7 +766,7 @@ function frame(now: number) {
     W.activeNote = '';
   }
 
-  hud.updateNade(nadesHeld, Math.round(store.num('nadeCount')), nadeAiming);
+  hud.updateNade(nadesHeld, Math.round(store.num('nadeCount')), nadeAiming, nadeReady);
   // The view kick goes on last, so it never moves the aim (and the blast's kick with it).
   camera.cam.position.x += kickPrev.x + (kick.x - kickPrev.x) * alpha;
   camera.cam.position.y += kickPrev.y + (kick.y - kickPrev.y) * alpha;
@@ -812,8 +853,12 @@ requestAnimationFrame(frame);
   }),
   /** Put the Hornet somewhere, at rest, facing a heading in degrees (for the scripted checks only). */
   placeHornet: (x: number, z: number, headingDeg = 180) => {
-    Object.assign(hornet, newHornet(x, z, (headingDeg * Math.PI) / 180));
-    if (riding) Object.assign(cur, { x, z, y: 0 });
+    const { shots, beams } = hornet;
+    Object.assign(hornet, newHornet(x, z, (headingDeg * Math.PI) / 180), { shots, beams });
+    if (riding) {
+      Object.assign(cur, { x, z, y: 0 });
+      prev = { ...cur };
+    }
   },
   /** The soldier's measured height and size on screen at the last frame. */
   measured: () => ({ ...MEASURED }),
@@ -822,6 +867,7 @@ requestAnimationFrame(frame);
   nades: () => ({
     held: nadesHeld,
     aiming: nadeAiming,
+    ready: nadeReady,
     target: nadeTarget,
     thrown: nadesThrown,
     blasts: blastsDone,

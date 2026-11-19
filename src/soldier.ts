@@ -177,12 +177,12 @@ export class Soldier {
     this.setPose(this.blend);
   }
 
-  /** Where the muzzle is, in world space. */
   /** Show or hide his own gun (hidden while he rides the Hornet). */
   setGunVisible(v: boolean) {
     this.gunGroup.visible = v;
   }
 
+  /** Where the muzzle is, in world space. */
   muzzleWorld(out: THREE.Vector3): THREE.Vector3 {
     out.copy(gunModels()[this.gun].sockets.muzzle);
     return this.gunGroup.localToWorld(out);

@@ -29,6 +29,8 @@ export const HORNET = {
   wheel_width_m: 0.12,
   /** The full-charge slide fades at this rate (it adds up to the slider's distance at any step rate). */
   slide_fade_per_s: 14,
+  /** Pressed against a wall, the speed it cannot use fades at this rate (the same drag at any step rate). */
+  wall_drag_per_s: 8,
   /** The camera's shot kick (as the guns' recoil value): pellets, and the beam. */
   camera_kick_pellets: 1.4,
   camera_kick_beam: 3.2,
@@ -62,6 +64,8 @@ export interface HornetState {
   beams: number;
   /** The deepest lean since the last full-charge shot, radians (for the scripted checks). */
   leanSinceBeam: number;
+  /** After getting on, a button still held from before does not charge until it has been let go. */
+  holdBlocked: boolean;
 }
 
 export interface HornetInput {
@@ -97,6 +101,7 @@ export function newHornet(x = HORNET.park_x_m, z = HORNET.park_z_m, heading = (H
     shots: 0,
     beams: 0,
     leanSinceBeam: 0,
+    holdBlocked: false,
   };
   return h;
 }
@@ -112,7 +117,13 @@ function impulseForPeak(peak: number, w: number, z: number): number {
     const s = Math.sqrt(1 - z * z);
     return peak * w * Math.exp((z / s) * Math.atan2(s, z));
   }
-  return peak * w * Math.E;
+  if (z <= 1.001) return peak * w * Math.E;
+  // Overdamped: x(t) = v0 (e^(r1 t) - e^(r2 t)) / (r1 - r2), at its top when t = ln(r2 / r1) / (r1 - r2).
+  const s = Math.sqrt(z * z - 1);
+  const r1 = -w * (z - s);
+  const r2 = -w * (z + s);
+  const t = Math.log(r2 / r1) / (r1 - r2);
+  return (peak * (r1 - r2)) / (Math.exp(r1 * t) - Math.exp(r2 * t));
 }
 
 let seed = 777;
@@ -132,15 +143,17 @@ export function stepHornet(h: HornetState, inp: HornetInput, dt: number, P: Stor
 function stepGun(h: HornetState, inp: HornetInput, dt: number, P: Store, targets: Target[], events: ShotEvent[]) {
   h.cooldown = Math.max(0, h.cooldown - dt);
   h.weak = Math.max(0, h.weak - dt);
-  const ready = h.cooldown <= 0 && h.weak <= 0;
+  if (!inp.fireHeld) h.holdBlocked = false;
   // A let-go fires what has been charged (a tap within one step fires with no charge); then a press, or a button
-  // held through the gap or the weak moment, starts charging once the gun is ready. Charging grows while held.
+  // held through the gap or the weak moment, starts charging once the gun is ready (checked after the let-go, so
+  // a quick re-press never fires inside the gap or the weak moment). Charging grows while held.
   if (h.charging && (inp.fireReleased || !inp.fireHeld)) {
     fire(h, h.charge, inp.aimYaw, P, targets, events);
     h.charging = false;
     h.charge = 0;
   }
-  if (!h.charging && ready && (inp.firePressed || inp.fireHeld)) {
+  const ready = h.cooldown <= 0 && h.weak <= 0;
+  if (!h.charging && ready && (inp.firePressed || (inp.fireHeld && !h.holdBlocked))) {
     h.charging = true;
     h.charge = 0;
   }
@@ -184,6 +197,9 @@ function fire(h: HornetState, charge: number, aimYaw: number, P: Store, targets:
   if (!full) return;
   h.beams++;
   h.leanSinceBeam = 0;
+  // It also brakes a little: the shot takes this much speed off (never adds any).
+  const brake = P.num('hornetKickBrake');
+  h.speed = h.speed > 0 ? Math.max(0, h.speed - brake) : Math.min(0, h.speed + brake);
   // The full-charge kick: the body tips away from the shot (picture only), the Hornet slides that way a few
   // centimetres, and the weak moment starts.
   const bx = -Math.sin(aimYaw);
@@ -243,10 +259,11 @@ function drive(h: HornetState, inp: HornetInput, dt: number, P: Store) {
   // Sub-steps no longer than half its radius, so it never skips through a thin wall.
   const n = Math.max(1, Math.ceil((Math.hypot(s.vx, s.vz) * dt) / (0.5 * body.r)));
   for (let i = 0; i < n; i++) moveBody(s, dt / n, body);
-  // A wall takes the speed it stopped: the speed along the heading is no more than it went.
+  // A wall takes the speed it stopped, at a steady rate (so brushing a wall drags the same at any step rate).
   const went = ((s.x - x0) * fx + (s.z - z0) * fz) / dt - (sx * fx + sz * fz);
-  if (h.speed > 0) h.speed = Math.min(h.speed, Math.max(0, went));
-  else if (h.speed < 0) h.speed = Math.max(h.speed, Math.min(0, went));
+  const drag = 1 - Math.exp(-HORNET.wall_drag_per_s * dt);
+  if (h.speed > 0 && went < h.speed) h.speed += (Math.max(0, went) - h.speed) * drag;
+  else if (h.speed < 0 && went > h.speed) h.speed += (Math.min(0, went) - h.speed) * drag;
 
   // Picture only: the wheel turns with the ground it covered; the lean follows the throttle's acceleration.
   h.wheel += (((s.x - x0) * fx + (s.z - z0) * fz) / HORNET.wheel_radius_m) || 0;
@@ -262,8 +279,9 @@ function drive(h: HornetState, inp: HornetInput, dt: number, P: Store) {
   if (h.beams > 0 && Math.abs(h.pitch) > Math.abs(h.leanSinceBeam)) h.leanSinceBeam = h.pitch;
 }
 
-/** Drop a charge and anything held (getting on or off, the page losing focus). */
+/** Drop a charge, and wait for a fresh press (getting on or off, the page losing focus). */
 export function clearHornetGun(h: HornetState) {
   h.charging = false;
   h.charge = 0;
+  h.holdBlocked = true;
 }

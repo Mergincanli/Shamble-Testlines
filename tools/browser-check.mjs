@@ -460,7 +460,6 @@ async function run(browserName) {
 
     // Aiming down sights (with the right button set to aim). Walk while aiming: 0.55 of the walk speed; Shift does
     // not sprint.
-    await T(() => window.__testlines.set('rightButton', 'aim'));
     await T(() => window.__testlines.place(30, 30));
     await sleep(300);
     const aimSpot = await T(() => window.__testlines.screenOf(30, 1.36, 24));
@@ -532,7 +531,6 @@ async function run(browserName) {
     const tg4 = await T(() => window.__testlines.aiming());
     ok('a toggled aim survives a preset click and ends on focus loss', tg3 === true && tg4 === false, `${tg3}, ${tg4}`);
     await T(() => window.__testlines.set('adsMode', 'hold'));
-    await T(() => window.__testlines.set('rightButton', 'grenade'));
     // Q aims down sights (with the right button on the grenade, the start).
     await page.mouse.click(aimSpot.x, aimSpot.y);
     await page.keyboard.down('KeyQ');
@@ -624,7 +622,12 @@ async function run(browserName) {
     await page.keyboard.press('Digit1');
     await T(() => window.__testlines.set('dummiesWalk', true));
 
-    // The grenade: hold the right button to aim at the cursor, let go to throw; the arc shows the whole flight.
+    // The grenade: G or F readies it; then hold the right button to aim at the cursor, let go to throw; the arc shows
+    // the whole flight. After a throw it is back to the gun (the right button aims down sights again).
+    const ready = async (key = 'KeyG') => {
+      await page.keyboard.press(key);
+      for (let i = 0; i < 20 && !(await nades()).ready; i++) await sleep(50);
+    };
     const nades = () => T(() => window.__testlines.nades());
     // Wait for every grenade to go off (a let-go may only be read at the next frame, so look a moment later first).
     const quiet = async () => {
@@ -661,6 +664,7 @@ async function run(browserName) {
     await aimNade(30, 0, 20);
     let nd0 = await nades();
     let gn0 = await T(() => window.__testlines.gun());
+    await ready();
     await page.mouse.down({ button: 'right' });
     await sleep(500);
     await page.mouse.down();
@@ -672,9 +676,9 @@ async function run(browserName) {
     await page.mouse.up({ button: 'right' });
     await sleep(400);
     let nd1 = await nades();
-    ok('holding the right button shows the arc, not aiming down sights', ndA.aiming && !!ndA.preview && !adsA, `aiming ${ndA.aiming}, arc ${!!ndA.preview}, sights ${adsA}`);
-    ok('the gun does not fire while a throw is aimed', gn1.shots === gn0.shots, `${gn1.shots - gn0.shots} shots`);
-    ok('letting go throws one grenade', nd1.thrown - nd0.thrown === 1 && !nd1.aiming, `thrown ${nd1.thrown - nd0.thrown}`);
+    ok('G readies a grenade; the right button then shows the arc, not aiming down sights', ndA.aiming && !!ndA.preview && !adsA, `aiming ${ndA.aiming}, arc ${!!ndA.preview}, sights ${adsA}`);
+    ok('the gun does not fire while a grenade is ready', gn1.shots === gn0.shots, `${gn1.shots - gn0.shots} shots`);
+    ok('letting go throws one grenade, and it is back to the gun', nd1.thrown - nd0.thrown === 1 && !nd1.aiming && !nd1.ready, `thrown ${nd1.thrown - nd0.thrown}, ready ${nd1.ready}`);
     const fb = nd1.lastThrow?.bounces?.[0];
     const tg = nd1.lastThrow?.target;
     ok('it lands on the point under the cursor', !!fb && !!tg && Math.hypot(fb.x - tg.x, fb.z - tg.z) < 0.4 && Math.abs(tg.y) < 1e-6, fb && tg ? `${Math.hypot(fb.x - tg.x, fb.z - tg.z).toFixed(2)} m from the target` : 'no bounce');
@@ -682,6 +686,7 @@ async function run(browserName) {
     ok('it flies the arc exactly: every bounce and the burst where shown', nd1.blasts - nd0.blasts === 1 && matches(nd1), nd1.lastBlast ? `${nd1.lastBlast.bounces.length} bounces` : 'no blast');
     // Walking while aiming: still exactly the arc shown just before letting go.
     nd0 = await nades();
+    await ready();
     await page.mouse.down({ button: 'right' });
     await sleep(400);
     await page.keyboard.down('KeyD');
@@ -696,44 +701,55 @@ async function run(browserName) {
     await sleep(1200);
     await aimNade(-2, 0.75, -8.75);
     nd0 = await nades();
+    await ready('KeyF');
     await page.mouse.down({ button: 'right' });
     await sleep(500);
     await page.mouse.up({ button: 'right' });
     nd1 = await blastAfter(nd0);
     const onWall = (p) => !!p && p.x > -4.61 && p.x < 0.61 && p.z > -9.36 && p.z < -8.64 && p.y < 1.61;
     ok('aimed at the cover wall: the arc bounces off it and so does the grenade', onWall(nd1.lastThrow?.bounces?.[0]) && matches(nd1), JSON.stringify(nd1.lastThrow?.bounces?.[0] ?? null));
-    // A quick let-go and press again (both between two steps) throws the first grenade and starts the second.
+    // After a throw the right button aims down sights again; G again puts a readied grenade away and drops a throw
+    // being aimed; a held G's key repeats do not toggle it back.
     await T(() => window.__testlines.place(30, 30));
     await sleep(1500);
     await aimNade(30, 0, 20);
-    nd0 = await nades();
     await page.mouse.down({ button: 'right' });
     await sleep(400);
+    const adsBack = await T(() => window.__testlines.aiming());
+    let ndB = await nades();
     await page.mouse.up({ button: 'right' });
-    await page.mouse.down({ button: 'right' });
-    await page.mouse.up({ button: 'right' });
-    for (let i = 0; i < 30; i++) {
-      nd1 = await nades();
-      if (nd1.thrown - nd0.thrown >= 2) break;
-      await sleep(100);
-    }
-    ok('a quick double click throws two grenades', nd1.thrown - nd0.thrown === 2, `${nd1.thrown - nd0.thrown} thrown, held ${nd0.held} -> ${nd1.held}`);
-    await quiet();
-    await sleep(1000);
-    // G does the same (Firefox opens its menu on Shift + right click); a held key's repeats are not new presses.
+    ok('without a grenade ready, the right button aims down sights and throws nothing', adsBack && !ndB.aiming && !ndB.ready, `sights ${adsBack}, grenade ${ndB.aiming}`);
+    await sleep(400);
     nd0 = await nades();
-    await page.keyboard.down('KeyG');
+    await ready();
+    await page.mouse.down({ button: 'right' });
+    await sleep(400);
+    const midAim = (await nades()).aiming;
+    await page.keyboard.press('KeyG');
     await sleep(300);
-    await page.keyboard.down('KeyG');
-    await page.keyboard.down('KeyG');
-    await sleep(300);
-    await page.keyboard.up('KeyG');
-    await sleep(600);
+    await page.mouse.up({ button: 'right' });
+    await sleep(400);
     nd1 = await nades();
-    ok('G aims and throws too, one grenade per hold (key repeats ignored)', nd1.thrown - nd0.thrown === 1, `${nd1.thrown - nd0.thrown} thrown`);
-    await quiet();
+    ok('G again puts it away: the throw being aimed is dropped', midAim && nd1.thrown === nd0.thrown && !nd1.ready && !nd1.aiming, `aiming before ${midAim}, ${nd1.thrown - nd0.thrown} thrown, ready ${nd1.ready}`);
+    await page.keyboard.down('KeyG');
+    await sleep(250);
+    await page.keyboard.down('KeyG');
+    await page.keyboard.down('KeyG');
+    await sleep(250);
+    await page.keyboard.up('KeyG');
+    await sleep(300);
+    ndB = await nades();
+    ok('a held G readies it once (key repeats ignored)', ndB.ready, `ready ${ndB.ready}`);
+    // A gun key puts it away.
+    await page.keyboard.press('Digit2');
+    await sleep(300);
+    ndB = await nades();
+    await page.keyboard.press('Digit1');
+    ok('a gun key puts a readied grenade away', !ndB.ready, `ready ${ndB.ready}`);
+    await sleep(400);
     // Losing focus while aiming drops the throw.
     nd0 = await nades();
+    await ready();
     await page.mouse.down({ button: 'right' });
     await sleep(300);
     await T(() => window.dispatchEvent(new Event('blur')));
@@ -741,25 +757,14 @@ async function run(browserName) {
     await page.mouse.up({ button: 'right' });
     await sleep(400);
     nd1 = await nades();
-    ok('losing focus while aiming drops the throw', nd1.thrown === nd0.thrown && !nd1.aiming, `${nd1.thrown - nd0.thrown} thrown`);
-    // With the right button set to aim down sights, it aims; G still throws.
-    await T(() => window.__testlines.set('rightButton', 'aim'));
-    nd0 = await nades();
-    await page.mouse.down({ button: 'right' });
-    await sleep(400);
-    const adsR = await T(() => window.__testlines.aiming());
-    const ndR = await nades();
-    await page.mouse.up({ button: 'right' });
-    await sleep(400);
-    nd1 = await nades();
-    ok('set to aim, the right button aims down sights and throws nothing', adsR && !ndR.aiming && nd1.thrown === nd0.thrown, `sights ${adsR}, grenade ${ndR.aiming}`);
-    await T(() => window.__testlines.set('rightButton', 'grenade'));
+    ok('losing focus while aiming drops the throw', nd1.thrown === nd0.thrown && !nd1.aiming && !nd1.ready, `${nd1.thrown - nd0.thrown} thrown`);
     await sleep(1000);
     // A throw at the feet of a dummy: the blast drops it, leaves one far away alone, and kicks the camera.
     await T(() => window.__testlines.placeDummy(0, 30, 27.4));
     await T(() => window.__testlines.placeDummy(1, 30, 18));
     await aimNade(30, 0, 28);
     nd0 = await nades();
+    await ready();
     await page.mouse.down({ button: 'right' });
     await sleep(400);
     await page.mouse.up({ button: 'right' });

@@ -105,9 +105,9 @@ export class Hud {
     }
   }
 
-  /** Grenades in hand, and whether a throw is being aimed. */
-  updateNade(count: number, max: number, aiming: boolean) {
-    const text = `Grenades  ${count} / ${max}${aiming ? '  · aiming a throw' : ''}`;
+  /** Grenades in hand, and whether one is ready (G or F) and a throw is being aimed. */
+  updateNade(count: number, max: number, aiming: boolean, ready = false) {
+    const text = `Grenades  ${count} / ${max}${aiming ? '  · aiming a throw' : ready ? '  · ready: hold the right button' : ''}`;
     if (text !== this.lastNade) {
       this.nadeText.textContent = text;
       this.lastNade = text;
