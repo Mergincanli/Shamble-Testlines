@@ -987,6 +987,12 @@ const OLD_FRAMING = {
   posSideMax: 2,
 };
 
+/**
+ * The camera's rates and dead zone at their start values (the old game's numbers): every profile and preset sets
+ * them, so a profile sets the whole camera.
+ */
+const CAMERA_RATES = { camFollow: 7, lookFollow: 9, deadX: 0.6, deadY: 0.52, pushRate: 9, lookGain: 0.55, turnRate: 14 };
+
 function framingScaled(k: number): Values {
   const out: Values = {};
   for (const [key, v] of Object.entries(OLD_FRAMING)) out[key] = Math.round(v * k * 10) / 10;
@@ -1007,8 +1013,24 @@ export const ORIGINAL_PROFILE: Values = {
   camTurn: 64,
   camAngle: null,
   ...framingScaled(ORIGINAL_K),
+  ...CAMERA_RATES,
   adsCam: 'pitch',
   adsPanMax: Math.round(16 * ORIGINAL_K * 10) / 10,
+};
+
+/**
+ * "Experimental": the owner's tweak of Original (19 Nov): a 13° lens, a look-ahead of at least 4.5 m, the look
+ * point following faster (20.5/s) and the edge push easing slower (2.5/s), with no forward or sideways camera
+ * shift. Everything else as Original.
+ */
+export const EXPERIMENTAL_PROFILE: Values = {
+  ...ORIGINAL_PROFILE,
+  camLens: 13,
+  lookMin: 4.5,
+  lookFollow: 20.5,
+  pushRate: 2.5,
+  posFwdMax: 0,
+  posSideMax: 0,
 };
 
 /**
@@ -1024,17 +1046,24 @@ export const INDIE_PROFILE: Values = {
   camTurn: 0,
   camAngle: null,
   ...framingScaled(INDIE_DIST / Math.hypot(40, 56.6)),
+  ...CAMERA_RATES,
   adsCam: 'pitch',
   adsPanMax: Math.round(16 * (INDIE_DIST / Math.hypot(40, 56.6)) * 10) / 10,
 };
 
-/** The two profiles, the first being the default. */
+/** The profiles, the first being the default. */
 export const CAMERA_PROFILES: { name: string; title: string; values: Values }[] = [
   {
     name: 'Original',
     title:
       "The old game's camera as your screenshot shows it (the Iso camera turned 64° to the grid), scaled to the 1.80 m stand-in. The default.",
     values: ORIGINAL_PROFILE,
+  },
+  {
+    name: 'Experimental',
+    title:
+      'Your tweak of Original (19 Nov): lens 13°, look-ahead at least 4.5 m, look point follow 20.5/s, edge push 2.5/s, no forward or sideways camera shift.',
+    values: EXPERIMENTAL_PROFILE,
   },
   {
     name: 'Indie',
@@ -1045,11 +1074,11 @@ export const CAMERA_PROFILES: { name: string; title: string; values: Values }[] 
 
 /** The old game's five camera presets (CAM_STYLES), with its own framing, at its own soldier scale. */
 export const CAMERA_PRESETS: { name: string; values: Values }[] = [
-  { name: 'Classic', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 24, camBack: 16, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING } },
-  { name: 'Tactical', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 15.5, camBack: 10.5, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING } },
-  { name: 'Iso', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 40, camBack: 56.6, camLens: 15, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
-  { name: 'Iso+', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 41.5, camBack: 65.5, camLens: 12, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
-  { name: 'Foxhole', values: { adsCam: 'pan', adsPanMax: 16, camHeight: 52, camBack: 42, camLens: 18, camTurn: 45, camAngle: null, ...OLD_FRAMING } },
+  { name: 'Classic', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 24, camBack: 16, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING, ...CAMERA_RATES } },
+  { name: 'Tactical', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 15.5, camBack: 10.5, camLens: 52, camTurn: 0, camAngle: null, ...OLD_FRAMING, ...CAMERA_RATES } },
+  { name: 'Iso', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 40, camBack: 56.6, camLens: 15, camTurn: 45, camAngle: null, ...OLD_FRAMING, ...CAMERA_RATES } },
+  { name: 'Iso+', values: { adsCam: 'pitch', adsPanMax: 16, camHeight: 41.5, camBack: 65.5, camLens: 12, camTurn: 45, camAngle: null, ...OLD_FRAMING, ...CAMERA_RATES } },
+  { name: 'Foxhole', values: { adsCam: 'pan', adsPanMax: 16, camHeight: 52, camBack: 42, camLens: 18, camTurn: 45, camAngle: null, ...OLD_FRAMING, ...CAMERA_RATES } },
 ];
 
 // The camera starts on the Original profile: its values become the start values (and so the resets).

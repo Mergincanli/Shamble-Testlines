@@ -49,6 +49,15 @@ async function run(browserName) {
     await indieBtn.click();
     cv = await T(() => window.__testlines.values());
     ok('the Indie profile button sets its camera', cv.camLens === 35 && cv.camTurn === 0 && cv.camHeight === 13.5, `height ${cv.camHeight}, distance ${cv.camBack}, turn ${cv.camTurn}, lens ${cv.camLens}`);
+    ok('the profiles run Original, Experimental, Indie', profBtns.slice(0, 3).map(([t]) => t).join(',') === 'Original,Experimental,Indie', profBtns.map(([t]) => t).join(','));
+    const expBtn = (await page.$$('#panel .p-presets .p-btn'))[profBtns.findIndex(([t]) => t === 'Experimental')];
+    await expBtn.click();
+    cv = await T(() => window.__testlines.values());
+    const litExp = await page.$$eval('#panel .p-presets .p-btn.on', (bs) => bs.map((b) => b.textContent));
+    ok('the Experimental profile sets its camera, rates included, and lights', cv.camLens === 13 && cv.camHeight === 24.5 && cv.camTurn === 64 && cv.lookMin === 4.5 && cv.lookFollow === 20.5 && cv.pushRate === 2.5 && cv.posFwdMax === 0 && cv.posSideMax === 0 && litExp.includes('Experimental'), `lens ${cv.camLens}, look min ${cv.lookMin}, follow ${cv.lookFollow}, push ${cv.pushRate}, lit ${litExp}`);
+    await T(() => window.__testlines.preset('Original'));
+    cv = await T(() => window.__testlines.values());
+    ok('Original sets the rates back', cv.lookFollow === 9 && cv.pushRate === 9 && cv.camLens === 15, `follow ${cv.lookFollow}, push ${cv.pushRate}`);
     await T(() => window.__testlines.preset('Iso'));
 
     // Focus the yard (left of the panel).
@@ -793,19 +802,23 @@ async function run(browserName) {
       await T((x, z) => window.__testlines.place(x, z), px - fw.fwdX * 2.5, pz - fw.fwdZ * 2.5);
       await sleep(400);
       let top = 0;
+      let minX = Infinity;
       await page.keyboard.down('KeyW');
       for (let t = 0; t < ms2; t += 100) {
         await sleep(100);
-        top = Math.max(top, (await T(() => window.__testlines.state())).y);
+        const now = await T(() => window.__testlines.state());
+        top = Math.max(top, now.y);
+        minX = Math.min(minX, now.x);
       }
       await page.keyboard.up('KeyW');
       await sleep(200);
-      return { ...(await T(() => window.__testlines.state())), top };
+      return { ...(await T(() => window.__testlines.state())), top, minX };
     };
     let st = await walkThrough(20, -11, 1200);
     ok('he walks through the 1.0 m doorway', st.x < 19.5, `x ${st.x.toFixed(2)} z ${st.z.toFixed(2)}`);
-    st = await walkThrough(20, -17, 1200);
-    ok('the window sill stops him', st.x > 20.4, `x ${st.x.toFixed(2)} y ${st.y.toFixed(2)}`);
+    // (Walking on, he slides along the wall; a short walk keeps him within its 4 m.)
+    st = await walkThrough(20, -17, 900);
+    ok('the window sill stops him', st.minX > 20.4, `nearest x ${st.minX.toFixed(2)}, y ${st.y.toFixed(2)}`);
     await T(() => window.__testlines.set('stairWidth', 4));
     await sleep(300);
     st = await walkThrough(21.2, -27.5, 1500);
@@ -813,8 +826,9 @@ async function run(browserName) {
     await T(() => window.__testlines.set('stairWidth', 1.2));
     await T(() => window.__testlines.set('doorWidth', 0.7));
     await sleep(300);
+    // (He wedges against both jambs, his centre 0.19 m short of the wall at 0.4 m body radius.)
     st = await walkThrough(20, -11, 1200);
-    ok('a doorway narrower than his body (0.7 m) stops him; the room rebuilds with the slider', st.x > 20.3, `x ${st.x.toFixed(2)}`);
+    ok('a doorway narrower than his body (0.7 m) stops him; the room rebuilds with the slider', st.minX > 20.1, `nearest x ${st.minX.toFixed(2)}`);
     await T(() => window.__testlines.set('doorWidth', 1.0));
     await T(() => window.__testlines.place(30, 30));
     await T(() => window.__testlines.set('dummiesWalk', true));

@@ -67,6 +67,8 @@ Camera profiles (in the panel's Camera group; each sets the whole camera, framin
   path tiles, it is the old Iso camera (40 m up, 56.6 m back, lens 15°) turned 64° to the grid, with the old
   soldier 2.94 m tall on screen; it is scaled by 1.80 / 2.94 so the stand-in fills the screen as the old soldier
   did (24.5 m up, 34.7 m back), with the look-ahead scaled alike.
+- **Experimental**: the owner's tweak of Original (19 Nov): lens 13°, look-ahead at least 4.5 m, the look point
+  following at 20.5/s, the edge push easing at 2.5/s, no forward or sideways camera shift; the rest as Original.
 - **Indie**: the camera of the owner's indie game, judged by eye from one screenshot: about 50° above the feet,
   a 35° lens, straight behind, the character about a tenth of the screen's height.
 - The old game's five presets (Classic, Tactical, Iso, Iso+, Foxhole) stay, at the old game's own soldier scale.
