@@ -911,12 +911,116 @@ async function run(browserName) {
     ok('the blast drops a dummy beside it', dn[0].down, `health ${dn[0].health.toFixed(0)}`);
     ok('a dummy outside the blast radius is unhurt', dn[1].health === 100, `health ${dn[1].health.toFixed(0)}`);
     ok('a blast this close kicks the camera', peakKick > 0.05, `peak kick ${peakKick.toFixed(2)} m`);
+    // The blast plays the owner's explosion sheet (the start look) at the burst point, and fragments fly.
+    {
+      const lb = (await nades()).lastBlast;
+      const ex = await T(() => window.__testlines.explosions());
+      const bits = await T(() => window.__testlines.blastBits());
+      const q = ex.plays[0];
+      ok('the blast plays the explosion sheet at the burst point (not the plain flash), and fragments fly', ex.ready && ex.plays.length === 1 && !!lb && Math.hypot(q.at.x - lb.at.x, q.at.y - lb.at.y, q.at.z - lb.at.z) < 1e-9 && q.frame >= 0 && q.frame < 16 && bits.plain === 0 && bits.fragments > 0, `sheet ready ${ex.ready}, playing ${ex.plays.length}${q ? ` at frame ${q.frame}` : ''}, plain ${bits.plain}, fragments ${bits.fragments}`);
+    }
     // One grenade comes back after the refill time.
     await T(() => window.__testlines.set('nadeRefill', 1));
     await sleep(3500);
     nd1 = await nades();
     ok('grenades come back after the refill time', nd1.held === 3, `held ${nd1.held}`);
     await T(() => window.__testlines.set('nadeRefill', 5));
+
+    // The explosion sheet. Its own clock steps through the 16 frames over the play time, then it goes (read from the
+    // effect itself: at the check's frame rate not every frame is drawn).
+    await T(() => window.__testlines.clearExplosions());
+    await T(() => window.__testlines.set('nadeFxTime', 3));
+    await T(() => window.__testlines.place(30, 30));
+    await T(() => window.__testlines.placeDummy(0, 4, 4));
+    await T(() => window.__testlines.placeDummy(1, 6, 4));
+    await page.mouse.move(640, 300);
+    await sleep(1200);
+    {
+      await T(() => window.__testlines.explode(30, 0, 24));
+      let maxT = 0;
+      let steps = true;
+      let seen = 0;
+      const frames = new Set();
+      for (let i = 0; i < 150; i++) {
+        const e = await T(() => window.__testlines.explosions());
+        if (!e.plays.length) break;
+        const q = e.plays[0];
+        seen++;
+        frames.add(q.frame);
+        maxT = Math.max(maxT, q.t);
+        if (q.frame !== Math.floor((q.t / 3) * 16)) steps = false;
+        await sleep(100);
+      }
+      const gone = (await T(() => window.__testlines.explosions())).plays.length === 0;
+      ok('the explosion steps through its 16 frames over the play time (3 s here) by its own clock, then goes', steps && gone && seen >= 4 && frames.size >= 4 && maxT <= 3 && maxT > 2.2, `seen ${seen} times, ${frames.size} different frames, last clock ${maxT.toFixed(2)} s, gone ${gone}`);
+    }
+    await T(() => window.__testlines.set('nadeFxTime', 1));
+    // Placed for the camera: drawn 2 m nearer the camera along the line to it and shrunk to keep its size on screen,
+    // so it covers the same spot; it faces the camera.
+    {
+      await T(() => window.__testlines.explode(30, 0, 24, 5));
+      await sleep(600);
+      const q = (await T(() => window.__testlines.explosions())).plays[0];
+      const c = await T(() => window.__testlines.cam());
+      const cq = await T(() => window.__testlines.camQuat());
+      const D = Math.hypot(c.x - q.at.x, c.y - q.at.y, c.z - q.at.z);
+      const off = [q.drawnAt.x - q.at.x, q.drawnAt.y - q.at.y, q.drawnAt.z - q.at.z];
+      const toCam = [(c.x - q.at.x) / D, (c.y - q.at.y) / D, (c.z - q.at.z) / D];
+      const along = Math.hypot(...off);
+      const lined = Math.hypot(off[0] / along - toCam[0], off[1] / along - toCam[1], off[2] / along - toCam[2]);
+      const sA = await T((x, y, z) => window.__testlines.screenOf(x, y, z), q.at.x, q.at.y, q.at.z);
+      const sB = await T((x, y, z) => window.__testlines.screenOf(x, y, z), q.drawnAt.x, q.drawnAt.y, q.drawnAt.z);
+      const facing = q.quaternion.every((v, i) => Math.abs(v - cq[i]) < 1e-6);
+      ok('the explosion is drawn 2 m nearer the camera on the line to it, shrunk to its 8 m width at the burst, facing the camera', Math.abs(along - 2) < 1e-6 && lined < 1e-3 && Math.abs(q.scale - (8 * (D - 2)) / D) < 1e-3 && Math.hypot(sA.x - sB.x, sA.y - sB.y) < 0.5 && facing, `${along.toFixed(3)} m nearer, off the line ${lined.toExponential(1)}, scale ${q.scale.toFixed(3)} (want ${((8 * (D - 2)) / D).toFixed(3)}), ${Math.hypot(sA.x - sB.x, sA.y - sB.y).toFixed(2)} px apart on screen, facing ${facing}`);
+      // On screen at its peak: no chroma blue anywhere round it, and the white-hot core above the burst point.
+      const view = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
+      const x0 = Math.max(view.l, sA.x - 300);
+      const y0 = Math.max(view.t, sA.y - 360);
+      const bw = Math.min(view.l + view.w, sA.x + 300) - x0;
+      const bh = Math.min(view.t + view.h, sA.y + 60) - y0;
+      const px = await T((a, b, w, h) => window.__testlines.pixels(a, b, w, h), x0, y0, bw, bh);
+      await page.screenshot({ path: `${shots}/${browserName}-explosion.png` });
+      await T(() => window.__testlines.clearExplosions());
+      await sleep(300);
+      const px0 = await T((a, b, w, h) => window.__testlines.pixels(a, b, w, h), x0, y0, bw, bh);
+      ok('at its peak the explosion shows a white-hot core above the burst point, fire round it, and no chroma blue', px.blue === 0 && px.hot > 1500 && px.fire > 1500 && px0.hot === 0 && px.hotY < sA.y - 20 && Math.abs(px.hotX - sA.x) < 60, `in a ${bw.toFixed(0)} x ${bh.toFixed(0)} px box: blue ${px.blue}, white-hot ${px.hot} (without it ${px0.hot}), fire ${px.fire}, core middle ${px.hotX ? `${(px.hotX - sA.x).toFixed(0)}, ${(px.hotY - sA.y).toFixed(0)}` : '-'} px from the burst point`);
+    }
+    // Eight play at once; a ninth takes over the oldest.
+    await T(() => { for (let i = 0; i < 9; i++) window.__testlines.explode(30 + i, 0, 20, 3); });
+    {
+      const n = (await T(() => window.__testlines.explosions())).plays.length;
+      ok('eight explosions play at once (a ninth takes over the oldest)', n === 8, `${n} playing`);
+    }
+    await T(() => window.__testlines.clearExplosions());
+    // The plain look (the earlier stand-in) shows its flash and ring instead of the sheet; fragments can be switched off.
+    await T(() => window.__testlines.set('nadeLook', 'plain'));
+    await T(() => window.__testlines.set('nadeFrags', false));
+    await aimNade(30, 0, 24);
+    nd0 = await nades();
+    await ready();
+    await page.mouse.down({ button: 'right' });
+    await sleep(400);
+    await page.mouse.up({ button: 'right' });
+    {
+      let sawPlain = 0;
+      let sawSheet = 0;
+      let sawFrags = 0;
+      let after = 0;
+      for (let i = 0; i < 200 && after < 12; i++) {
+        const n = await nades();
+        if (n.blasts > nd0.blasts) {
+          after++;
+          const bits = await T(() => window.__testlines.blastBits());
+          sawPlain = Math.max(sawPlain, bits.plain);
+          sawFrags = Math.max(sawFrags, bits.fragments);
+          sawSheet = Math.max(sawSheet, (await T(() => window.__testlines.explosions())).plays.length);
+        }
+        await sleep(30);
+      }
+      ok('the plain look shows its flash and ring instead of the sheet; with fragments off none fly', after > 0 && sawPlain > 0 && sawSheet === 0 && sawFrags === 0, `plain ${sawPlain}, sheet ${sawSheet}, fragments ${sawFrags}`);
+    }
+    await T(() => window.__testlines.set('nadeLook', 'sheet'));
+    await T(() => window.__testlines.set('nadeFrags', true));
     await T(() => window.__testlines.set('dummiesWalk', true));
 
     // The measuring grid and the metrics room (beside the yard at x 20).
@@ -1108,6 +1212,11 @@ async function run(browserName) {
     ok('Export gives JSON with date, build and values', !!doc && !!doc.exported && doc.build.startsWith('step') && doc.values.movement.walk_speed_m_per_s === 6.3, doc ? doc.exported : 'no JSON');
     ok('Export carries the old game\'s names', !!doc && Math.abs(doc.old_game_terms['T.jumpV'] - 11) < 0.01, doc ? String(doc.old_game_terms['T.jumpV']) : '');
     ok('Export carries the Hornet', !!doc && doc.values.hornet?.top_speed_m_per_s === 12 && doc.values.hornet?.beam_damage === 120 && doc.values.hornet?.pellet_damage === 12 && doc.constants?.hornet?.gun_height_m === 1.25, doc ? JSON.stringify(doc.values.hornet).slice(0, 80) : '');
+    {
+      const g = doc?.values?.grenade;
+      const es = doc?.constants?.explosion_sheet;
+      ok('Export carries the explosion: its look, play time, width, pull and fragments, and the sheet as keyed', !!g && g.explosion_look === 'sheet' && g.explosion_play_time_s === 1 && g.explosion_width_m === 8 && g.explosion_pull_to_camera_m === 2 && g.fragments === true && !!es && es.frames === 16 && es.grid[0] === 4 && es.grid[1] === 4 && es.drawn_at_once === 8 && Math.abs(es.anchor_ground_line_from_top - 0.867) < 0.01 && es.noise_floor === 0.2 && Math.abs(es.clear_share - 0.789) < 0.01, es ? JSON.stringify({ look: g?.explosion_look, ground: es.anchor_ground_line_from_top, clear: es.clear_share, key: es.key_colour_rgb }) : 'no explosion_sheet');
+    }
     ok('Export carries the room sizes, the grid and the measured soldier', !!doc && doc.values.metrics_room?.door_width_m === 1 && doc.values.metrics_room?.door_height_m === 2.1 && doc.values.measuring_grid?.grid_thin_step_m === 0.5 && doc.derived?.metrics_room_built?.door_height_m === 2.1 && !!doc.constants?.metrics_room_layout && Math.abs(doc.measured?.soldier_height_m - 1.8) < 0.005 && doc.measured?.soldier_on_screen_px > 20, doc ? JSON.stringify(doc.measured) : '');
 
     // Values survive a reload; Reset all restores them.

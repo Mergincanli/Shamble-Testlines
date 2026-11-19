@@ -50,6 +50,27 @@ old game lost speed per frame); a grenade comes to rest only on level ground (on
 flight and the fuse run in steps of 1/120 s at either step rate, so a throw flies and goes off the same at 30 or
 60. The soldier has no health, so blasts do not hurt him.
 
+The explosion is the owner's own sprite sheet (`art/explosion-sheet.png`: 4 x 4 frames drawn on flat chroma blue),
+played as one flat picture that always faces the camera: the star flash, the white-hot fireball, the cooling
+cloud, the wisps, in reading order and in even steps (no blending between frames), over 1 s. The picture is 8 m
+wide at the burst (the fireball at its widest is about 0.7 of that). Its ground line, measured on the sheet (0.867
+of a frame from the top), sits on the burst point. It is drawn 2 m nearer the camera along the line to it, and
+shrunk to keep its size on screen, so the floor under the burst and a wall just behind it do not cut it (a wall
+nearer the camera than that no longer hides it); a block between the camera and the burst still covers it. Eight
+can play at once. The owner waived the Art texts' no-red rule for explosives. Small dark fragments still fly out,
+as LOOK_V2 asks for grenades; a switch turns them off. The earlier plain look (a flash in the sun colour and a ring
+on the floor) is kept as a choice. The play time, the width and the pull toward the camera are sliders; nothing
+here decides the game's look. The sheet is 1024 x 572 (256 x 143 a frame), so it looks soft beside the ink lines
+when drawn this big; a full-size sheet drops in: replace the file and run `node tools/key-sheet.mjs` (the grid is
+read as 4 x 4, the frame size from the picture).
+
+The blue is keyed out once, at build time, by `tools/key-sheet.mjs` (Node only), not in the browser: each pixel is
+read as a mix of a drawn colour and the measured blue (1.6, 10.6, 249.7), given the least cover that explains it,
+and the drawn colour is taken out of the mix; cover below 0.2 (the background's own noise reaches about 0.19) is
+clear, and the drawn colours are spread a few pixels into the clear area so smoothing never pulls blue into the
+edges. It writes `src/assets/explosion-keyed.png` and what it measured beside it (`explosion-keyed.json`, also in
+the Export).
+
 Aim down sights (the old game's rules): hold the right button or Q (or switch to click-to-toggle). In Firefox,
 Shift + right click always opens the browser's own menu, which no page can stop; since Shift sprints, use Q to aim
 there, and stop sprinting to throw a grenade (the menu drops the throw). While aiming
@@ -191,7 +212,8 @@ A light stand-in for the game's new art direction, from the Art texts in the gam
 stand-in (appendix A4), the yard's colours (A5 part C), the SMG (A6, with A10's corrections), the palette with its
 sun and shadow colours (A7). Flat shading in three steps, a warm sun with a cool soft shadow, and a black ink line
 round soldiers, guns and blocks. Using these texts here decides no colour, line width or shading value. The
-measuring grid (on at the start) replaces the yard's colours with blockout colours while it is on.
+measuring grid (on at the start) replaces the yard's colours with blockout colours while it is on. The grenade's
+explosion is the owner's own sprite sheet (see the grenade above), not from the Art texts.
 
 ## Build it
 
@@ -201,6 +223,7 @@ Needs Node 20.19 or newer.
 npm install
 npm run dev      # live page at the address Vite prints
 npm run build    # type check, then writes play/testlines.html
+npm run key-sheet  # keys art/explosion-sheet.png into src/assets/ (only when the sheet changes)
 ```
 
 `npm run check` opens `play/testlines.html` from disk in Chromium and in Firefox and plays a short script (walk,
@@ -215,7 +238,8 @@ and Firefox needs a display (on Linux: `xvfb-run -a npm run check`).
 - `src/movement.ts`: the movement. `src/yard.ts`: the test blocks and collision. `src/metrics.ts`: the metrics room.
 - `src/dummies.ts`: the dummies' loops. `src/push.ts`: soft pushing.
 - `src/weapons.ts`: the guns, the hitscan, the reload and the active reload. `src/fx.ts`: shot feedback.
-- `src/grenade.ts`: the grenade's flight, preview and blast. `src/nadefx.ts`: its look.
+- `src/grenade.ts`: the grenade's flight, preview and blast. `src/nadefx.ts`: its look. `src/explosion.ts`: the
+  explosion sheet's playback; `tools/key-sheet.mjs` keys `art/explosion-sheet.png` into `src/assets/`.
   `src/audio.ts`: the click. `src/hud.ts`: the readout, stamina, ammo and reload bar.
 - `src/hornet.ts`: the Hornet's driving, lean and gun. `src/hornetModel.ts`: its blockout. `src/spring.ts`: the
   exact spring (the Hornet's lean, the grenade's camera kick).

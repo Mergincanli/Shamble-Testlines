@@ -126,7 +126,9 @@ const aimPoint3 = (): AimPoint => (store.get('aimAt') === 'point' ? cursorPoint 
 const sightFrom = new THREE.Vector3();
 const sightTo = new THREE.Vector3();
 let riding = false;
-const nadeFx = new NadeFx(scene);
+const nadeFx = new NadeFx(scene, renderer);
+/** The explosion sheet's settings, from the panel. */
+const explosionLook = () => ({ time: store.num('nadeFxTime'), width: store.num('nadeFxWidth'), pull: store.num('nadeFxPull') });
 nadeFx.setFaction(store.get('faction') as Faction);
 
 // Grenades (the right button or G): carried count and refill, the throw being aimed, the grenades in flight, this
@@ -634,10 +636,10 @@ function frame(now: number) {
   // Effects age first; then this frame's shots start theirs, so they are drawn at full strength. The tracer
   // leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
   fx.update(dt, input.mouseX, input.mouseY);
-  nadeFx.update(dt);
+  nadeFx.update(dt, explosionLook());
   // Blasts of this frame: flash, ring and fragments; hit dummies flinch and show their bars; the hit marker on a hit.
   for (const b of blasts) {
-    nadeFx.blast(b.at, store.num('nadeRadius'));
+    nadeFx.blast(b.at, store.num('nadeRadius'), store.get('nadeLook') === 'plain' ? 'plain' : 'sheet', store.get('nadeFrags') !== false);
     const prox = Math.max(0, 1 - Math.hypot(cur.x - b.at.x, cur.z - b.at.z) / store.num('nadeKickRange'));
     fx.shake = Math.max(fx.shake, 0.4 * prox);
     if (b.hits.length) fx.hit(b.hits[0], b.killed, input.mouseX, input.mouseY);
@@ -829,6 +831,8 @@ function frame(now: number) {
     camera.cam.fov = store.num('camLens') + fx.fovPunch;
     camera.cam.updateProjectionMatrix();
   }
+  // The explosion pictures face the camera as it is drawn, kick and shake included.
+  nadeFx.place(camera.cam, explosionLook());
   renderer.render(scene, camera.cam);
   requestAnimationFrame(frame);
 }
@@ -948,5 +952,46 @@ requestAnimationFrame(frame);
     const v = new THREE.Vector3(x, y, z).project(camera.cam);
     const r = renderer.domElement.getBoundingClientRect();
     return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+  },
+  /** The explosion sheets playing: clock, frame, burst point, where the picture is drawn, its scale and turn. */
+  explosions: () => nadeFx.explosions.state(),
+  /** Start an explosion at a point (held at one frame when given), as a blast would. */
+  explode: (x: number, y: number, z: number, heldFrame = -1) => nadeFx.explosions.play(x, y, z, heldFrame),
+  clearExplosions: () => nadeFx.explosions.clear(),
+  /** Fragments flying and plain flashes or rings showing now. */
+  blastBits: () => nadeFx.shown(),
+  /** The drawn camera's turn (the explosion pictures copy it). */
+  camQuat: () => camera.cam.quaternion.toArray(),
+  /**
+   * Draw the frame now and read the picture in a box (CSS pixels, from the top left): how many pixels are pure
+   * chroma blue, how many are white-hot (the fireball's core) and where their middle is, and how many are fire.
+   */
+  pixels: (x0: number, y0: number, w: number, h: number) => {
+    nadeFx.place(camera.cam, explosionLook());
+    renderer.render(scene, camera.cam);
+    const gl = renderer.getContext();
+    const pr = renderer.getPixelRatio();
+    const r = renderer.domElement.getBoundingClientRect();
+    const bx = Math.round((x0 - r.left) * pr);
+    const bw = Math.max(1, Math.round(w * pr));
+    const bh = Math.max(1, Math.round(h * pr));
+    const by = Math.round(gl.drawingBufferHeight - (y0 - r.top) * pr - bh);
+    const buf = new Uint8Array(bw * bh * 4);
+    gl.readPixels(bx, by, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let blue = 0, hot = 0, fire = 0, hx = 0, hy = 0;
+    for (let j = 0; j < bh; j++) {
+      for (let i = 0; i < bw; i++) {
+        const o = (j * bw + i) * 4;
+        const R = buf[o], G = buf[o + 1], B = buf[o + 2];
+        if (B > 180 && R < 80 && G < 80) blue++;
+        if (R > 235 && G > 215 && B > 170) {
+          hot++;
+          hx += i;
+          hy += bh - 1 - j;
+        }
+        if (R > 200 && G > 60 && G < 200 && B < 110) fire++;
+      }
+    }
+    return { total: bw * bh, blue, hot, fire, hotX: hot ? x0 + hx / hot / pr : null, hotY: hot ? y0 + hy / hot / pr : null };
   },
 };

@@ -790,6 +790,32 @@ export const PARAMS: Param[] = [
   { kind: 'range', key: 'nadeKickRange', group: 'nade', label: 'Camera kick reaches', exportKey: 'camera_kick_range_m', unit: 'm', min: 1, max: 100, step: 1, start: 34, digits: 0, source: 'Old game T.camKickRange.', legacy: 'T.camKickRange' },
   { kind: 'range', key: 'nadeKickStiff', group: 'nade', label: 'Camera kick spring', exportKey: 'camera_kick_stiffness', unit: '', min: 10, max: 400, step: 5, start: 110, digits: 0, source: 'Old game T.camKickStiffness: how fast the view springs back.', legacy: 'T.camKickStiffness' },
   { kind: 'range', key: 'nadeKickDamp', group: 'nade', label: 'Camera kick damping', exportKey: 'camera_kick_damping', unit: '', min: 0, max: 60, step: 0.5, start: 12, digits: 1, source: 'Old game T.camKickDamping: how quickly the swing dies out.', legacy: 'T.camKickDamping' },
+  {
+    kind: 'choice',
+    key: 'nadeLook',
+    group: 'nade',
+    label: 'Explosion look',
+    exportKey: 'explosion_look',
+    options: [
+      { value: 'sheet', label: "The owner's sprite sheet (comic fireball)" },
+      { value: 'plain', label: 'Plain (a flash and a ring on the floor)' },
+    ],
+    start: 'sheet',
+    source:
+      "The owner's own explosion sheet (art/explosion-sheet.png, 4 x 4 frames), played as one flat picture facing the camera; the plain look is the sandbox's earlier stand-in. The owner waived the Art texts' no-red rule for explosives. Nothing here decides the game's look.",
+  },
+  { kind: 'range', key: 'nadeFxTime', group: 'nade', label: 'Explosion plays for', exportKey: 'explosion_play_time_s', unit: 's', min: 0.2, max: 4, step: 0.05, start: 1, digits: 2, source: "The sandbox's pick: the sheet's 16 frames over this time (1 s is 16 frames a second), in even steps." },
+  { kind: 'range', key: 'nadeFxWidth', group: 'nade', label: 'Explosion picture width', exportKey: 'explosion_width_m', unit: 'm', min: 1, max: 30, step: 0.5, start: 8, digits: 1, source: "The sandbox's pick: the width of one frame of the sheet at the burst (the fireball at its widest is about 0.7 of it)." },
+  { kind: 'range', key: 'nadeFxPull', group: 'nade', label: 'Explosion drawn nearer the camera by', exportKey: 'explosion_pull_to_camera_m', unit: 'm', min: 0, max: 6, step: 0.1, start: 2, digits: 1, source: "The sandbox's pick: the flat picture is drawn this much nearer the camera (and shrunk to keep its size on screen), so the floor under the burst and a wall just behind it do not cut it; a wall nearer the camera than this no longer hides it." },
+  {
+    kind: 'toggle',
+    key: 'nadeFrags',
+    group: 'nade',
+    label: 'Fragments fly out',
+    exportKey: 'fragments',
+    start: true,
+    source: 'LOOK_V2 (sections 3 and 7): grenades show fragments flying, not just smoke and fire. Small dark pieces, in both looks.',
+  },
 
   // The Hornet (the owner's description; every number the sandbox's pick)
   {

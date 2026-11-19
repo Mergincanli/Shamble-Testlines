@@ -1,15 +1,16 @@
-// The grenade's look, kept plain and in the Art texts' colours: the grenade itself in the Dark colour, the throw
-// preview in the faction's Top colour (dots along the whole flight, a bigger dot at each bounce, a small ring where
-// it goes off and a thin ring of the blast's reach on the floor there), and the blast: a short
-// flash in the sun colour, a ring on the ground and fragments flying out (LOOK_V2: fragmentation first). Nothing
-// here is the old game's look.
+// The grenade's look: the grenade itself in the Dark colour, the throw preview in the faction's Top colour (dots
+// along the whole flight, a bigger dot at each bounce, a small ring where it goes off and a thin ring of the blast's
+// reach on the floor there), and the blast: the owner's explosion sheet (src/explosion.ts) or, as the plain look, a
+// short flash in the sun colour with a ring on the ground; in both, fragments flying out (LOOK_V2: fragmentation
+// first). Nothing here is the old game's look.
 import * as THREE from 'three';
 import { PAL, toon, UNIFORM, type Faction } from './look';
 import { GRENADE_R, type Blast, type Flight, type Grenade } from './grenade';
 import { floorBelow } from './yard';
+import { Explosions, type ExplosionLook } from './explosion';
 
 const FRAGMENTS = 22;
-/** Blasts drawn at once (each with its flash and ring); a fourth reuses the oldest. */
+/** Plain blasts drawn at once (each with its flash and ring); a fourth reuses the oldest. */
 const BLASTS = 3;
 
 interface Fragment {
@@ -41,9 +42,12 @@ export class NadeFx {
   private nextBlast = 0;
   private frags: Fragment[] = [];
   private nextFrag = 0;
+  /** The owner's explosion sheet. */
+  readonly explosions: Explosions;
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.scene = scene;
+    this.explosions = new Explosions(scene, renderer);
     this.dotPos = new Float32Array(400 * 3);
     const dg = new THREE.BufferGeometry();
     dg.setAttribute('position', new THREE.BufferAttribute(this.dotPos, 3));
@@ -171,8 +175,16 @@ export class NadeFx {
     this.reach.visible = reach > 0.05;
   }
 
-  /** A blast: flash, a ring on the floor under it, fragments. */
-  blast(b: Blast, radius: number) {
+  /**
+   * A blast: the owner's explosion sheet at the burst point, or (the plain look) a flash with a ring on the floor
+   * under it; fragments in either, when they are on.
+   */
+  blast(b: Blast, radius: number, look: 'sheet' | 'plain', fragments: boolean) {
+    if (fragments) this.fragments(b);
+    if (look === 'sheet') {
+      this.explosions.play(b.x, b.y, b.z);
+      return;
+    }
     const fx = this.blasts[this.nextBlast++ % BLASTS];
     fx.flash.position.set(b.x, b.y, b.z);
     fx.flash.scale.setScalar(0.9);
@@ -182,6 +194,9 @@ export class NadeFx {
     fx.wave.visible = true;
     fx.radius = radius;
     fx.life = 0.3;
+  }
+
+  private fragments(b: Blast) {
     for (let i = 0; i < FRAGMENTS; i++) {
       const f = this.frags[this.nextFrag++ % this.frags.length];
       const a = Math.random() * Math.PI * 2;
@@ -195,7 +210,9 @@ export class NadeFx {
     }
   }
 
-  update(dt: number) {
+  /** Age the blasts and fragments (the explosion sheets step through their frames). */
+  update(dt: number, look: ExplosionLook) {
+    this.explosions.update(dt, look);
     for (const b of this.blasts) {
       if (b.life <= 0) continue;
       b.life -= dt;
@@ -226,5 +243,18 @@ export class NadeFx {
       f.mesh.rotation.y += dt * 7;
       if (f.life <= 0) f.mesh.visible = false;
     }
+  }
+
+  /** For the test hook: fragments flying, and plain flashes and rings showing. */
+  shown() {
+    return {
+      fragments: this.frags.filter((f) => f.life > 0).length,
+      plain: this.blasts.filter((b) => b.life > 0).length,
+    };
+  }
+
+  /** Place the explosion pictures for the camera as it is drawn this frame. */
+  place(cam: THREE.Camera, look: ExplosionLook) {
+    this.explosions.place(cam, look);
   }
 }

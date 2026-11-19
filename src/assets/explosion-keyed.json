@@ -1,0 +1,44 @@
+{
+  "source": "art/explosion-sheet.png",
+  "picture_px": [
+    1024,
+    572
+  ],
+  "grid": [
+    4,
+    4
+  ],
+  "cell_px": [
+    256,
+    143
+  ],
+  "frames": 16,
+  "key_colour_rgb": [
+    1.6,
+    10.6,
+    249.7
+  ],
+  "noise_floor": 0.2,
+  "colour_bleed_px": 4,
+  "clear_share": 0.789,
+  "anchor_ground_line_from_top": 0.867,
+  "anchor_middle_from_left": 0.501,
+  "frame_solid_share": [
+    0.009,
+    0.065,
+    0.243,
+    0.339,
+    0.381,
+    0.485,
+    0.434,
+    0.336,
+    0.19,
+    0.116,
+    0.099,
+    0.023,
+    0.001,
+    0,
+    0,
+    0
+  ]
+}

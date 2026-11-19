@@ -4,9 +4,10 @@ import { GRID_COLOURS, GRID_LOOK } from './look';
 import { ROOM_LAYOUT } from './metrics';
 import { HORNET } from './hornet';
 import { AIM_DEAD_ZONE, HEIGHT_GRACE, HIT_HEIGHT, HIT_RADIUS, SHOT_HEIGHT } from './weapons';
+import { EXPLOSION_POOL, EXPLOSION_SHEET } from './explosion';
 import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
-export const BUILD = { step: 'C', name: 'Sight line and aiming at height' };
+export const BUILD = { step: 'D', name: "Comic explosion from the owner's sprite sheet" };
 
 /** Measured at the last frame (set by the main loop): the soldier's height and his size on screen. */
 export const MEASURED = { soldierHeightM: 0, soldierOnScreenPx: 0, viewHeightPx: 0 };
@@ -136,6 +137,11 @@ export function buildExport(store: Store): string {
         level_shot_height_grace_m: HEIGHT_GRACE,
         aim_dead_zone_m: AIM_DEAD_ZONE,
         note: 'Shots leave from the gun height above the feet; a dummy is hit inside the upright cylinder from its feet. Level shots still count within the grace above its head or below its feet. Aiming at the point, an aim point closer than the dead zone (on the ground) keeps the aim the soldier had.',
+      },
+      explosion_sheet: {
+        ...EXPLOSION_SHEET,
+        drawn_at_once: EXPLOSION_POOL,
+        note: "The owner's sheet, keyed at build time by tools/key-sheet.mjs: the key colour is the measured mean of the blue background; cover below the noise floor is clear. The anchor (ground line from the top, middle from the left, as shares of a frame) is measured on the sheet and sits on the burst point. Frames play in reading order, in even steps.",
       },
     },
     measured: {
