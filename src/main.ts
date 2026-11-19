@@ -8,6 +8,8 @@ import { makeDummies, otherFactions, steerDummy } from './dummies';
 import { Fx } from './fx';
 import { aimedThrow, blastDamage, newGrenade, previewFlight, spent, stepGrenade, throwStart, type Blast, type Flight, type Grenade } from './grenade';
 import { NadeFx } from './nadefx';
+import { clearHornetGun, HORNET, newHornet, stepHornet } from './hornet';
+import { HornetModel } from './hornetModel';
 import type { GunId } from './guns';
 import { Hud } from './hud';
 import { AIM_KEY, Input } from './input';
@@ -30,7 +32,7 @@ import {
   type ShotEvent,
   type Target,
 } from './weapons';
-import { artGrid, buildYard, rayWorld, setBodyHeight } from './yard';
+import { artGrid, buildYard, rayWorld, resolveWalls, setBodyHeight, surfaceAt } from './yard';
 
 const store = new Store();
 
@@ -98,6 +100,10 @@ function dressDummies() {
 }
 
 const fx = new Fx(scene, dummies.length);
+// The Hornet, waiting near the start; E gets on and off when the soldier is within reach.
+const hornet = newHornet();
+const hornetModel = new HornetModel(scene);
+let riding = false;
 const nadeFx = new NadeFx(scene);
 nadeFx.setFaction(store.get('faction') as Faction);
 
@@ -192,8 +198,9 @@ let lastAdsMode = store.get('adsMode');
 let lastRightButton = store.get('rightButton');
 input.onFocusLoss(() => {
   aiming = false;
-  // A throw being aimed is dropped, not thrown, when the page loses focus.
+  // A throw being aimed is dropped, not thrown, when the page loses focus; so is the Hornet's charge.
   endNadeAim();
+  clearHornetGun(hornet);
 });
 input.onForcedMenu(() => endNadeAim());
 
@@ -265,20 +272,49 @@ function simStep(dt: number) {
   // The right button's press and let-go are read once a step and go to the grenade or to aiming down sights.
   const rightPress = input.takeRightPress();
   const rightRelease = input.takeRightRelease();
-  readMoveInput(rightPress);
-  nadeInput(rightPress, rightRelease);
-  stepMover(cur, moveInput, dt, store);
-  // While a throw is aimed the gun is held: the left button does nothing.
-  const firePress = input.takeFirePress();
-  stepWeapons(
-    W,
-    cur,
-    { held: input.fireHeld() && !nadeAiming, pressed: firePress && !nadeAiming, reload: input.takePress('KeyR'), aimYaw, ads: aiming },
-    targets,
-    dt,
-    store,
-    events,
-  );
+  if (input.takePress('KeyE')) toggleRide();
+  if (riding) {
+    // On the Hornet: W/S throttle, A/D turn, the left button its gun; the soldier's own keys wait.
+    aiming = false;
+    for (const k of ['KeyG', AIM_KEY, 'KeyR', 'Space']) input.takePress(k);
+    input.takeRelease('KeyG');
+    stepHornet(
+      hornet,
+      {
+        throttle: (input.down('KeyW') ? 1 : 0) - (input.down('KeyS') ? 1 : 0),
+        steer: (input.down('KeyA') ? 1 : 0) - (input.down('KeyD') ? 1 : 0),
+        firePressed: input.takeFirePress(),
+        fireReleased: input.takeFireRelease(),
+        fireHeld: input.fireHeld(),
+        aimYaw,
+      },
+      dt,
+      store,
+      targets,
+      events,
+    );
+    // The player's body is the Hornet while he rides it (the camera, the pushing and the readouts follow it).
+    const b = hornet.body;
+    Object.assign(cur, { x: b.x, y: b.y, z: b.z, vx: b.vx, vz: b.vz, vy: b.vy, grounded: b.grounded, sprinting: false });
+  } else {
+    readMoveInput(rightPress);
+    nadeInput(rightPress, rightRelease);
+    stepMover(cur, moveInput, dt, store);
+    // While a throw is aimed the gun is held: the left button does nothing.
+    const firePress = input.takeFirePress();
+    input.takeFireRelease();
+    stepWeapons(
+      W,
+      cur,
+      { held: input.fireHeld() && !nadeAiming, pressed: firePress && !nadeAiming, reload: input.takePress('KeyR'), aimYaw, ads: aiming },
+      targets,
+      dt,
+      store,
+      events,
+    );
+    // The Hornet left standing rolls to a stop and its lean settles.
+    stepHornet(hornet, { throttle: 0, steer: 0, firePressed: false, fireReleased: false, fireHeld: false, aimYaw: hornet.turret }, dt, store, targets, events);
+  }
   const walking = store.get('dummiesWalk') === true;
   dummies.forEach((d, i) => {
     const t = targets[i];
@@ -304,9 +340,65 @@ function simStep(dt: number) {
     dt,
     store.num('bodyRadius'),
     store.num('stepUp'),
+    // The ridden Hornet pushes the dummies aside but is not pushed.
+    [riding],
   );
   stepNades(dt);
   if (cur.y > peakY) peakY = cur.y;
+}
+
+/** True if the soldier stands within reach of the Hornet (and at about its height). */
+function nearHornet(): boolean {
+  return Math.hypot(cur.x - hornet.body.x, cur.z - hornet.body.z) <= store.num('hornetMountRange') && Math.abs(cur.y - hornet.body.y) < 1;
+}
+
+/**
+ * E: get on the Hornet within reach, or off it, onto a free spot beside it (its right, left, back or front). Either
+ * way the soldier's and the Hornet's held buttons, charge and aims are let go.
+ */
+function toggleRide() {
+  input.takeFirePress();
+  input.takeFireRelease();
+  clearHornetGun(hornet);
+  W.queued = false;
+  aiming = false;
+  endNadeAim();
+  if (!riding) {
+    if (!nearHornet() || !cur.grounded) return;
+    riding = true;
+    hornetModel.seat.add(soldier.root);
+    soldier.root.position.set(0, 0, 0);
+    soldier.root.rotation.set(0, 0, 0);
+    soldier.setGunVisible(false);
+    const b = hornet.body;
+    Object.assign(cur, { x: b.x, y: b.y, z: b.z, vx: 0, vz: 0, vy: 0, grounded: true, sprinting: false, pullX: 0, pullZ: 0 });
+    prev = { ...cur };
+    return;
+  }
+  riding = false;
+  const r = store.num('bodyRadius');
+  const d = store.num('hornetRadius') + r + 0.15;
+  const h = hornet.heading;
+  const b = hornet.body;
+  let spot = { x: b.x, z: b.z };
+  for (const [ox, oz] of [
+    [-Math.cos(h), Math.sin(h)],
+    [Math.cos(h), -Math.sin(h)],
+    [-Math.sin(h), -Math.cos(h)],
+    [Math.sin(h), Math.cos(h)],
+  ]) {
+    const x = b.x + ox * d;
+    const z = b.z + oz * d;
+    const [rx, rz] = resolveWalls(x, z, r, b.y, store.num('stepUp'));
+    if (Math.hypot(rx - x, rz - z) < 1e-6 && Math.abs(surfaceAt(x, z, 0.15, b.y + 0.3, store.num('stepUp')) - b.y) < store.num('stepUp')) {
+      spot = { x, z };
+      break;
+    }
+  }
+  Object.assign(cur, newMover(spot.x, spot.z), { y: surfaceAt(spot.x, spot.z, 0.15, b.y + 0.3, store.num('stepUp')) });
+  prev = { ...cur };
+  scene.add(soldier.root);
+  soldier.setGunVisible(true);
 }
 
 /** Where a throw starts: the soldier's middle, at throwing height. */
@@ -440,7 +532,7 @@ function frame(now: number) {
   camera.cam.updateMatrixWorld();
   ndc.set(input.ndcX, input.ndcY);
   raycaster.setFromCamera(ndc, camera.cam);
-  aimPlane.constant = -(renderPos.y + 1.36);
+  aimPlane.constant = -(renderPos.y + (riding ? HORNET.gun_height_m : 1.36));
   if (raycaster.ray.intersectPlane(aimPlane, aimPoint)) {
     const dx = aimPoint.x - renderPos.x;
     const dz = aimPoint.z - renderPos.z;
@@ -449,8 +541,10 @@ function frame(now: number) {
   // The soldier's size on screen, from the steady camera: feet to the top of his head, in CSS pixels.
   {
     const r = renderer.domElement.getBoundingClientRect();
-    const a = measureA.set(renderPos.x, renderPos.y, renderPos.z).project(camera.cam);
-    const b = measureB.set(renderPos.x, renderPos.y + soldierHeight, renderPos.z).project(camera.cam);
+    // (On the Hornet he stands on its footplates.)
+    const feetY = renderPos.y + (riding ? HORNET.footplate_height_m : 0);
+    const a = measureA.set(renderPos.x, feetY, renderPos.z).project(camera.cam);
+    const b = measureB.set(renderPos.x, feetY + soldierHeight, renderPos.z).project(camera.cam);
     const px = Math.hypot(((b.x - a.x) / 2) * r.width, ((b.y - a.y) / 2) * r.height);
     MEASURED.soldierHeightM = soldierHeight;
     MEASURED.soldierOnScreenPx = px;
@@ -502,19 +596,24 @@ function frame(now: number) {
     nadeFx.preview(null, 0);
   }
   if (events.length) {
-    soldier.muzzleWorld(muzzle);
+    hornetModel.update(hornet, alpha);
     for (const e of events) {
-      // One shot: one flash, one kick, one click, and one hit marker however many pellets hit.
+      // One shot: one flash, one kick, one click, and one hit marker however many pellets hit. The Hornet's
+      // shots start at its gun as drawn (its kick is its own), and its full charge draws a beam.
+      const hornetShot = e.gun === 'hornet';
+      if (hornetShot) hornetModel.muzzleWorld(muzzle);
+      else soldier.muzzleWorld(muzzle);
       fx.shot(
         muzzle,
         e.rays.map((r, i) => ({
           to: (rayEnds[i] ??= new THREE.Vector3()).set(r.ex, r.ey, r.ez),
           hitSomething: r.hit >= 0 || r.hitBlock,
-          tracer: Math.hypot(r.ex - e.ox, r.ez - e.oz) > 1,
+          tracer: !e.beam && Math.hypot(r.ex - e.ox, r.ez - e.oz) > 1,
         })),
-        gunValue(store, e.gun, 'Recoil'),
+        hornetShot ? (e.beam ? HORNET.camera_kick_beam : HORNET.camera_kick_pellets) : gunValue(store, e.gun as GunId, 'Recoil'),
         store.num('camLens'),
       );
+      if (e.beam) fx.beam(muzzle, rayEnds[0]);
       click();
       if (e.hits.length) fx.hit(e.hits[0], e.killed, input.mouseX, input.mouseY);
       for (const r of e.rays) {
@@ -544,9 +643,17 @@ function frame(now: number) {
   sprintBlend =
     sprintTarget > sprintBlend ? Math.min(1, sprintBlend + dt / 0.15) : Math.max(0, sprintBlend - dt / back);
 
-  soldier.root.position.copy(renderPos);
-  soldier.root.rotation.y = aimYaw;
-  soldier.setPose(sprintBlend, fx.gunKick);
+  hornetModel.update(hornet, alpha);
+  if (riding) {
+    // On the footplates, facing the way the Hornet faces, leaning with it.
+    soldier.root.position.set(0, 0, 0);
+    soldier.root.rotation.set(0, 0, 0);
+    soldier.setPose(0, 0);
+  } else {
+    soldier.root.position.copy(renderPos);
+    soldier.root.rotation.y = aimYaw;
+    soldier.setPose(sprintBlend, fx.gunKick);
+  }
   dummies.forEach((d, i) => {
     const s = dummySoldiers[i];
     const t = targets[i];
@@ -599,7 +706,9 @@ function frame(now: number) {
   );
   const g = W.guns[W.gun];
   const winFrom = gunValue(store, W.gun, 'ActiveStart') / 100;
-  hud.updateGun(
+  hud.hint(!riding && nearHornet() ? 'E: ride the Hornet' : '');
+  if (riding) hud.updateHornet(hornet.speed, hornet.charging ? hornet.charge : -1, hornet.cooldown <= 0 && hornet.weak <= 0, hornet.weak > 0);
+  else hud.updateGun(
     dt,
     GUN_KEYS[W.gun].name,
     g.ammo,
@@ -682,6 +791,30 @@ requestAnimationFrame(frame);
     peakY = y;
   },
   audio: () => ({ state: audioState(), clicks: clicksPlayed }),
+  /** The Hornet's state (for the scripted checks). */
+  hornet: () => ({
+    riding,
+    x: hornet.body.x,
+    y: hornet.body.y,
+    z: hornet.body.z,
+    heading: hornet.heading,
+    speed: hornet.speed,
+    pitch: (hornet.pitch * 180) / Math.PI,
+    roll: (hornet.roll * 180) / Math.PI,
+    charging: hornet.charging,
+    charge: hornet.charge,
+    cooldown: hornet.cooldown,
+    weak: hornet.weak,
+    shots: hornet.shots,
+    beams: hornet.beams,
+    leanSinceBeam: (hornet.leanSinceBeam * 180) / Math.PI,
+    turret: hornet.turret,
+  }),
+  /** Put the Hornet somewhere, at rest, facing a heading in degrees (for the scripted checks only). */
+  placeHornet: (x: number, z: number, headingDeg = 180) => {
+    Object.assign(hornet, newHornet(x, z, (headingDeg * Math.PI) / 180));
+    if (riding) Object.assign(cur, { x, z, y: 0 });
+  },
   /** The soldier's measured height and size on screen at the last frame. */
   measured: () => ({ ...MEASURED }),
   aiming: () => aiming,

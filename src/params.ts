@@ -15,6 +15,7 @@ export type GroupId =
   | 'rifle'
   | 'shotgun'
   | 'nade'
+  | 'hornet'
   | 'ads'
   | 'camera'
   | 'framing'
@@ -33,6 +34,7 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'rifle', title: 'Rifle (key 2)', open: false, exportName: 'rifle' },
   { id: 'shotgun', title: 'Shotgun (key 3)', open: false, exportName: 'shotgun' },
   { id: 'nade', title: 'Grenade (hold the right button or G, let go to throw)', open: true, exportName: 'grenade' },
+  { id: 'hornet', title: 'Hornet (E rides it: W/S drive, A/D turn; left button: tap for pellets, hold for the beam)', open: true, exportName: 'hornet' },
   { id: 'ads', title: 'Aim down sights (Q)', open: true, exportName: 'aim_down_sights' },
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
@@ -788,6 +790,121 @@ export const PARAMS: Param[] = [
   { kind: 'range', key: 'nadeKickRange', group: 'nade', label: 'Camera kick reaches', exportKey: 'camera_kick_range_m', unit: 'm', min: 1, max: 100, step: 1, start: 34, digits: 0, source: 'Old game T.camKickRange.', legacy: 'T.camKickRange' },
   { kind: 'range', key: 'nadeKickStiff', group: 'nade', label: 'Camera kick spring', exportKey: 'camera_kick_stiffness', unit: '', min: 10, max: 400, step: 5, start: 110, digits: 0, source: 'Old game T.camKickStiffness: how fast the view springs back.', legacy: 'T.camKickStiffness' },
   { kind: 'range', key: 'nadeKickDamp', group: 'nade', label: 'Camera kick damping', exportKey: 'camera_kick_damping', unit: '', min: 0, max: 60, step: 0.5, start: 12, digits: 1, source: 'Old game T.camKickDamping: how quickly the swing dies out.', legacy: 'T.camKickDamping' },
+
+  // The Hornet (the owner's description; every number the sandbox's pick)
+  {
+    kind: 'range', key: 'hornetTopSpeed', group: 'hornet', label: 'Top speed', exportKey: 'top_speed_m_per_s', unit: 'm/s', min: 2, max: 40, step: 0.5, start: 12, digits: 1,
+    source: "The sandbox's pick: faster than a sprint (9 m/s), an early light vehicle. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetAccel', group: 'hornet', label: 'Acceleration', exportKey: 'acceleration_m_per_s2', unit: 'm/s²', min: 1, max: 40, step: 0.5, start: 7, digits: 1,
+    note: (v) => `${((v.hornetTopSpeed as number) / (v.hornetAccel as number)).toFixed(1)} s to top speed`,
+    source: "The sandbox's pick: about 1.7 s to top speed. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetBrake', group: 'hornet', label: 'Braking', exportKey: 'braking_m_per_s2', unit: 'm/s²', min: 1, max: 60, step: 0.5, start: 14, digits: 1,
+    note: (v) => `${(((v.hornetTopSpeed as number) ** 2) / (2 * (v.hornetBrake as number))).toFixed(1)} m to stop from top speed`,
+    source: "The sandbox's pick: stops from top speed in under a second. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetReverse', group: 'hornet', label: 'Reverse speed', exportKey: 'reverse_speed_m_per_s', unit: 'm/s', min: 0, max: 20, step: 0.5, start: 4, digits: 1,
+    source: "The sandbox's pick: a slow reverse. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetCoast', group: 'hornet', label: 'Slowing when coasting', exportKey: 'coast_slowing_m_per_s2', unit: 'm/s²', min: 0, max: 20, step: 0.5, start: 2.5, digits: 1,
+    source: "The sandbox's pick: it rolls on a while with no throttle. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetTurn', group: 'hornet', label: 'Turning', exportKey: 'turn_rate_deg_per_s', unit: '°/s', min: 20, max: 400, step: 5, start: 140, digits: 0,
+    note: (v) => `a full turn in ${(360 / (v.hornetTurn as number)).toFixed(1)} s`,
+    source: "The sandbox's pick: a one-wheeler turns on the spot. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetRadius', group: 'hornet', label: 'Body radius (walls)', exportKey: 'body_radius_m', unit: 'm', min: 0.2, max: 1.2, step: 0.01, start: 0.45, digits: 2,
+    note: (v) => (2 * (v.hornetRadius as number) < (v.doorWidth as number) ? 'fits the doorway' : 'too wide for the doorway'),
+    source: "The sandbox's pick: narrow enough for the 1.0 m doorway. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetStepUp', group: 'hornet', label: 'Step-up (curbs, the stair)', exportKey: 'step_up_m', unit: 'm', min: 0, max: 0.6, step: 0.01, start: 0.3, digits: 2,
+    source: "The sandbox's pick: it rolls over a curb and up the stair, not up the 0.55 m step. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetLeanFwd', group: 'hornet', label: 'Lean forward when speeding up', exportKey: 'lean_forward_deg', unit: '°', min: 0, max: 45, step: 0.5, start: 12, digits: 1,
+    note: () => 'at full throttle; it swings past this with the wobble, then settles to it',
+    source: "The sandbox's pick: the owner's: it first leans forward. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetLeanBack', group: 'hornet', label: 'Lean back when braking or reversing', exportKey: 'lean_back_deg', unit: '°', min: 0, max: 60, step: 0.5, start: 22, digits: 1,
+    note: () => 'at full braking; it swings past this (as if it will fall), then settles to it',
+    source: "The sandbox's pick: the owner's: it leans back as if it is going to fall. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetLeanRecover', group: 'hornet', label: 'Lean recovery speed', exportKey: 'lean_recovery_per_s', unit: '/s', min: 1, max: 30, step: 0.5, start: 7, digits: 1,
+    source: "The sandbox's pick: the spring that rights it. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetLeanSettle', group: 'hornet', label: 'Lean settling (1 = no wobble)', exportKey: 'lean_settle', unit: '', min: 0.05, max: 1.5, step: 0.05, start: 0.35, digits: 2,
+    source: "The sandbox's pick: a little wobble before it steadies. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetCharge', group: 'hornet', label: 'Charge time', exportKey: 'charge_time_s', unit: 's', min: 0.1, max: 4, step: 0.05, start: 1.0, digits: 2,
+    source: "The sandbox's pick: hold this long for the beam. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetGap', group: 'hornet', label: 'Time between shots', exportKey: 'fire_interval_s', unit: 's', min: 0.05, max: 3, step: 0.05, start: 0.45, digits: 2,
+    source: "The sandbox's pick. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetPellets', group: 'hornet', label: 'Pellets', exportKey: 'pellets', unit: '', min: 1, max: 20, step: 1, start: 8, digits: 0,
+    source: "The sandbox's pick: like the shotgun's 8. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetSpreadNone', group: 'hornet', label: 'Spread without charge', exportKey: 'spread_no_charge_rad', unit: 'rad', min: 0, max: 0.6, step: 0.005, start: 0.14, digits: 3,
+    note: (v) => `±${((((v.hornetSpreadNone as number) * 180) / Math.PI)).toFixed(1)}° to each side`,
+    source: "The sandbox's pick: a tap scatters wide. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetSpreadFull', group: 'hornet', label: 'Spread at full charge (the slug)', exportKey: 'spread_full_charge_rad', unit: 'rad', min: 0, max: 0.3, step: 0.005, start: 0, digits: 3,
+    note: (v) => `±${((((v.hornetSpreadFull as number) * 180) / Math.PI)).toFixed(1)}° to each side`,
+    source: "The sandbox's pick: the pellets close into one slug. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetPelletDamage', group: 'hornet', label: 'Damage per pellet', exportKey: 'pellet_damage', unit: '', min: 0, max: 200, step: 1, start: 12, digits: 0,
+    note: (v) => `${(v.hornetPellets as number) * (v.hornetPelletDamage as number)} if all hit`,
+    source: "The sandbox's pick: pellets against infantry is an idea, not settled. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetPelletRange', group: 'hornet', label: 'Pellet range', exportKey: 'pellet_range_m', unit: 'm', min: 2, max: 80, step: 1, start: 22, digits: 0,
+    source: "The sandbox's pick. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetBeamDamage', group: 'hornet', label: 'Beam damage (full charge)', exportKey: 'beam_damage', unit: '', min: 0, max: 1000, step: 5, start: 120, digits: 0,
+    source: "The sandbox's pick: the beam against vehicles is an idea, not settled. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetBeamRange', group: 'hornet', label: 'Beam range', exportKey: 'beam_range_m', unit: 'm', min: 2, max: 120, step: 1, start: 40, digits: 0,
+    source: "The sandbox's pick. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetKickPitch', group: 'hornet', label: 'Full-charge shot: tips back', exportKey: 'kick_pitch_deg', unit: '°', min: 0, max: 80, step: 1, start: 35, digits: 0,
+    source: "The sandbox's pick: the owner's: it pitches back as if it is going to fall over (away from the shot). Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetKickSlide', group: 'hornet', label: 'Full-charge shot: slides back', exportKey: 'kick_slide_m', unit: 'm', min: 0, max: 1, step: 0.01, start: 0.06, digits: 2,
+    source: "The sandbox's pick: the owner's: a few centimetres only, away from the shot. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetWeakTime', group: 'hornet', label: 'Weak moment after a full-charge shot', exportKey: 'weak_time_s', unit: 's', min: 0, max: 4, step: 0.05, start: 0.9, digits: 2,
+    source: "The sandbox's pick: the owner's: it cannot fire and steers badly while it rights itself. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetWeakSteer', group: 'hornet', label: 'Steering during the weak moment', exportKey: 'weak_steering', unit: '×', min: 0, max: 1, step: 0.05, start: 0.3, digits: 2,
+    source: "The sandbox's pick. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'hornetMountRange', group: 'hornet', label: 'Reach to get on (E)', exportKey: 'mount_range_m', unit: 'm', min: 0.5, max: 5, step: 0.1, start: 2, digits: 1,
+    source: "The sandbox's pick. Not a decision.",
+  },
 
   // Aim down sights
   {

@@ -10,9 +10,9 @@ with no install, no server and no internet.
 
 Keys: WASD move (away from the camera on W), Shift sprint, Space jump, the mouse aims, the left button fires, hold
 the right button (or G) to aim a grenade at the cursor and let go to throw, Q aims down sights, R reloads, hold the
-middle button to turn the camera, 1, 2 and 3 change guns (SMG, rifle, shotgun), the backquote key (`) hides the
-panel. The Grenade group's "Right button" switch gives the right button back to aiming down sights, as in the old
-game (G still throws).
+middle button to turn the camera, 1, 2 and 3 change guns (SMG, rifle, shotgun), E gets on and off the Hornet, the
+backquote key (`) hides the panel. The Grenade group's "Right button" switch gives the right button back to aiming
+down sights, as in the old game (G still throws).
 
 The shotgun (key 3, the Peacekeeper's) starts from the old game's Bagpipe: 8 pellets of 11 damage, 0.85 s between
 shots, 2 shells, a 2.6 s reload, 34 m range, spread 0.1 (0.05 aiming). One pull is one round, one click, one view
@@ -56,6 +56,31 @@ old Foxhole style) or Still. Two differences from the old game: Flatten tips tow
 the resting view, so the view settles instead of creeping on while the cursor is still; and it never tips so far
 that the soldier's own feet leave the screen (the old game's 28.5° floor suited its own Iso+ camera). The camera profiles carry
 the reaction and the Slide reach (scaled like the look-ahead).
+
+The Hornet (the owner's description; no Art text or old number covers it, so every number is the sandbox's pick,
+not a decision): an early Empire vehicle on one wheel with a gun above it, waiting near the start at (6, 1). Walk
+up to it (a hint shows within 2 m) and press E to ride it; E again gets off, onto a free spot beside it. It is not
+solid while it stands (the soldier walks through it). Riding: W drives forward, S brakes and then backs up, A and D
+turn it on the spot or on the move (12 m/s top speed, 7 m/s² to get there, 14 m/s² braking, 4 m/s backwards, 140°
+a second). It drives on the soldiers' own ground rules with its own body (0.45 m radius, so it fits the 1.0 m
+doorway; 0.3 m step-up, so it rolls over a curb and up the stair and the ramp but not the 0.55 m step; the rider on
+its footplates stands 2.05 m, just under the 2.1 m lintel), in sub-steps no longer than half its radius, so no
+speed carries it through a wall. It pushes the dummies aside and is not pushed. The lean is in the picture only:
+the body pitches forward as it speeds up (12° at full throttle) and back as it brakes or starts backwards (22° at
+full braking); a spring rights it (recovery 7/s, settling 0.35), so it swings past the lean (as if it will fall)
+and settles. Nothing the Hornet does reads the lean: where it goes and where its shots land are the same with any
+lean setting (a scripted check proves it). The gun turns to the cursor and fires level from 1.25 m. A tap of the
+left button fires 8 pellets (12 damage each, 22 m, spread ±8° without charge); holding it charges (1 s), and the
+pellets close in as it charges; let go at full charge and it fires one slug as a short purple beam (120 damage,
+40 m, spread at full charge 0). A full-charge shot tips the body away from the shot (35°, the tip is in the
+picture only; aimed behind, it tips forward) and slides the Hornet 6 cm away from the shot, the one movement a shot
+makes (the same 6 cm at either step rate; a wall stops it); then comes a weak moment (0.9 s): it cannot fire and
+turns at 0.3 of its rate. 0.45 s between shots. A button held through the gap or the weak moment starts charging as
+soon as the gun is ready; a let-go before then does nothing. Pellets against infantry and the beam against
+vehicles is an idea, not settled: the two damages are separate sliders. Getting on or off, or the page losing
+focus, drops a charge. While riding, the soldier's own gun, grenades and aiming down sights wait; the size readout
+measures him on the footplates. Its look is a blockout in the Empire's colours with the ink line, and is not
+judged here.
 
 Active reload (simplified, as Slice 1 has it): during a reload, tap R while the bar is inside the gold window and
 the reload ends at once. A miss is a normal reload, with no jam; one try per reload. The window's start and width
@@ -170,6 +195,8 @@ and Firefox needs a display (on Linux: `xvfb-run -a npm run check`).
 - `src/weapons.ts`: the guns, the hitscan, the reload and the active reload. `src/fx.ts`: shot feedback.
 - `src/grenade.ts`: the grenade's flight, preview and blast. `src/nadefx.ts`: its look.
   `src/audio.ts`: the click. `src/hud.ts`: the readout, stamina, ammo and reload bar.
+- `src/hornet.ts`: the Hornet's driving, lean and gun. `src/hornetModel.ts`: its blockout. `src/spring.ts`: the
+  exact spring (the Hornet's lean, the grenade's camera kick).
 - `src/camera.ts`: the follow camera. `src/input.ts`: keys and mouse.
 - `src/soldier.ts`, `src/guns.ts`, `src/look.ts`, `src/geom.ts`: the stand-in look (and the measuring grid, in
   `src/look.ts`).

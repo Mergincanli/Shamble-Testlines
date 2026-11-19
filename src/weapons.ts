@@ -65,7 +65,9 @@ export interface ShotRay {
 }
 
 export interface ShotEvent {
-  gun: GunId;
+  gun: GunId | 'hornet';
+  /** The Hornet's full-charge shot (one slug, drawn as a beam). */
+  beam?: boolean;
   ox: number;
   oy: number;
   oz: number;

@@ -21,6 +21,7 @@ export class Input {
   private turnDX = 0;
   private lastX: number | null = null;
   private firePressed = false;
+  private fireReleased = false;
   private rightPressed = false;
   private rightReleased = false;
   private onKeyHandlers: ((code: string, key: string) => void)[] = [];
@@ -50,6 +51,7 @@ export class Input {
       this.keys.clear();
       this.buttons = 0;
       this.firePressed = false;
+      this.fireReleased = false;
       this.rightPressed = false;
       this.rightReleased = false;
       this.pressed.clear();
@@ -125,6 +127,7 @@ export class Input {
   /** New button state: notes a left or right press, and a right let-go, so short clicks between steps count. */
   private setButtons(b: number) {
     if (b & 1 && !(this.buttons & 1)) this.firePressed = true;
+    if (!(b & 1) && this.buttons & 1) this.fireReleased = true;
     if (b & 2 && !(this.buttons & 2)) this.rightPressed = true;
     if (!(b & 2) && this.buttons & 2) this.rightReleased = true;
     this.buttons = b;
@@ -144,6 +147,13 @@ export class Input {
   /** The left button is held on the view. */
   fireHeld(): boolean {
     return (this.buttons & 1) !== 0;
+  }
+
+  /** True if the left button came up since the last call (consumes it). */
+  takeFireRelease(): boolean {
+    const p = this.fireReleased;
+    this.fireReleased = false;
+    return p;
   }
 
   /** True if the left button went down since the last call (consumes it). */

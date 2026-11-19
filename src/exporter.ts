@@ -2,9 +2,10 @@
 // old game's own names beside them, so the numbers can be handed to the Advisor as they are.
 import { GRID_COLOURS, GRID_LOOK } from './look';
 import { ROOM_LAYOUT } from './metrics';
+import { HORNET } from './hornet';
 import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
-export const BUILD = { step: 'A', name: 'Grid and metrics room' };
+export const BUILD = { step: 'B', name: 'Hornet' };
 
 /** Measured at the last frame (set by the main loop): the soldier's height and his size on screen. */
 export const MEASURED = { soldierHeightM: 0, soldierOnScreenPx: 0, viewHeightPx: 0 };
@@ -125,6 +126,7 @@ export function buildExport(store: Store): string {
     derived,
     constants: {
       metrics_room_layout: ROOM_LAYOUT,
+      hornet: HORNET,
       grid_look: { ...GRID_LOOK, colours: GRID_COLOURS },
     },
     measured: {

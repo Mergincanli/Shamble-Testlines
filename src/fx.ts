@@ -9,6 +9,7 @@ import { PAL } from './look';
 const TRACER_LIFE = 0.08;
 const FLASH_LIFE = 0.05;
 const SPARK_LIFE = 0.09;
+const BEAM_LIFE = 0.18;
 
 interface Pooled {
   mesh: THREE.Mesh;
@@ -24,7 +25,8 @@ export class Fx {
   private tracers: Pooled[] = [];
   private flashes: Pooled[] = [];
   private sparks: Pooled[] = [];
-  private next = { tracer: 0, flash: 0, spark: 0 };
+  private beams: Pooled[] = [];
+  private next = { tracer: 0, flash: 0, spark: 0, beam: 0 };
   private marker: HTMLDivElement;
   private markerLife = 0;
   private bars: { group: THREE.Group; fill: THREE.Mesh; shownFor: number }[] = [];
@@ -41,6 +43,14 @@ export class Fx {
       m.renderOrder = 5;
       scene.add(m);
       this.tracers.push({ mesh: m, life: 0, max: TRACER_LIFE });
+    }
+    // The Hornet's full-charge beam: a thicker, short-lived bar in a bright purple (the sandbox's own colour).
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(box, unlit('#DE8CFF', true));
+      m.visible = false;
+      m.renderOrder = 5;
+      scene.add(m);
+      this.beams.push({ mesh: m, life: 0, max: BEAM_LIFE });
     }
     const star = new THREE.OctahedronGeometry(0.5, 0);
     for (let i = 0; i < 6; i++) {
@@ -78,7 +88,16 @@ export class Fx {
     document.body.append(this.marker);
   }
 
-  private take(pool: Pooled[], key: 'tracer' | 'flash' | 'spark'): Pooled {
+  /** The Hornet's full-charge beam, from the muzzle to where it stops (drawn with the shot's flash and kick). */
+  beam(from: THREE.Vector3, to: THREE.Vector3) {
+    const b = this.take(this.beams, 'beam');
+    b.mesh.position.copy(from);
+    b.mesh.lookAt(to);
+    b.mesh.scale.set(0.16, 0.16, Math.max(0.01, from.distanceTo(to)));
+    (b.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
+  }
+
+  private take(pool: Pooled[], key: 'tracer' | 'flash' | 'spark' | 'beam'): Pooled {
     const p = pool[this.next[key] % pool.length];
     this.next[key]++;
     p.life = p.max;
@@ -147,6 +166,7 @@ export class Fx {
       }
     };
     age(this.tracers, true);
+    age(this.beams, true);
     age(this.flashes, false);
     age(this.sparks, false);
     this.shake = Math.max(0, this.shake - dt * 2.5);

@@ -835,6 +835,119 @@ async function run(browserName) {
     await T(() => window.__testlines.place(30, 30));
     await T(() => window.__testlines.set('dummiesWalk', true));
 
+    // The Hornet: E rides it near it; W/S drive, A/D turn; the left button: a tap fires pellets, a full charge the beam.
+    const hn = () => T(() => window.__testlines.hornet());
+    const pollMax = async (ms, pick) => {
+      let best = -Infinity;
+      for (let t = 0; t < ms; t += 80) {
+        best = Math.max(best, pick(await hn()));
+        await sleep(80);
+      }
+      return best;
+    };
+    await T(() => window.__testlines.set('dummiesWalk', false));
+    await T(() => window.__testlines.placeHornet(30, 30, 0));
+    await T(() => window.__testlines.place(30.9, 30));
+    await sleep(800);
+    const hintText = await page.$eval('#hint', (e) => (getComputedStyle(e).display === 'none' ? '' : e.textContent));
+    await page.keyboard.press('KeyE');
+    await sleep(500);
+    let hs = await hn();
+    ok('near the Hornet a hint shows; E gets on', hintText.includes('E') && hs.riding, `hint "${hintText}", riding ${hs.riding}`);
+    // Aim ahead of it (it faces +z).
+    for (let k = 0; k < 2; k++) {
+      const sp = await T(() => window.__testlines.screenOf(30, 1.2, 37));
+      await page.mouse.move(sp.x, sp.y);
+      await sleep(400);
+    }
+    await page.keyboard.down('KeyW');
+    const leanFwd = await pollMax(900, (h) => h.pitch);
+    await sleep(600);
+    hs = await hn();
+    await page.keyboard.up('KeyW');
+    await page.keyboard.down('KeyS');
+    const leanBack = -(await pollMax(700, (h) => -h.pitch));
+    await page.keyboard.up('KeyS');
+    ok('W drives it forward, leaning forward as it speeds up', hs.speed > 5 && hs.z > 31 && leanFwd > 4, `speed ${hs.speed.toFixed(1)} m/s, lean ${leanFwd.toFixed(1)}°`);
+    ok('S brakes it, leaning back', leanBack < -10, `lean ${leanBack.toFixed(1)}°`);
+    await sleep(1500);
+    hs = await hn();
+    const head0 = hs.heading;
+    await page.keyboard.down('KeyA');
+    await sleep(500);
+    await page.keyboard.up('KeyA');
+    hs = await hn();
+    ok('A turns it', hs.heading - head0 > 0.3, `${(((hs.heading - head0) * 180) / Math.PI).toFixed(0)}°`);
+    // Back on line at a known spot, facing +z, with a dummy 5 m ahead.
+    await T(() => window.__testlines.placeHornet(30, 30, 0));
+    await T(() => window.__testlines.placeDummy(0, 30, 35));
+    await sleep(900);
+    for (let k = 0; k < 2; k++) {
+      const sp = await T(() => window.__testlines.screenOf(30, 1.2, 35));
+      await page.mouse.move(sp.x, sp.y);
+      await sleep(400);
+    }
+    let hgs0 = await T(() => window.__testlines.gun());
+    hs = await hn();
+    await page.mouse.down();
+    await page.mouse.up();
+    for (let i = 0; i < 20 && (await hn()).shots === hs.shots; i++) await sleep(100);
+    let hgs1 = await T(() => window.__testlines.gun());
+    let hhs1 = await hn();
+    let hdn = await T(() => window.__testlines.dummies());
+    ok('a tap fires 8 pellets, which hurt the dummy ahead', hhs1.shots - hs.shots === 1 && hgs1.lastShotRays === 8 && hdn[0].health < 100, `${hhs1.shots - hs.shots} shot, ${hgs1.lastShotRays} rays, dummy ${hdn[0].health.toFixed(0)}`);
+    await sleep(1200);
+    await T(() => window.__testlines.placeDummy(0, 30, 35));
+    // (A long weak moment for the checks: the slow software renderer takes a while to look.)
+    await T(() => window.__testlines.set('hornetWeakTime', 3));
+    await sleep(300);
+    hs = await hn();
+    await page.mouse.down();
+    await sleep(1600);
+    const charged = await hn();
+    await page.mouse.up();
+    for (let i = 0; i < 20 && (await hn()).beams === hs.beams; i++) await sleep(100);
+    hhs1 = await hn();
+    hgs1 = await T(() => window.__testlines.gun());
+    hdn = await T(() => window.__testlines.dummies());
+    ok('held, it charges; let go at full charge it fires one beam that drops the dummy (120 damage)', charged.charge > 0.99 && hhs1.beams - hs.beams === 1 && hgs1.lastShotRays === 1 && hdn[0].down, `charge ${charged.charge.toFixed(2)}, ${hhs1.beams - hs.beams} beam, ${hgs1.lastShotRays} ray, dummy down ${hdn[0].down}`);
+    hs = await hn();
+    const tip = hs.leanSinceBeam;
+    ok('the full-charge shot tips it back (picture) and starts the weak moment', tip < -20 && hs.weak > 0, `lean ${tip.toFixed(1)}°, weak ${hs.weak.toFixed(2)} s`);
+    // A click in the weak moment fires nothing.
+    await page.mouse.down();
+    await page.mouse.up();
+    await sleep(200);
+    hhs1 = await hn();
+    ok('in the weak moment a click fires nothing', hhs1.shots === hs.shots, `${hhs1.shots - hs.shots} shots`);
+    await T(() => window.__testlines.set('hornetWeakTime', 0.9));
+    for (let i = 0; i < 40 && (await hn()).weak > 0; i++) await sleep(100);
+    await sleep(600);
+    // Losing focus while charging drops the charge.
+    hs = await hn();
+    await page.mouse.down();
+    await sleep(400);
+    await T(() => window.dispatchEvent(new Event('blur')));
+    await sleep(200);
+    await page.mouse.up();
+    await sleep(300);
+    hhs1 = await hn();
+    ok('losing focus while charging drops the charge without a shot', !hhs1.charging && hhs1.shots === hs.shots, `charging ${hhs1.charging}, ${hhs1.shots - hs.shots} shots`);
+    // E gets off beside it, and the soldier's own gun works again.
+    await page.keyboard.press('KeyE');
+    await sleep(500);
+    hs = await hn();
+    const hme = await T(() => window.__testlines.state());
+    hgs0 = await T(() => window.__testlines.gun());
+    await page.mouse.down();
+    await sleep(150);
+    await page.mouse.up();
+    await sleep(500);
+    hgs1 = await T(() => window.__testlines.gun());
+    ok('E gets off beside it; his own gun fires again', !hs.riding && Math.hypot(hme.x - hs.x, hme.z - hs.z) > 0.8 && Math.hypot(hme.x - hs.x, hme.z - hs.z) < 1.5 && hgs1.shots > hgs0.shots, `${Math.hypot(hme.x - hs.x, hme.z - hs.z).toFixed(2)} m from it, ${hgs1.shots - hgs0.shots} shots`);
+    await T(() => window.__testlines.placeHornet(6, 1, 180));
+    await T(() => window.__testlines.set('dummiesWalk', true));
+
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
     const b60 = (await page.$$('#panel .p-segbtn'))[seg.indexOf('60')];
@@ -861,6 +974,7 @@ async function run(browserName) {
     } catch {}
     ok('Export gives JSON with date, build and values', !!doc && !!doc.exported && doc.build.startsWith('step') && doc.values.movement.walk_speed_m_per_s === 6.3, doc ? doc.exported : 'no JSON');
     ok('Export carries the old game\'s names', !!doc && Math.abs(doc.old_game_terms['T.jumpV'] - 11) < 0.01, doc ? String(doc.old_game_terms['T.jumpV']) : '');
+    ok('Export carries the Hornet', !!doc && doc.values.hornet?.top_speed_m_per_s === 12 && doc.values.hornet?.beam_damage === 120 && doc.values.hornet?.pellet_damage === 12 && doc.constants?.hornet?.gun_height_m === 1.25, doc ? JSON.stringify(doc.values.hornet).slice(0, 80) : '');
     ok('Export carries the room sizes, the grid and the measured soldier', !!doc && doc.values.metrics_room?.door_width_m === 1 && doc.values.metrics_room?.door_height_m === 2.1 && doc.values.measuring_grid?.grid_thin_step_m === 0.5 && doc.derived?.metrics_room_built?.door_height_m === 2.1 && !!doc.constants?.metrics_room_layout && Math.abs(doc.measured?.soldier_height_m - 1.8) < 0.005 && doc.measured?.soldier_on_screen_px > 20, doc ? JSON.stringify(doc.measured) : '');
 
     // Values survive a reload; Reset all restores them.

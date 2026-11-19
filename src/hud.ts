@@ -3,6 +3,8 @@
 export class Hud {
   private readout: HTMLDivElement;
   private measure: HTMLDivElement;
+  private hintEl: HTMLDivElement;
+  private lastHint = '';
   private lastMeasure = '';
   private stamina: HTMLDivElement;
   private staminaFill: HTMLDivElement;
@@ -28,6 +30,8 @@ export class Hud {
     this.readout.id = 'readout';
     this.measure = document.createElement('div');
     this.measure.id = 'measure';
+    this.hintEl = document.createElement('div');
+    this.hintEl.id = 'hint';
     this.stamina = document.createElement('div');
     this.stamina.id = 'stamina';
     this.staminaFill = document.createElement('div');
@@ -51,7 +55,7 @@ export class Hud {
     this.nadeText = document.createElement('div');
     this.nade.append(this.nadeText);
     this.ammo.append(this.nade);
-    document.body.append(this.readout, this.measure, this.stamina, this.ammo);
+    document.body.append(this.readout, this.measure, this.hintEl, this.stamina, this.ammo);
   }
 
   /**
@@ -108,6 +112,27 @@ export class Hud {
       this.nadeText.textContent = text;
       this.lastNade = text;
     }
+  }
+
+  /** While riding the Hornet: its speed, the gun's charge (0..1, or -1 when not charging) and its state. */
+  updateHornet(speed: number, charge: number, ready: boolean, weak: boolean) {
+    const state = weak ? '  weak: righting itself' : charge >= 1 ? '  full: the beam' : charge >= 0 ? '  charging' : ready ? '' : '  not ready';
+    const text = `Hornet  ${Math.abs(speed).toFixed(1)} m/s${speed < -0.05 ? ' back' : ''}${state}`;
+    if (text !== this.lastAmmo) {
+      this.ammoText.textContent = text;
+      this.lastAmmo = text;
+    }
+    this.reloadWindow.style.width = '0%';
+    this.reloadBar.classList.toggle('show', charge >= 0);
+    if (charge >= 0) this.reloadFill.style.transform = `scaleX(${charge.toFixed(3)})`;
+  }
+
+  /** A one-line hint under the readout (getting on the Hornet), or '' for none. */
+  hint(text: string) {
+    if (text === this.lastHint) return;
+    this.lastHint = text;
+    this.hintEl.textContent = text;
+    this.hintEl.classList.toggle('show', text !== '');
   }
 
   /** Show the result of an active-reload tap for a moment. */
