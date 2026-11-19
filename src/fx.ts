@@ -69,11 +69,12 @@ export class Fx {
     const plane = new THREE.PlaneGeometry(1, 1);
     for (let i = 0; i < dummyCount; i++) {
       const group = new THREE.Group();
-      const back = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ color: '#1a1a1a', depthTest: false }));
+      // (See-through materials, though fully solid: drawn with the see-through things, after the explosion.)
+      const back = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ color: '#1a1a1a', depthTest: false, transparent: true }));
       back.scale.set(0.9, 0.13, 1);
       const fillGeo = plane.clone();
       fillGeo.translate(0.5, 0, 0);
-      const fill = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({ color: '#e8e2d0', depthTest: false }));
+      const fill = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({ color: '#e8e2d0', depthTest: false, transparent: true }));
       fill.position.set(-0.42, 0, 0.001);
       fill.scale.set(0.84, 0.08, 1);
       back.renderOrder = fill.renderOrder = 10;

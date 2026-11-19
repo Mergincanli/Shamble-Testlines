@@ -3,11 +3,12 @@
 // (src/assets/explosion-keyed.json). Run with: node tools/key-sheet.mjs [cols] [rows]   (the grid defaults to 4 x 4;
 // the cell size comes from the picture's size, so a bigger sheet drops in). No dependencies beyond Node itself.
 //
-// How the key works: the background is one saturated blue, so every pixel is read as a mix of a drawn colour and
-// that blue, and given the least cover (alpha) that explains it with a drawn colour inside the valid range; the drawn
-// colour is then taken out of the mix. Cover below the noise floor (the background's own noise reaches about 0.19)
-// becomes clear. The drawn colours are spread a few pixels into the clear area, so smoothing the picture on screen
-// never pulls blue or black into its edges.
+// How the key works: the background is one saturated blue (its colour is measured on the flat background), so every
+// pixel is read as a mix of a drawn colour and that blue, and given the least cover (alpha) that explains it with a
+// drawn colour inside the valid range; the drawn colour is then taken out of the mix. Cover below the noise floor
+// becomes clear (the flat background stays below about 0.03; the faint halo a few pixels round the strokes reaches
+// about 0.2). The drawn colours are spread a pixel into the clear area (the page also multiplies the cover into the
+// colours when it loads the picture, so smoothing never pulls a clear pixel's colour into an edge).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { inflateSync, deflateSync } from 'node:zlib';
 
@@ -19,7 +20,9 @@ const ROWS = Number(process.argv[3] || 4);
 /** Cover below this is taken as background noise. */
 const NOISE_FLOOR = 0.2;
 /** How far (pixels) the drawn colours are spread into the clear area. */
-const BLEED_PX = 4;
+const BLEED_PX = 1;
+/** The ground line is looked for in the lowest part of each frame (this share of its height). */
+const GROUND_SEARCH = 0.3;
 
 // ---- PNG reading (8-bit grey, RGB, grey+alpha or RGBA; not interlaced) ----
 function readPng(buf) {
@@ -43,6 +46,7 @@ function readPng(buf) {
   }
   const ch = { 0: 1, 2: 3, 4: 2, 6: 4 }[type];
   if (depth !== 8 || !ch || interlace) throw new Error(`unsupported PNG: depth ${depth}, type ${type}, interlace ${interlace}`);
+  if (ch === 2 || ch === 4) throw new Error('the sheet already has transparency: this script keys an opaque sheet drawn on chroma blue');
   const raw = inflateSync(Buffer.concat(idat));
   const stride = w * ch;
   const px = Buffer.alloc(h * stride);
@@ -71,13 +75,13 @@ function readPng(buf) {
   const rgb = new Float32Array(w * h * 3);
   for (let p = 0; p < w * h; p++) {
     const o = p * ch;
-    if (ch === 1 || ch === 2) rgb.set([px[o], px[o], px[o]], p * 3);
+    if (ch === 1) rgb.set([px[o], px[o], px[o]], p * 3);
     else rgb.set([px[o], px[o + 1], px[o + 2]], p * 3);
   }
   return { w, h, rgb };
 }
 
-// ---- PNG writing (8-bit RGBA, filter 0) ----
+// ---- PNG writing (8-bit RGBA; each row takes the filter that leaves the smallest sum, the usual heuristic) ----
 const crcTable = new Int32Array(256).map((_, n) => {
   let c = n;
   for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
@@ -102,8 +106,40 @@ function writePng(w, h, rgba) {
   ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
-  const raw = Buffer.alloc(h * (w * 4 + 1));
-  for (let y = 0; y < h; y++) Buffer.from(rgba.buffer, y * w * 4, w * 4).copy(raw, y * (w * 4 + 1) + 1);
+  const stride = w * 4;
+  const raw = Buffer.alloc(h * (stride + 1));
+  const src = Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength);
+  const cand = Buffer.alloc(stride);
+  for (let y = 0; y < h; y++) {
+    const row = src.subarray(y * stride, (y + 1) * stride);
+    const up = y > 0 ? src.subarray((y - 1) * stride, y * stride) : null;
+    let bestSum = Infinity;
+    for (let f = 0; f < 5; f++) {
+      let sum = 0;
+      for (let x = 0; x < stride; x++) {
+        const a = x >= 4 ? row[x - 4] : 0;
+        const b = up ? up[x] : 0;
+        const c = up && x >= 4 ? up[x - 4] : 0;
+        let pred = 0;
+        if (f === 1) pred = a;
+        else if (f === 2) pred = b;
+        else if (f === 3) pred = (a + b) >> 1;
+        else if (f === 4) {
+          const p = a + b - c;
+          const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+          pred = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+        }
+        const v = (row[x] - pred) & 255;
+        cand[x] = v;
+        sum += v < 128 ? v : 256 - v;
+      }
+      if (sum < bestSum) {
+        bestSum = sum;
+        raw[y * (stride + 1)] = f;
+        cand.copy(raw, y * (stride + 1) + 1);
+      }
+    }
+  }
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
@@ -116,11 +152,11 @@ function writePng(w, h, rgba) {
 const { w, h, rgb } = readPng(readFileSync(SRC));
 const cellW = w / COLS;
 const cellH = h / ROWS;
-// The background colour: the mean of the clearly blue pixels.
+// The background colour: the mean of the flat blue (not the darker blue halo round the strokes).
 let kr = 0, kg = 0, kb = 0, kn = 0;
 for (let p = 0; p < w * h; p++) {
   const r = rgb[p * 3], g = rgb[p * 3 + 1], b = rgb[p * 3 + 2];
-  if (b > 150 && r < 60 && g < 60) {
+  if (b > 240 && r < 30 && g < 30) {
     kr += r;
     kg += g;
     kb += b;
@@ -189,6 +225,7 @@ for (let row = 0; row < ROWS; row++) {
     const x0 = Math.round(col * cellW), x1 = Math.round((col + 1) * cellW);
     const y0 = Math.round(row * cellH), y1 = Math.round((row + 1) * cellH);
     let solid = 0, sx = 0, widest = 0, widestY = 0;
+    const low = y1 - Math.round((y1 - y0) * GROUND_SEARCH);
     for (let y = y0; y < y1; y++) {
       let n = 0;
       for (let x = x0; x < x1; x++) {
@@ -198,7 +235,7 @@ for (let row = 0; row < ROWS; row++) {
         }
       }
       solid += n;
-      if (n > widest) {
+      if (y >= low && n > widest) {
         widest = n;
         widestY = y - y0;
       }
@@ -206,8 +243,9 @@ for (let row = 0; row < ROWS; row++) {
     frames.push({ solid_share: solid / ((x1 - x0) * (y1 - y0)), middle_x: solid ? sx / solid / (x1 - x0) : 0.5, widest_row: widestY / (y1 - y0), widest_px: widest });
   }
 }
-// The ground line: the widest solid row of the three frames where the ground rays spread widest (the flash
-// grown to the ball); the middle: the solid-weighted middle of all frames with any.
+// The ground line: the ground rays are the widest thing low in a frame, so it is the middle one of the widest rows
+// (looked for in the lowest 30 % of each frame) of the three frames where that row is widest; the middle: the
+// solid-weighted middle of all frames with any.
 const byWidth = frames.map((f, i) => [f.widest_px, i]).sort((a, b) => b[0] - a[0]).slice(0, 3).map(([, i]) => frames[i].widest_row).sort();
 const groundLine = byWidth[1];
 const withSolid = frames.filter((f) => f.solid_share > 0.001);
@@ -222,6 +260,7 @@ const meta = {
   key_colour_rgb: K.map((v) => Math.round(v * 10) / 10),
   noise_floor: NOISE_FLOOR,
   colour_bleed_px: BLEED_PX,
+  ground_line_search_share: GROUND_SEARCH,
   clear_share: Math.round(clear * 1000) / 1000,
   anchor_ground_line_from_top: Math.round(groundLine * 1000) / 1000,
   anchor_middle_from_left: Math.round(middle * 1000) / 1000,

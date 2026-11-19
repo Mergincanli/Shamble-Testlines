@@ -804,9 +804,9 @@ export const PARAMS: Param[] = [
     source:
       "The owner's own explosion sheet (art/explosion-sheet.png, 4 x 4 frames), played as one flat picture facing the camera; the plain look is the sandbox's earlier stand-in. The owner waived the Art texts' no-red rule for explosives. Nothing here decides the game's look.",
   },
-  { kind: 'range', key: 'nadeFxTime', group: 'nade', label: 'Explosion plays for', exportKey: 'explosion_play_time_s', unit: 's', min: 0.2, max: 4, step: 0.05, start: 1, digits: 2, source: "The sandbox's pick: the sheet's 16 frames over this time (1 s is 16 frames a second), in even steps." },
+  { kind: 'range', key: 'nadeFxTime', group: 'nade', label: 'Explosion plays for', exportKey: 'explosion_play_time_s', unit: 's', min: 0.2, max: 4, step: 0.05, start: 1, digits: 2, source: "The sandbox's pick: the sheet's 16 frames over this time (1 s is 16 frames a second), in even steps; the last three frames are empty, so it shows for about 0.8 of this." },
   { kind: 'range', key: 'nadeFxWidth', group: 'nade', label: 'Explosion picture width', exportKey: 'explosion_width_m', unit: 'm', min: 1, max: 30, step: 0.5, start: 8, digits: 1, source: "The sandbox's pick: the width of one frame of the sheet at the burst (the fireball at its widest is about 0.7 of it)." },
-  { kind: 'range', key: 'nadeFxPull', group: 'nade', label: 'Explosion drawn nearer the camera by', exportKey: 'explosion_pull_to_camera_m', unit: 'm', min: 0, max: 6, step: 0.1, start: 2, digits: 1, source: "The sandbox's pick: the flat picture is drawn this much nearer the camera (and shrunk to keep its size on screen), so the floor under the burst and a wall just behind it do not cut it; a wall nearer the camera than this no longer hides it." },
+  { kind: 'range', key: 'nadeFxPull', group: 'nade', label: 'Explosion drawn nearer the camera by', exportKey: 'explosion_pull_to_camera_m', unit: 'm', min: 0, max: 6, step: 0.1, start: 2, digits: 1, source: "The sandbox's pick: the flat picture is drawn this much nearer the camera (and shrunk to keep its size on screen), so the floor under the burst does not cut it (it stands upright, so a wall behind the burst never does); a wall nearer the camera than this no longer hides it." },
   {
     kind: 'toggle',
     key: 'nadeFrags',

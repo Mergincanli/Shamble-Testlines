@@ -1,9 +1,11 @@
 // The grenade's explosion from the owner's own sprite sheet (art/explosion-sheet.png: 4 x 4 frames on chroma blue,
 // keyed at build time by tools/key-sheet.mjs into src/assets/explosion-keyed.png). Each explosion is one flat
-// picture that always faces the camera, stepping through the frames in reading order (no blending between frames:
-// the sheet's own comic steps). The picture's ground line (measured on the sheet) sits on the burst point; the
-// picture is drawn nearer the camera along the line to it, and shrunk to keep its size on screen, so the floor
-// under the burst and a wall just behind it do not cut it. Nothing here comes from the old game or Shamble VFX.
+// picture standing upright and turned toward the camera, stretched up by how steeply the camera looks down at it
+// (so it keeps the sheet's shape on screen), stepping through the frames in reading order (no blending between
+// frames: the sheet's own comic steps). The picture's ground line (measured on the sheet) sits on the burst point;
+// the picture is drawn nearer the camera along the line to it, and shrunk to keep its size on screen, so the floor
+// under the burst does not cut it, and, standing upright in front of the burst, it never reaches a wall behind it.
+// Nothing here comes from the old game or Shamble VFX.
 import * as THREE from 'three';
 import sheetUrl from './assets/explosion-keyed.png';
 import SHEET from './assets/explosion-keyed.json';
@@ -11,6 +13,8 @@ import SHEET from './assets/explosion-keyed.json';
 export { SHEET as EXPLOSION_SHEET };
 /** Explosions drawn at once; one more takes over the oldest. */
 export const EXPLOSION_POOL = 8;
+/** The upright picture is stretched up by 1 / cos(how steeply the camera looks down at it), at most this much. */
+export const EXPLOSION_MAX_STRETCH = 4;
 
 /** The settings each frame: how long the sheet plays, its width in metres, how far it is drawn nearer the camera. */
 export interface ExplosionLook {
@@ -29,6 +33,7 @@ interface Play {
   /** Held at one frame (the test hook's still picture). */
   held: boolean;
   scale: number;
+  stretch: number;
 }
 
 const [COLS, ROWS] = SHEET.grid;
@@ -59,7 +64,20 @@ export class Explosions {
     this.tex.minFilter = THREE.LinearFilter;
     this.tex.magFilter = THREE.LinearFilter;
     this.tex.generateMipmaps = false;
-    this.mat = new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, toneMapped: false });
+    // Cover multiplied into the colours as the picture goes to the graphics card, and blended to match: smoothing
+    // then never pulls a clear pixel's colour into an edge, whatever a browser does with clear pixels' colours.
+    this.tex.premultiplyAlpha = true;
+    this.mat = new THREE.MeshBasicMaterial({
+      map: this.tex,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      blendSrcAlpha: THREE.OneFactor,
+      blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+    });
     for (let i = 0; i < EXPLOSION_POOL; i++) {
       // A picture 1 m wide, with its ground line's middle at the origin.
       const g = new THREE.PlaneGeometry(1, 1);
@@ -74,11 +92,13 @@ export class Explosions {
       pos.needsUpdate = true;
       g.computeBoundingSphere();
       const mesh = new THREE.Mesh(g, this.mat);
-      mesh.renderOrder = 7;
+      // Among the see-through things, after the ground lines and before the aim aids (the sight line, the throw
+      // preview, tracers: 5 and 6) and the dummies' bars (10), which stay readable over it.
+      mesh.renderOrder = 4;
       mesh.frustumCulled = false;
       mesh.visible = false;
       scene.add(mesh);
-      this.plays.push({ mesh, uv: g.attributes.uv as THREE.BufferAttribute, at: new THREE.Vector3(), t: 0, on: false, frame: -1, held: false, scale: 0 });
+      this.plays.push({ mesh, uv: g.attributes.uv as THREE.BufferAttribute, at: new THREE.Vector3(), t: 0, on: false, frame: -1, held: false, scale: 0, stretch: 1 });
     }
   }
 
@@ -90,7 +110,8 @@ export class Explosions {
     p.held = heldFrame >= 0;
     p.t = 0;
     p.frame = -1;
-    if (p.held) this.setFrame(p, Math.min(FRAMES - 1, heldFrame));
+    // The first frame at once: the picture drawn this very frame shows it, not what the slot showed before.
+    this.setFrame(p, p.held ? Math.min(FRAMES - 1, heldFrame) : 0);
   }
 
   /** Clear every explosion (the test hooks). */
@@ -134,7 +155,7 @@ export class Explosions {
     }
   }
 
-  /** Face the camera as it is drawn this frame (after its kick and shake), and place each picture. */
+  /** Turn toward the camera as it is drawn this frame (after its kick and shake), and place each picture. */
   place(cam: THREE.Camera, look: ExplosionLook) {
     for (let i = 0; i < this.plays.length; i++) {
       const p = this.plays[i];
@@ -154,13 +175,16 @@ export class Explosions {
         continue;
       }
       const d = this.toCam.copy(cam.position).sub(p.at);
-      const dist = d.length();
+      const dist = Math.max(d.length(), 1e-6);
+      const flat = Math.hypot(d.x, d.z);
       const pull = Math.min(Math.max(0, look.pull), dist * 0.5);
-      d.multiplyScalar(pull / Math.max(dist, 1e-6));
-      p.mesh.position.copy(p.at).add(d);
-      p.mesh.quaternion.copy(cam.quaternion);
-      p.scale = (look.width * (dist - pull)) / Math.max(dist, 1e-6);
-      p.mesh.scale.setScalar(p.scale);
+      p.mesh.position.copy(p.at).addScaledVector(d, pull / dist);
+      // Upright, turned about the vertical toward the camera; stretched up by 1 / cos of the camera's height angle
+      // over it, so its height on screen matches the sheet's shape.
+      p.mesh.rotation.set(0, Math.atan2(d.x, d.z), 0);
+      p.stretch = Math.min(EXPLOSION_MAX_STRETCH, dist / Math.max(flat, 1e-6));
+      p.scale = (look.width * (dist - pull)) / dist;
+      p.mesh.scale.set(p.scale, p.scale * p.stretch, 1);
       p.mesh.visible = true;
     }
   }
@@ -177,6 +201,8 @@ export class Explosions {
           at: { x: p.at.x, y: p.at.y, z: p.at.z },
           drawnAt: { x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z },
           scale: p.scale,
+          stretch: p.stretch,
+          yaw: p.mesh.rotation.y,
           quaternion: p.mesh.quaternion.toArray(),
         })),
     };

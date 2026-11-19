@@ -2,7 +2,7 @@
 // Usage: node tools/browser-check.mjs [chromium|firefox|both]   (Firefox needs a display: run under xvfb-run)
 // Paths: CHROMIUM_PATH (default /opt/pw-browsers/chromium) and FIREFOX_PATH. Screenshots go to SHOTS_DIR.
 import puppeteer from 'puppeteer-core';
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const which = process.argv[2] || 'both';
@@ -966,26 +966,30 @@ async function run(browserName) {
     }
     await T(() => window.__testlines.set('nadeFxTime', 1));
     // Placed for the camera: drawn 2 m nearer the camera along the line to it and shrunk to keep its size on screen,
-    // so it covers the same spot; it faces the camera.
+    // so it covers the same spot; standing upright, turned toward the camera, stretched up by 1 / cos of the camera's
+    // height angle over it. (Held at frame 7 of 16, off the grid's diagonal: swapped rows and columns would show a
+    // frame with no white-hot core.)
     {
-      await T(() => window.__testlines.explode(30, 0, 24, 5));
+      await T(() => window.__testlines.explode(30, 0, 24, 6));
       await sleep(600);
-      const q = (await T(() => window.__testlines.explosions())).plays[0];
-      const c = await T(() => window.__testlines.cam());
-      const cq = await T(() => window.__testlines.camQuat());
+      const [q, c] = await T(() => [window.__testlines.explosions().plays[0], window.__testlines.cam()]);
       const D = Math.hypot(c.x - q.at.x, c.y - q.at.y, c.z - q.at.z);
+      const flat = Math.hypot(c.x - q.at.x, c.z - q.at.z);
       const off = [q.drawnAt.x - q.at.x, q.drawnAt.y - q.at.y, q.drawnAt.z - q.at.z];
       const toCam = [(c.x - q.at.x) / D, (c.y - q.at.y) / D, (c.z - q.at.z) / D];
       const along = Math.hypot(...off);
       const lined = Math.hypot(off[0] / along - toCam[0], off[1] / along - toCam[1], off[2] / along - toCam[2]);
       const sA = await T((x, y, z) => window.__testlines.screenOf(x, y, z), q.at.x, q.at.y, q.at.z);
       const sB = await T((x, y, z) => window.__testlines.screenOf(x, y, z), q.drawnAt.x, q.drawnAt.y, q.drawnAt.z);
-      const facing = q.quaternion.every((v, i) => Math.abs(v - cq[i]) < 1e-6);
-      ok('the explosion is drawn 2 m nearer the camera on the line to it, shrunk to its 8 m width at the burst, facing the camera', Math.abs(along - 2) < 1e-6 && lined < 1e-3 && Math.abs(q.scale - (8 * (D - 2)) / D) < 1e-3 && Math.hypot(sA.x - sB.x, sA.y - sB.y) < 0.5 && facing, `${along.toFixed(3)} m nearer, off the line ${lined.toExponential(1)}, scale ${q.scale.toFixed(3)} (want ${((8 * (D - 2)) / D).toFixed(3)}), ${Math.hypot(sA.x - sB.x, sA.y - sB.y).toFixed(2)} px apart on screen, facing ${facing}`);
-      // On screen at its peak: no chroma blue anywhere round it, and the white-hot core above the burst point.
+      const yawWant = Math.atan2(c.x - q.at.x, c.z - q.at.z);
+      const qa = q.quaternion;
+      const upright = Math.abs(qa[0]) < 1e-9 && Math.abs(qa[2]) < 1e-9 && Math.abs(Math.atan2(Math.sin(q.yaw - yawWant), Math.cos(q.yaw - yawWant))) < 1e-9;
+      ok('the explosion is drawn 2 m nearer the camera on the line to it, at its 8 m width at the burst, upright and turned to the camera, stretched by 1 / cos of the camera\'s angle', Math.abs(along - 2) < 1e-6 && lined < 1e-6 && Math.abs(q.scale - (8 * (D - 2)) / D) < 1e-6 && Math.abs(q.stretch - D / flat) < 1e-9 && Math.hypot(sA.x - sB.x, sA.y - sB.y) < 0.5 && upright, `${along.toFixed(3)} m nearer, off the line ${lined.toExponential(1)}, scale ${q.scale.toFixed(3)} (want ${((8 * (D - 2)) / D).toFixed(3)}), stretch ${q.stretch.toFixed(3)} (want ${(D / flat).toFixed(3)}), ${Math.hypot(sA.x - sB.x, sA.y - sB.y).toFixed(2)} px apart on screen, upright ${upright}`);
+      // On screen: no chroma blue anywhere round it, the white-hot core above the burst point, and the sheet's own
+      // deep red and orange (a wrong colour conversion would move them).
       const view = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
       const x0 = Math.max(view.l, sA.x - 300);
-      const y0 = Math.max(view.t, sA.y - 360);
+      const y0 = Math.max(view.t, sA.y - 380);
       const bw = Math.min(view.l + view.w, sA.x + 300) - x0;
       const bh = Math.min(view.t + view.h, sA.y + 60) - y0;
       const px = await T((a, b, w, h) => window.__testlines.pixels(a, b, w, h), x0, y0, bw, bh);
@@ -993,7 +997,40 @@ async function run(browserName) {
       await T(() => window.__testlines.clearExplosions());
       await sleep(300);
       const px0 = await T((a, b, w, h) => window.__testlines.pixels(a, b, w, h), x0, y0, bw, bh);
-      ok('at its peak the explosion shows a white-hot core above the burst point, fire round it, and no chroma blue', px.blue === 0 && px.hot > 1500 && px.fire > 1500 && px0.hot === 0 && px.hotY < sA.y - 20 && Math.abs(px.hotX - sA.x) < 60, `in a ${bw.toFixed(0)} x ${bh.toFixed(0)} px box: blue ${px.blue}, white-hot ${px.hot} (without it ${px0.hot}), fire ${px.fire}, core middle ${px.hotX ? `${(px.hotX - sA.x).toFixed(0)}, ${(px.hotY - sA.y).toFixed(0)}` : '-'} px from the burst point`);
+      ok('at frame 7 the explosion shows a white-hot core above the burst point, fire round it, and no chroma blue', px.blue === 0 && px.hot > 1000 && px.fire > 1000 && px0.hot === 0 && px.hotY < sA.y - 20 && Math.abs(px.hotX - sA.x) < 60, `in a ${bw.toFixed(0)} x ${bh.toFixed(0)} px box: blue ${px.blue}, white-hot ${px.hot} (without it ${px0.hot}), fire ${px.fire}, core middle ${px.hotX ? `${(px.hotX - sA.x).toFixed(0)}, ${(px.hotY - sA.y).toFixed(0)}` : '-'} px from the burst point`);
+      ok('the sheet\'s own deep red and orange show as drawn (the colours are not converted twice)', px.deep > 300 && px.orange > 300 && px0.deep < 30 && px0.orange < 30, `deep red ${px.deep} (without it ${px0.deep}), orange ${px.orange} (without it ${px0.orange})`);
+    }
+    // At a steep camera (Classic, about 56 degrees, turned to look at the 3.5 m ledge's open side), a burst against
+    // the ledge's face shows its white-hot core as fully as on open ground: standing upright in front of the burst,
+    // the picture never reaches the wall behind it.
+    {
+      await T(() => window.__testlines.preset('Classic'));
+      await T(() => window.__testlines.set('camTurn', -90));
+      await T(() => { for (let i = 0; i < 11; i++) window.__testlines.placeDummy(i, 40 + i * 2, -40); });
+      const ax = await T(() => window.__testlines.axes());
+      const tw = Math.min(Math.abs(ax.fwdX) > 1e-6 ? 2 / Math.abs(ax.fwdX) : Infinity, Math.abs(ax.fwdZ) > 1e-6 ? 2 / Math.abs(ax.fwdZ) : Infinity);
+      const spots = { wall: { x: -14 - ax.fwdX * (tw + 0.15), z: -14 - ax.fwdZ * (tw + 0.15) }, open: { x: 30, z: 20 } };
+      const hot = {};
+      for (const [name, at] of Object.entries(spots)) {
+        await T(() => window.__testlines.clearExplosions());
+        await T((x, z) => window.__testlines.place(x, z), at.x - ax.fwdX * 5, at.z - ax.fwdZ * 5);
+        await sleep(1500);
+        await T((x, z) => window.__testlines.explode(x, 0, z, 5), at.x, at.z);
+        await sleep(500);
+        const sp = await T((x, z) => window.__testlines.screenOf(x, 0, z), at.x, at.z);
+        const view = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
+        const bx = Math.max(view.l, sp.x - 330);
+        const by = Math.max(view.t, sp.y - 560);
+        hot[name] = (await T((a, b, w, h) => window.__testlines.pixels(a, b, w, h), bx, by, Math.min(view.l + view.w, sp.x + 330) - bx, Math.min(view.t + view.h, sp.y + 80) - by)).hot;
+        if (name === 'wall') await page.screenshot({ path: `${shots}/${browserName}-explosion-wall.png` });
+      }
+      ok('at a steep camera a burst against a 3.5 m wall shows its white-hot core as fully as on open ground (the wall behind does not cut it)', hot.open > 1500 && hot.wall / hot.open > 0.95, `white-hot ${hot.wall} against the wall, ${hot.open} in the open (${(hot.wall / hot.open).toFixed(3)})`);
+      await T(() => window.__testlines.clearExplosions());
+      await T(() => window.__testlines.preset('Iso'));
+      await T(() => window.__testlines.place(30, 30));
+      await T(() => window.__testlines.placeDummy(0, 4, 4));
+      await T(() => window.__testlines.placeDummy(1, 6, 4));
+      await sleep(1200);
     }
     // Eight play at once; a ninth takes over the oldest.
     await T(() => { for (let i = 0; i < 9; i++) window.__testlines.explode(30 + i, 0, 20, 3); });
@@ -1225,7 +1262,10 @@ async function run(browserName) {
     {
       const g = doc?.values?.grenade;
       const es = doc?.constants?.explosion_sheet;
-      ok('Export carries the explosion: its look, play time, width, pull and fragments, and the sheet as keyed', !!g && g.explosion_look === 'sheet' && g.explosion_play_time_s === 1 && g.explosion_width_m === 8 && g.explosion_pull_to_camera_m === 2 && g.fragments === true && !!es && es.frames === 16 && es.grid[0] === 4 && es.grid[1] === 4 && es.drawn_at_once === 8 && Math.abs(es.anchor_ground_line_from_top - 0.867) < 0.01 && es.noise_floor === 0.2 && Math.abs(es.clear_share - 0.789) < 0.01, es ? JSON.stringify({ look: g?.explosion_look, ground: es.anchor_ground_line_from_top, clear: es.clear_share, key: es.key_colour_rgb }) : 'no explosion_sheet');
+      // (The sheet's numbers are compared with what the keying script wrote, so a new sheet needs no change here.)
+      const keyed = JSON.parse(readFileSync(resolve('src/assets/explosion-keyed.json'), 'utf8'));
+      const same = !!es && Object.entries(keyed).every(([k, v]) => JSON.stringify(es[k]) === JSON.stringify(v));
+      ok('Export carries the explosion: its look, play time, width, pull and fragments, and the sheet as keyed', !!g && g.explosion_look === 'sheet' && g.explosion_play_time_s === 1 && g.explosion_width_m === 8 && g.explosion_pull_to_camera_m === 2 && g.fragments === true && same && es.drawn_at_once === 8 && es.max_stretch === 4, es ? JSON.stringify({ look: g?.explosion_look, ground: es.anchor_ground_line_from_top, clear: es.clear_share, key: es.key_colour_rgb, same }) : 'no explosion_sheet');
     }
     ok('Export carries the room sizes, the grid and the measured soldier', !!doc && doc.values.metrics_room?.door_width_m === 1 && doc.values.metrics_room?.door_height_m === 2.1 && doc.values.measuring_grid?.grid_thin_step_m === 0.5 && doc.derived?.metrics_room_built?.door_height_m === 2.1 && !!doc.constants?.metrics_room_layout && Math.abs(doc.measured?.soldier_height_m - 1.8) < 0.005 && doc.measured?.soldier_on_screen_px > 20, doc ? JSON.stringify(doc.measured) : '');
 

@@ -637,7 +637,8 @@ function frame(now: number) {
   // leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
   fx.update(dt, input.mouseX, input.mouseY);
   nadeFx.update(dt, explosionLook());
-  // Blasts of this frame: flash, ring and fragments; hit dummies flinch and show their bars; the hit marker on a hit.
+  // Blasts of this frame: the explosion (the sheet, or the plain flash and ring) and fragments; hit dummies flinch
+  // and show their bars; the hit marker on a hit.
   for (const b of blasts) {
     nadeFx.blast(b.at, store.num('nadeRadius'), store.get('nadeLook') === 'plain' ? 'plain' : 'sheet', store.get('nadeFrags') !== false);
     const prox = Math.max(0, 1 - Math.hypot(cur.x - b.at.x, cur.z - b.at.z) / store.num('nadeKickRange'));
@@ -964,7 +965,9 @@ requestAnimationFrame(frame);
   camQuat: () => camera.cam.quaternion.toArray(),
   /**
    * Draw the frame now and read the picture in a box (CSS pixels, from the top left): how many pixels are pure
-   * chroma blue, how many are white-hot (the fireball's core) and where their middle is, and how many are fire.
+   * chroma blue, how many are white-hot (the fireball's core) and where their middle is, how many are fire, and how
+   * many are the sheet's own deep red (about 104, 8, 8) and orange (about 248, 136, 56), which a wrong colour
+   * conversion would move.
    */
   pixels: (x0: number, y0: number, w: number, h: number) => {
     nadeFx.place(camera.cam, explosionLook());
@@ -978,7 +981,7 @@ requestAnimationFrame(frame);
     const by = Math.round(gl.drawingBufferHeight - (y0 - r.top) * pr - bh);
     const buf = new Uint8Array(bw * bh * 4);
     gl.readPixels(bx, by, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-    let blue = 0, hot = 0, fire = 0, hx = 0, hy = 0;
+    let blue = 0, hot = 0, fire = 0, deep = 0, orange = 0, hx = 0, hy = 0;
     for (let j = 0; j < bh; j++) {
       for (let i = 0; i < bw; i++) {
         const o = (j * bw + i) * 4;
@@ -990,8 +993,10 @@ requestAnimationFrame(frame);
           hy += bh - 1 - j;
         }
         if (R > 200 && G > 60 && G < 200 && B < 110) fire++;
+        if (R >= 85 && R <= 140 && G < 30 && B < 30) deep++;
+        if (R > 235 && G >= 115 && G <= 160 && B >= 30 && B <= 85) orange++;
       }
     }
-    return { total: bw * bh, blue, hot, fire, hotX: hot ? x0 + hx / hot / pr : null, hotY: hot ? y0 + hy / hot / pr : null };
+    return { total: bw * bh, blue, hot, fire, deep, orange, hotX: hot ? x0 + hx / hot / pr : null, hotY: hot ? y0 + hy / hot / pr : null };
   },
 };

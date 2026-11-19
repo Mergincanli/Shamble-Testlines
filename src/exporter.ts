@@ -4,7 +4,7 @@ import { GRID_COLOURS, GRID_LOOK } from './look';
 import { ROOM_LAYOUT } from './metrics';
 import { HORNET } from './hornet';
 import { AIM_DEAD_ZONE, HEIGHT_GRACE, HIT_HEIGHT, HIT_RADIUS, SHOT_HEIGHT } from './weapons';
-import { EXPLOSION_POOL, EXPLOSION_SHEET } from './explosion';
+import { EXPLOSION_MAX_STRETCH, EXPLOSION_POOL, EXPLOSION_SHEET } from './explosion';
 import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
 export const BUILD = { step: 'D', name: "Comic explosion from the owner's sprite sheet" };
@@ -141,7 +141,8 @@ export function buildExport(store: Store): string {
       explosion_sheet: {
         ...EXPLOSION_SHEET,
         drawn_at_once: EXPLOSION_POOL,
-        note: "The owner's sheet, keyed at build time by tools/key-sheet.mjs: the key colour is the measured mean of the blue background; cover below the noise floor is clear. The anchor (ground line from the top, middle from the left, as shares of a frame) is measured on the sheet and sits on the burst point. Frames play in reading order, in even steps.",
+        max_stretch: EXPLOSION_MAX_STRETCH,
+        note: "The owner's sheet, keyed at build time by tools/key-sheet.mjs: the key colour is the measured mean of the flat blue background; cover below the noise floor is clear. The anchor (ground line from the top, middle from the left, as shares of a frame) is measured on the sheet and sits on the burst point. Frames play in reading order, in even steps. The picture stands upright, turned toward the camera, stretched up by 1 / cos of the camera's height angle over it (at most max_stretch).",
       },
     },
     measured: {
