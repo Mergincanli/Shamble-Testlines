@@ -637,13 +637,19 @@ async function run(browserName) {
     const pnt = await shootLedge('point');
     ok('a dummy on the 2.5 m ledge: level, the shot hits the ledge face; aimed at the point, it hits the dummy', lvl.d.health === 100 && pnt.d.health < 100, `level: dummy ${lvl.d.health.toFixed(0)}, shot ended at y ${lvl.end.y.toFixed(2)}; point: dummy ${pnt.d.health.toFixed(0)}, ended at y ${pnt.end.y.toFixed(2)}`);
     // The sight line aimed at it ends on the dummy, with a mark up from the ledge top to its end. (The camera tips
-    // toward the cursor while aiming, so the cursor is put back on the dummy's chest until the aim point is on it.)
+    // toward the cursor while aiming, which moves the dummy on screen about as far as the cursor moved; jumping the
+    // cursor onto it each time swings the view back and forth for ever, so the cursor closes in halfway each time,
+    // as a hand does, until the aim point is on the dummy.)
+    const mH = await T(() => window.__testlines.screenOf(-13, 3.6, -2));
+    await page.mouse.move(mH.x, mH.y);
     await page.mouse.down({ button: 'right' });
     await sleep(1200);
     let cpH = null;
-    for (let k = 0; k < 8; k++) {
+    for (let k = 0; k < 10; k++) {
       const sp = await T(() => window.__testlines.screenOf(-13, 3.6, -2));
-      await page.mouse.move(sp.x, sp.y);
+      mH.x += (sp.x - mH.x) / 2;
+      mH.y += (sp.y - mH.y) / 2;
+      await page.mouse.move(mH.x, mH.y);
       await sleep(400);
       cpH = await T(() => window.__testlines.cursorPoint());
       if (k >= 1 && cpH && cpH.y > 2.6 && Math.hypot(cpH.x + 13, cpH.z + 2) < 0.35) break;
