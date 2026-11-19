@@ -6,7 +6,8 @@ import { mkdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const which = process.argv[2] || 'both';
-const file = 'file://' + resolve('play/testlines.html');
+// PAGE picks another copy of the page (so a check can run while the next build is made).
+const file = 'file://' + resolve(process.env.PAGE || 'play/testlines.html');
 const shots = process.env.SHOTS_DIR || resolve('tools/shots');
 mkdirSync(shots, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -776,6 +777,48 @@ async function run(browserName) {
     await T(() => window.__testlines.set('nadeRefill', 5));
     await T(() => window.__testlines.set('dummiesWalk', true));
 
+    // The measuring grid and the metrics room (beside the yard at x 20).
+    const ms = await T(() => window.__testlines.measured());
+    const mtext = await page.$eval('#measure', (e) => e.textContent);
+    ok('the readout measures the soldier at 1.80 m and gives his size on screen', Math.abs(ms.soldierHeightM - 1.8) < 0.005 && ms.soldierOnScreenPx > 20 && /1\.80 m/.test(mtext), mtext);
+    await T(() => window.__testlines.set('gridOn', false));
+    await T(() => window.__testlines.set('gridStep', '0.1'));
+    await sleep(400);
+    await T(() => window.__testlines.set('gridOn', true));
+    await T(() => window.__testlines.set('gridStep', '0.5'));
+    await T(() => window.__testlines.set('dummiesWalk', false));
+    const fw = await T(() => window.__testlines.axes());
+    // Walk forward (away from the camera) along a line through a point, from 2.5 m before it, for some time.
+    const walkThrough = async (px, pz, ms2) => {
+      await T((x, z) => window.__testlines.place(x, z), px - fw.fwdX * 2.5, pz - fw.fwdZ * 2.5);
+      await sleep(400);
+      let top = 0;
+      await page.keyboard.down('KeyW');
+      for (let t = 0; t < ms2; t += 100) {
+        await sleep(100);
+        top = Math.max(top, (await T(() => window.__testlines.state())).y);
+      }
+      await page.keyboard.up('KeyW');
+      await sleep(200);
+      return { ...(await T(() => window.__testlines.state())), top };
+    };
+    let st = await walkThrough(20, -11, 1200);
+    ok('he walks through the 1.0 m doorway', st.x < 19.5, `x ${st.x.toFixed(2)} z ${st.z.toFixed(2)}`);
+    st = await walkThrough(20, -17, 1200);
+    ok('the window sill stops him', st.x > 20.4, `x ${st.x.toFixed(2)} y ${st.y.toFixed(2)}`);
+    await T(() => window.__testlines.set('stairWidth', 4));
+    await sleep(300);
+    st = await walkThrough(21.2, -27.5, 1500);
+    ok('he walks up the stair to the landing (1.44 m)', st.top > 1.43, `highest feet ${st.top.toFixed(2)} m`);
+    await T(() => window.__testlines.set('stairWidth', 1.2));
+    await T(() => window.__testlines.set('doorWidth', 0.7));
+    await sleep(300);
+    st = await walkThrough(20, -11, 1200);
+    ok('a doorway narrower than his body (0.7 m) stops him; the room rebuilds with the slider', st.x > 20.3, `x ${st.x.toFixed(2)}`);
+    await T(() => window.__testlines.set('doorWidth', 1.0));
+    await T(() => window.__testlines.place(30, 30));
+    await T(() => window.__testlines.set('dummiesWalk', true));
+
     // Step rate switch.
     const seg = await page.$$eval('#panel .p-segbtn', (bs) => bs.map((b) => b.textContent));
     const b60 = (await page.$$('#panel .p-segbtn'))[seg.indexOf('60')];
@@ -802,6 +845,7 @@ async function run(browserName) {
     } catch {}
     ok('Export gives JSON with date, build and values', !!doc && !!doc.exported && doc.build.startsWith('step') && doc.values.movement.walk_speed_m_per_s === 6.3, doc ? doc.exported : 'no JSON');
     ok('Export carries the old game\'s names', !!doc && Math.abs(doc.old_game_terms['T.jumpV'] - 11) < 0.01, doc ? String(doc.old_game_terms['T.jumpV']) : '');
+    ok('Export carries the room sizes, the grid and the measured soldier', !!doc && doc.values.metrics_room?.door_width_m === 1 && doc.values.metrics_room?.door_height_m === 2.1 && doc.values.measuring_grid?.grid_thin_step_m === '0.5' && Math.abs(doc.measured?.soldier_height_m - 1.8) < 0.005 && doc.measured?.soldier_on_screen_px > 20, doc ? JSON.stringify(doc.measured) : '');
 
     // Values survive a reload; Reset all restores them.
     await page.reload();

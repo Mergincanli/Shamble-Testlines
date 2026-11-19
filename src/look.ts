@@ -61,6 +61,91 @@ export function toon(hex: string): THREE.MeshToonMaterial {
 /** Shared by every ink material: the drawing buffer size, so line widths stay in screen pixels. */
 const inkShared = { uRes: { value: new THREE.Vector2(1920, 1080) } };
 
+/** The measuring grid's colours (a prototype blockout look, not the Art's): the base of a gridded surface. */
+export const GRID_COLOURS: Record<string, string> = {
+  grey: '#A6A6A6',
+  dark: '#707070',
+  orange: '#D98C42',
+  blue: '#6A93C9',
+  green: '#8DB463',
+  purple: '#A07CBC',
+};
+export type GridGroup = 'ground' | 'blocks' | 'room';
+
+/** Shared values of every gridded material: on or off, the thin step, and each surface group's colour. */
+export const GRID = {
+  on: { value: 1 },
+  minor: { value: 0.5 },
+  base: {
+    ground: { value: new THREE.Color(GRID_COLOURS.grey) },
+    blocks: { value: new THREE.Color(GRID_COLOURS.orange) },
+    room: { value: new THREE.Color(GRID_COLOURS.blue) },
+  } as Record<GridGroup, { value: THREE.Color }>,
+};
+
+const GRID_VERT_HEAD = `
+varying vec3 vGridPos;
+varying vec3 vGridN;
+`;
+const GRID_VERT_BODY = `
+vGridPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+vGridN = normalize(mat3(modelMatrix) * objectNormal);
+`;
+const GRID_FRAG_HEAD = `
+varying vec3 vGridPos;
+varying vec3 vGridN;
+uniform float uGridOn;
+uniform float uGridMinor;
+uniform vec3 uGridBase;
+// Lines every 'step' world units: 1 on a line, 0 between, at least minPx pixels wide (antialiased).
+float gridLines(vec2 p, float step, float halfW, float minPx) {
+  vec2 d = abs(fract(p / step - 0.5) - 0.5) * step;
+  vec2 fw = max(fwidth(p), vec2(1e-6));
+  vec2 w = max(vec2(halfW), fw * minPx * 0.5);
+  vec2 l = 1.0 - smoothstep(w, w + fw, d);
+  return max(l.x, l.y);
+}
+`;
+const GRID_FRAG_BODY = `
+if (uGridOn > 0.5) {
+  // World-space projection by the face's main direction, so the lines meet across every surface.
+  vec3 an = abs(normalize(vGridN));
+  vec2 p = (an.y >= an.x && an.y >= an.z) ? vGridPos.xz : (an.x >= an.z ? vGridPos.zy : vGridPos.xy);
+  vec2 fwp = fwidth(p);
+  float px = max(max(fwp.x, fwp.y), 1e-6);
+  // Thin lines fade out where they would be closer than about 5 pixels.
+  float fade = clamp((uGridMinor / px - 5.0) / 5.0, 0.0, 1.0);
+  float minor = gridLines(p, uGridMinor, 0.006, 1.0) * fade;
+  float major = gridLines(p, 1.0, 0.02, 2.0);
+  vec3 c = uGridBase;
+  c = mix(c, c * 0.74, minor);
+  c = mix(c, c * 0.36, major);
+  diffuseColor.rgb = c;
+}
+`;
+
+/**
+ * A surface that carries the measuring grid: the same flat shading as toon(), in its Art colour when the grid is
+ * off, and in its group's grid colour with lines laid in world space when it is on (a thick dark line every
+ * metre, thinner lighter lines at the thin step). A new material each call, so soldiers and guns are untouched.
+ */
+export function gridToon(hex: string, group: GridGroup): THREE.MeshToonMaterial {
+  const m = new THREE.MeshToonMaterial({ color: new THREE.Color(hex), gradientMap: gradient });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uGridOn = GRID.on;
+    sh.uniforms.uGridMinor = GRID.minor;
+    sh.uniforms.uGridBase = GRID.base[group];
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>' + GRID_VERT_HEAD)
+      .replace('#include <project_vertex>', '#include <project_vertex>' + GRID_VERT_BODY);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>' + GRID_FRAG_HEAD)
+      .replace('#include <color_fragment>', '#include <color_fragment>' + GRID_FRAG_BODY);
+  };
+  m.customProgramCacheKey = () => 'grid-toon-1';
+  return m;
+}
+
 export function setInkResolution(w: number, h: number) {
   inkShared.uRes.value.set(w, h);
 }

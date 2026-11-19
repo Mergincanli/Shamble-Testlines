@@ -4,6 +4,8 @@
 
 export type GroupId =
   | 'sim'
+  | 'grid'
+  | 'metrics'
   | 'soldier'
   | 'move'
   | 'jump'
@@ -20,6 +22,8 @@ export type GroupId =
 
 export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: string }[] = [
   { id: 'sim', title: 'Simulation', open: true, exportName: 'simulation' },
+  { id: 'grid', title: 'Measuring grid', open: true, exportName: 'measuring_grid' },
+  { id: 'metrics', title: 'Metrics room (beside the yard, at x 20)', open: false, exportName: 'metrics_room' },
   { id: 'soldier', title: 'Soldier', open: true, exportName: 'soldier' },
   { id: 'move', title: 'Movement', open: true, exportName: 'movement' },
   { id: 'jump', title: 'Jump', open: true, exportName: 'jump' },
@@ -262,6 +266,118 @@ export const GUN_PARAMS: Param[] = [
 ];
 
 export const PARAMS: Param[] = [
+  // Measuring grid
+  {
+    kind: 'toggle',
+    key: 'gridOn',
+    group: 'grid',
+    label: 'Grid on the ground, blocks and room (off: the Art colours)',
+    exportKey: 'grid_on',
+    start: true,
+    source: "The owner's ask: a prototype grid laid in world space, a thick dark line every metre, as in a level blockout.",
+  },
+  {
+    kind: 'choice',
+    key: 'gridStep',
+    group: 'grid',
+    label: 'Thin lines every (m)',
+    exportKey: 'grid_thin_step_m',
+    options: [
+      { value: '0.5', label: '0.5' },
+      { value: '0.25', label: '0.25' },
+      { value: '0.2', label: '0.2' },
+      { value: '0.1', label: '0.1' },
+    ],
+    start: '0.5',
+    source: "The owner's start, 0.5 m. Only steps that divide a metre, so the thin lines meet the thick ones. They fade out where they would be closer than a few pixels.",
+  },
+  { kind: 'choice', key: 'gridGround', group: 'grid', label: 'Ground colour', exportKey: 'grid_ground_colour', options: [
+      { value: 'grey', label: 'Grey' },
+      { value: 'dark', label: 'Dark grey' },
+      { value: 'orange', label: 'Orange' },
+      { value: 'blue', label: 'Blue' },
+      { value: 'green', label: 'Green' },
+      { value: 'purple', label: 'Purple' },
+    ], start: 'grey', source: "The sandbox's pick, to tell surfaces apart." },
+  { kind: 'choice', key: 'gridBlocks', group: 'grid', label: 'Yard blocks colour', exportKey: 'grid_blocks_colour', options: [
+      { value: 'grey', label: 'Grey' },
+      { value: 'dark', label: 'Dark grey' },
+      { value: 'orange', label: 'Orange' },
+      { value: 'blue', label: 'Blue' },
+      { value: 'green', label: 'Green' },
+      { value: 'purple', label: 'Purple' },
+    ], start: 'orange', source: "The sandbox's pick, to tell surfaces apart." },
+  { kind: 'choice', key: 'gridRoom', group: 'grid', label: 'Metrics room colour', exportKey: 'grid_room_colour', options: [
+      { value: 'grey', label: 'Grey' },
+      { value: 'dark', label: 'Dark grey' },
+      { value: 'orange', label: 'Orange' },
+      { value: 'blue', label: 'Blue' },
+      { value: 'green', label: 'Green' },
+      { value: 'purple', label: 'Purple' },
+    ], start: 'blue', source: "The sandbox's pick, to tell surfaces apart." },
+
+  // Metrics room
+  {
+    kind: 'range', key: 'roomWallHeight', group: 'metrics', label: 'Wall height', exportKey: 'wall_height_m', unit: 'm', min: 2.2, max: 5, step: 0.05, start: 3.0, digits: 2,
+    note: (v) => ((v.roomWallHeight as number) <= (v.jumpReach as number) ? `the jump reach (${(v.jumpReach as number).toFixed(2)} m) gets him onto it` : 'above the jump reach'),
+    source: "The sandbox's pick, an ordinary real size: one storey, a 2.6 m room plus its floor. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'roomWallThick', group: 'metrics', label: 'Wall thickness', exportKey: 'wall_thickness_m', unit: 'm', min: 0.1, max: 0.6, step: 0.01, start: 0.2, digits: 2,
+    source: "The sandbox's pick, an ordinary real size: a brick wall with plaster. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'doorWidth', group: 'metrics', label: 'Doorway: width', exportKey: 'door_width_m', unit: 'm', min: 0.6, max: 3, step: 0.05, start: 1.0, digits: 2,
+    note: (v) => ((v.doorWidth as number) > 2 * (v.bodyRadius as number) ? `${((v.doorWidth as number) - 2 * (v.bodyRadius as number)).toFixed(2)} m wider than his body` : 'narrower than his body: he cannot pass'),
+    source: "The owner's start: a door about 1.0 m wide.",
+  },
+  {
+    kind: 'range', key: 'doorHeight', group: 'metrics', label: 'Doorway: height', exportKey: 'door_height_m', unit: 'm', min: 1.6, max: 4, step: 0.05, start: 2.1, digits: 2,
+    source: "The owner's start: a door about 2.1 m high.",
+  },
+  {
+    kind: 'range', key: 'windowWidth', group: 'metrics', label: 'Window: width', exportKey: 'window_width_m', unit: 'm', min: 0.3, max: 3.5, step: 0.05, start: 1.2, digits: 2,
+    source: "The sandbox's pick, an ordinary real size: a 1.2 m window. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'windowHeight', group: 'metrics', label: 'Window: height', exportKey: 'window_height_m', unit: 'm', min: 0.3, max: 3, step: 0.05, start: 1.2, digits: 2,
+    source: "The sandbox's pick, an ordinary real size: a 1.2 m window. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'windowSill', group: 'metrics', label: 'Window: sill height', exportKey: 'window_sill_m', unit: 'm', min: 0, max: 2, step: 0.05, start: 0.9, digits: 2,
+    source: "The sandbox's pick, an ordinary real size: a 0.9 m sill. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'coverHeight', group: 'metrics', label: 'Waist-high cover: height', exportKey: 'cover_height_m', unit: 'm', min: 0.3, max: 2, step: 0.05, start: 1.0, digits: 2,
+    note: (v) => ((v.coverHeight as number) < 1.36 ? 'level shots (1.36 m) fly over it' : 'stops level shots (1.36 m)'),
+    source: "The sandbox's pick, an ordinary real size: waist height on a 1.8 m man, about 1.0 m. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'coverLength', group: 'metrics', label: 'Waist-high cover: length', exportKey: 'cover_length_m', unit: 'm', min: 0.5, max: 6, step: 0.1, start: 2.4, digits: 1,
+    source: "The sandbox's pick, an ordinary real size: a short low wall. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'coverThick', group: 'metrics', label: 'Waist-high cover: thickness', exportKey: 'cover_thickness_m', unit: 'm', min: 0.1, max: 1, step: 0.05, start: 0.3, digits: 2,
+    source: "The sandbox's pick, an ordinary real size: a low wall of blocks. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'stairRise', group: 'metrics', label: 'Stair: rise per step', exportKey: 'stair_rise_m', unit: 'm', min: 0.05, max: 0.5, step: 0.01, start: 0.18, digits: 2,
+    note: (v) => `${(Math.atan((v.stairRise as number) / (v.stairTread as number)) * 180 / Math.PI).toFixed(0)}° steep, ${((v.stairRise as number) * (v.stairSteps as number)).toFixed(2)} m to the landing`,
+    source: "The sandbox's pick, an ordinary real size: 18 cm, a usual house stair. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'stairTread', group: 'metrics', label: 'Stair: tread depth', exportKey: 'stair_tread_m', unit: 'm', min: 0.15, max: 0.8, step: 0.01, start: 0.28, digits: 2,
+    source: "The sandbox's pick, an ordinary real size: 28 cm, a usual house stair. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'stairSteps', group: 'metrics', label: 'Stair: steps', exportKey: 'stair_steps', unit: '', min: 2, max: 20, step: 1, start: 8, digits: 0,
+    source: "The sandbox's pick: eight steps to a landing. Not a decision.",
+  },
+  {
+    kind: 'range', key: 'stairWidth', group: 'metrics', label: 'Stair: width', exportKey: 'stair_width_m', unit: 'm', min: 0.6, max: 4, step: 0.05, start: 1.2, digits: 2,
+    source: "The sandbox's pick, an ordinary real size: a 1.2 m stair. Not a decision.",
+  },
+
   // Simulation
   {
     kind: 'choice',

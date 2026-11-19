@@ -10,7 +10,9 @@ import { NadeFx } from './nadefx';
 import type { GunId } from './guns';
 import { Hud } from './hud';
 import { AIM_KEY, Input } from './input';
-import { addLights, setInkResolution, type Faction } from './look';
+import { addLights, GRID, GRID_COLOURS, setInkResolution, type Faction, type GridGroup } from './look';
+import { MetricsRoom } from './metrics';
+import { MEASURED } from './exporter';
 import { newMover, stepMover, type MoveInput, type MoverState } from './movement';
 import { Panel } from './panel';
 import { CAMERA_PRESETS, CAMERA_PROFILES, Store } from './params';
@@ -27,7 +29,7 @@ import {
   type ShotEvent,
   type Target,
 } from './weapons';
-import { buildYard, rayWorld } from './yard';
+import { artGrid, buildYard, rayWorld, setBodyHeight } from './yard';
 
 const store = new Store();
 
@@ -52,6 +54,24 @@ const panel = new Panel(store);
 const soldier = new Soldier(store.get('faction') as Faction);
 soldier.setGun(store.get('gun') as GunId);
 scene.add(soldier.root);
+/** The stand-in's height, measured from its geometry: his headroom in the collision world, and the readout. */
+const soldierHeight = new THREE.Box3().setFromObject(soldier.root).max.y;
+setBodyHeight(soldierHeight);
+
+// The metrics room beside the yard, and the measuring grid's settings.
+const room = new MetricsRoom(scene, store);
+function applyGrid() {
+  GRID.on.value = store.get('gridOn') === true ? 1 : 0;
+  GRID.minor.value = Number(store.get('gridStep')) || 0.5;
+  const groups: [GridGroup, string][] = [
+    ['ground', 'gridGround'],
+    ['blocks', 'gridBlocks'],
+    ['room', 'gridRoom'],
+  ];
+  for (const [g, key] of groups) GRID.base[g].value.set(GRID_COLOURS[String(store.get(key))] ?? GRID_COLOURS.grey);
+  if (artGrid) artGrid.visible = GRID.on.value < 0.5;
+}
+applyGrid();
 
 // Eleven dummies in the other two factions' colours; both factions carry both guns.
 const dummies = makeDummies();
@@ -132,6 +152,8 @@ let last = performance.now();
 /** Highest feet height since the last check (for the scripted checks). */
 let peakY = 0;
 store.onChange((key) => {
+  room.rebuild();
+  applyGrid();
   if (key === null || key === 'faction') {
     soldier.setFaction(store.get('faction') as Faction);
     dressDummies();
@@ -233,6 +255,8 @@ const renderPos = new THREE.Vector3();
 const muzzle = new THREE.Vector3();
 const rayEnds: THREE.Vector3[] = [];
 const shake = new THREE.Vector3();
+const measureA = new THREE.Vector3();
+const measureB = new THREE.Vector3();
 
 /** One fixed simulation step: the player's soldier, his gun, the dummies, then the soft push. */
 function simStep(dt: number) {
@@ -446,6 +470,17 @@ function frame(now: number) {
     const dx = aimPoint.x - renderPos.x;
     const dz = aimPoint.z - renderPos.z;
     if (dx * dx + dz * dz > 0.09) aimYaw = Math.atan2(dx, dz);
+  }
+  // The soldier's size on screen, from the steady camera: feet to the top of his head, in CSS pixels.
+  {
+    const r = renderer.domElement.getBoundingClientRect();
+    const a = measureA.set(renderPos.x, renderPos.y, renderPos.z).project(camera.cam);
+    const b = measureB.set(renderPos.x, renderPos.y + soldierHeight, renderPos.z).project(camera.cam);
+    const px = Math.hypot(((b.x - a.x) / 2) * r.width, ((b.y - a.y) / 2) * r.height);
+    MEASURED.soldierHeightM = soldierHeight;
+    MEASURED.soldierOnScreenPx = px;
+    MEASURED.viewHeightPx = r.height;
+    hud.updateMeasure(soldierHeight, px, r.height);
   }
   // The grenade's target: the first surface under the cursor (a wall's face too, for a throw off it).
   const ro = raycaster.ray.origin;
@@ -672,6 +707,8 @@ requestAnimationFrame(frame);
     peakY = y;
   },
   audio: () => ({ state: audioState(), clicks: clicksPlayed }),
+  /** The soldier's measured height and size on screen at the last frame. */
+  measured: () => ({ ...MEASURED }),
   aiming: () => aiming,
   aimPoint: () => ({ x: aimPoint.x, y: aimPoint.y, z: aimPoint.z }),
   nades: () => ({

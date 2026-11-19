@@ -2,7 +2,10 @@
 // old game's own names beside them, so the numbers can be handed to the Advisor as they are.
 import { CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
 
-export const BUILD = { step: '7b', name: 'Aimed grenade' };
+export const BUILD = { step: 'A', name: 'Grid and metrics room' };
+
+/** Measured at the last frame (set by the main loop): the soldier's height and his size on screen. */
+export const MEASURED = { soldierHeightM: 0, soldierOnScreenPx: 0, viewHeightPx: 0 };
 
 function localStamp(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -104,6 +107,13 @@ export function buildExport(store: Store): string {
     exported_utc: now.toISOString(),
     values,
     derived,
+    measured: {
+      soldier_height_m: round(MEASURED.soldierHeightM, 3),
+      soldier_on_screen_px: round(MEASURED.soldierOnScreenPx, 1),
+      view_height_px: round(MEASURED.viewHeightPx, 0),
+      soldier_share_of_view_height: round(MEASURED.viewHeightPx > 0 ? MEASURED.soldierOnScreenPx / MEASURED.viewHeightPx : 0, 4),
+      note: 'At the camera in use when exported, from the steady camera (no shake); pixels are CSS pixels.',
+    },
     old_game_terms: gameTerms,
   };
   return JSON.stringify(doc, null, 2);

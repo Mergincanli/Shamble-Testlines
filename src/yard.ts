@@ -4,7 +4,7 @@
 // higher is lighter. The same block list is the collision world.
 import * as THREE from 'three';
 import { box, hullOf } from './geom';
-import { INK_BLOCK, PAL, toon } from './look';
+import { GRID, gridToon, INK_BLOCK, PAL } from './look';
 
 export interface Block {
   minX: number;
@@ -236,10 +236,19 @@ export function stepUpTarget(
   vz: number,
 ): { top: number; qx: number; qz: number } | null {
   let best: { top: number; qx: number; qz: number } | null = null;
+  // Standing on a slope, a block level with the slope's top (the platform at the head of the ramp, a stair's
+  // landing) is reached by walking up the slope, not by stepping up early because the body touches it.
+  const slopeTops: number[] = [];
+  for (const b of BLOCKS) {
+    if (!b.ramp || !overlaps(b, x, z, r)) continue;
+    const h = heightNear(b, x, z);
+    if (h >= feet - 0.05 && h <= feet + stepUp + EPS) slopeTops.push(b.top);
+  }
   for (const b of BLOCKS) {
     if (!overlaps(b, x, z, r)) continue;
     const top = heightNear(b, x, z);
     if (top <= feet + 1e-6 || top > feet + stepUp + EPS) continue;
+    if (!b.ramp && slopeTops.some((t) => Math.abs(t - top) < 0.01)) continue;
     // Not onto a floating block from under it, nor onto a top with no headroom.
     if (bottomOf(b) > feet + 1e-6 || !headroom(x, z, r, top)) continue;
     const qx = Math.min(b.maxX, Math.max(b.minX, x));
@@ -249,6 +258,16 @@ export function stepUpTarget(
     if (!best || top > best.top) best = { top, qx, qz };
   }
   return best;
+}
+
+/** The steepest slope (rise per metre) of any ramp under a circle of radius r at (x, z), or 0. */
+export function slopeUnder(x: number, z: number, r: number): number {
+  let s = 0;
+  for (const b of BLOCKS) {
+    if (!b.ramp || !overlaps(b, x, z, r)) continue;
+    s = Math.max(s, b.top / Math.abs(b.ramp.high - b.ramp.low));
+  }
+  return s;
 }
 
 /**
@@ -348,7 +367,7 @@ function flat(shape: THREE.Shape | null, w: number, d: number, hex: string, y: n
     }
   }
   geo.computeVertexNormals();
-  const mat = toon(hex).clone();
+  const mat = gridToon(hex, 'ground');
   mat.depthWrite = false;
   const m = new THREE.Mesh(geo, mat);
   m.position.y = y;
@@ -356,6 +375,9 @@ function flat(shape: THREE.Shape | null, w: number, d: number, hex: string, y: n
   m.renderOrder = order;
   return m;
 }
+
+/** The faint ground lines of the Art look (hidden while the measuring grid is on). */
+export let artGrid: THREE.Group | null = null;
 
 function grid(): THREE.Group {
   const g = new THREE.Group();
@@ -422,16 +444,25 @@ export function buildYard(scene: THREE.Scene) {
   scene.add(flat(null, 900, 900, PAL.grass, 0, -3));
   scene.add(flat(edgeShape(YARD_HALF, 0.25, 7), 0, 0, PAL.worn, 0, -2));
   scene.add(flat(edgeShape(YARD_HALF, 0, 7), 0, 0, PAL.street, 0, -1));
-  scene.add(grid());
+  artGrid = grid();
+  artGrid.visible = GRID.on.value < 0.5;
+  scene.add(artGrid);
 
   for (const b of BLOCKS) {
-    const sx = b.maxX - b.minX;
-    const sz = b.maxZ - b.minZ;
-    const geo = b.ramp ? rampGeometry(b) : box((b.minX + b.maxX) / 2, b.top / 2, (b.minZ + b.maxZ) / 2, sx, b.top, sz);
-    const m = new THREE.Mesh(geo, toon(blockColour(b)));
-    m.castShadow = true;
-    m.receiveShadow = true;
-    const ink = new THREE.Mesh(hullOf([geo]), INK_BLOCK);
-    scene.add(m, ink);
+    if (b.hidden) continue;
+    const m = blockMesh(b, gridToon(blockColour(b), 'blocks'));
+    scene.add(m, new THREE.Mesh(hullOf([m.geometry]), INK_BLOCK));
   }
+}
+
+/** A block's mesh (its box from its bottom to its top, or the ramp's wedge), casting and taking shadows. */
+export function blockMesh(b: Block, mat: THREE.Material): THREE.Mesh {
+  const sx = b.maxX - b.minX;
+  const sz = b.maxZ - b.minZ;
+  const by = bottomOf(b);
+  const geo = b.ramp ? rampGeometry(b) : box((b.minX + b.maxX) / 2, (by + b.top) / 2, (b.minZ + b.maxZ) / 2, sx, b.top - by, sz);
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
 }

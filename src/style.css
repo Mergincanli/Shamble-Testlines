@@ -30,7 +30,8 @@ html, body {
   body.panel-open #view { width: calc(100% - 340px); }
   body.panel-open #stamina { left: calc(50% - 170px); }
 }
-#readout {
+#readout,
+#measure {
   position: fixed;
   left: 10px;
   top: 8px;
@@ -39,6 +40,9 @@ html, body {
   background: rgba(20, 22, 26, 0.55);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+}
+#measure {
+  top: 34px;
 }
 #stamina {
   position: fixed;

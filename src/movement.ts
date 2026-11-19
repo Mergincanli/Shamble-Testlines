@@ -2,7 +2,7 @@
 // and described behaviour: speed eases toward the wanted speed (one rate to speed up, one to stop), sprint
 // drains stamina, the jump starts from the speed that gives the chosen reach, and blocks no taller than the
 // step-up are walked onto, on the ground and in the air.
-import { BODY_HEIGHT, ceilingAt, resolveWalls, stepUpTarget, surfaceAt } from './yard';
+import { BODY_HEIGHT, ceilingAt, resolveWalls, slopeUnder, stepUpTarget, surfaceAt } from './yard';
 import type { Store } from './params';
 
 export interface MoverState {
@@ -122,6 +122,8 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
   }
   // Move, then leave any block that is too tall from the new feet height (after this step's arc, so a
   // ledge stops being a wall at the very step the jump reaches it).
+  const startX = s.x;
+  const startZ = s.z;
   const wantX = s.x + s.vx * dt;
   const wantZ = s.z + s.vz * dt;
   const [rx, rz] = resolveWalls(wantX, wantZ, r, testFeet, stepUp);
@@ -177,7 +179,8 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
     s.y = surf;
     s.vy = 0;
     s.grounded = true;
-  } else if (wasGrounded && s.y - surf <= SNAP_DOWN) {
+  } else if (wasGrounded && s.y - surf <= SNAP_DOWN + Math.hypot(s.x - startX, s.z - startZ) * slopeUnder(s.x, s.z, rs)) {
+    // Down a slope the drop per step grows with the speed and the slope: stay on it at either step rate.
     s.y = surf;
     s.vy = 0;
     s.grounded = true;

@@ -2,6 +2,8 @@
 
 export class Hud {
   private readout: HTMLDivElement;
+  private measure: HTMLDivElement;
+  private lastMeasure = '';
   private stamina: HTMLDivElement;
   private staminaFill: HTMLDivElement;
   private ammo: HTMLDivElement;
@@ -24,6 +26,8 @@ export class Hud {
   constructor() {
     this.readout = document.createElement('div');
     this.readout.id = 'readout';
+    this.measure = document.createElement('div');
+    this.measure.id = 'measure';
     this.stamina = document.createElement('div');
     this.stamina.id = 'stamina';
     this.staminaFill = document.createElement('div');
@@ -47,7 +51,7 @@ export class Hud {
     this.nadeText = document.createElement('div');
     this.nade.append(this.nadeText);
     this.ammo.append(this.nade);
-    document.body.append(this.readout, this.stamina, this.ammo);
+    document.body.append(this.readout, this.measure, this.stamina, this.ammo);
   }
 
   /**
@@ -86,6 +90,15 @@ export class Hud {
     }
     this.reloadBar.classList.toggle('show', reload >= 0);
     if (reload >= 0) this.reloadFill.style.transform = `scaleX(${reload.toFixed(3)})`;
+  }
+
+  /** The soldier's measured height, and how tall he is on screen (CSS pixels, and as a share of the view's height). */
+  updateMeasure(heightM: number, px: number, viewPx: number) {
+    const text = `soldier ${heightM.toFixed(2)} m · ${px.toFixed(0)} px tall on screen, ${((100 * px) / viewPx).toFixed(1)} % of the view's ${viewPx.toFixed(0)} px`;
+    if (text !== this.lastMeasure) {
+      this.measure.textContent = text;
+      this.lastMeasure = text;
+    }
   }
 
   /** Grenades in hand, and whether a throw is being aimed. */
