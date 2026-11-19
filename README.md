@@ -79,7 +79,8 @@ lighter lines inside each square at the thin step (0.5 m to start; 0.5, 0.25, 0.
 metre; they fade out where they would be closer than a few pixels). Ground, yard blocks and room each have a colour
 choice; switching the grid off brings back the Art colours. The second line top left reads the soldier's height,
 measured from the stand-in's geometry (1.80 m), and his height on screen at the camera in use, in CSS pixels and as
-a share of the view's height; the Export carries both. To compare him with the grid, stand him in the plane of the
+a share of the view's height; the Export carries both. It measures feet to the top of his head along his centre
+line; his outline on screen is about 10 % taller, because the camera looking down sees his depth as well. To compare him with the grid, stand him in the plane of the
 squares you read: the camera looks down at an angle, so against a wall half a metre behind him he reads about
 0.35 m short.
 
