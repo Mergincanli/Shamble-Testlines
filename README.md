@@ -71,6 +71,30 @@ Camera profiles (in the panel's Camera group; each sets the whole camera, framin
   a 35° lens, straight behind, the character about a tenth of the screen's height.
 - The old game's five presets (Classic, Tactical, Iso, Iso+, Foxhole) stay, at the old game's own soldier scale.
 
+Measuring (the panel's "Measuring grid" and "Metrics room" groups): the ground, the yard's blocks and the room carry
+a prototype grid laid in world space, so it lines up on every surface: a thick dark line every metre and thinner,
+lighter lines inside each square at the thin step (0.5 m to start; 0.5, 0.25, 0.2 or 0.1, the steps that divide a
+metre; they fade out where they would be closer than a few pixels). Ground, yard blocks and room each have a colour
+choice; switching the grid off brings back the Art colours. The second line top left reads the soldier's height,
+measured from the stand-in's geometry (1.80 m), and his height on screen at the camera in use, in CSS pixels and as
+a share of the view's height; the Export carries both. To compare him with the grid, stand him in the plane of the
+squares you read: the camera looks down at an angle, so against a wall half a metre behind him he reads about
+0.35 m short.
+
+The metrics room stands beside the yard at x 20 (walk there from the start along +x and a little -z), its faces
+toward the default camera: a doorway and a window in two 4 m walls, a waist-high cover and a stair to a landing.
+Start sizes: the door 1.0 m wide and 2.1 m high (the owner's); everything else is the sandbox's pick of an ordinary
+real size, not a decision: walls 3.0 m high and 0.2 m thick, the window 1.2 x 1.2 m on a 0.9 m sill, the cover
+1.0 m high, 2.4 m long and 0.3 m thick, the stair 8 steps of 18 cm rise and 28 cm tread, 1.2 m wide, to a landing.
+Every size is a slider and goes into the Export; the room is rebuilt as you drag. The walls over the door and over
+the window float: his head bumps the lintel if he jumps in the doorway, he cannot step onto the sill (no headroom),
+grenades bounce off the lintel's underside and fly through the window. With the old jump reach (3.07 m) he can
+jump onto a 3.0 m wall; raise the wall above the reach to stop that. Level shots fly at 1.36 m, so the 1.0 m cover
+and the 0.9 m sill do not stop them (how aiming at height works is open in the game). The stair is walked on a
+slope through its step nosings (his body is wider than a tread, so stepping each one would lurch), with the steps
+drawn over it; stairs steeper than about 50° cannot be walked up. On any slope, the block at its head is reached by
+walking up, not by an early step-up, and he stays on a slope running down it at either step rate.
+
 What is in it: a test yard with steps, a cover wall, ledges and a ramp; your soldier; eleven dummies walking loops
 in the other two factions' colours, which push softly and never block; the SMG and the rifle, firing at the
 dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped dummy stands again after 4 s).
@@ -110,7 +134,8 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 A light stand-in for the game's new art direction, from the Art texts in the game's repository: the Conscript
 stand-in (appendix A4), the yard's colours (A5 part C), the SMG (A6, with A10's corrections), the palette with its
 sun and shadow colours (A7). Flat shading in three steps, a warm sun with a cool soft shadow, and a black ink line
-round soldiers, guns and blocks. Using these texts here decides no colour, line width or shading value.
+round soldiers, guns and blocks. Using these texts here decides no colour, line width or shading value. The
+measuring grid (on at the start) replaces the yard's colours with blockout colours while it is on.
 
 ## Build it
 
@@ -131,12 +156,13 @@ and Firefox needs a display (on Linux: `xvfb-run -a npm run check`).
 - `src/params.ts`: the one table of every tuned value (the panel, the resets, the saved values and the Export
   all come from it). `src/panel.ts`, `src/exporter.ts`: the panel and the Export.
 - `src/main.ts`: the fixed-step loop (30 or 60 per second) and the smoothing between steps.
-- `src/movement.ts`: the movement. `src/yard.ts`: the test blocks and collision.
+- `src/movement.ts`: the movement. `src/yard.ts`: the test blocks and collision. `src/metrics.ts`: the metrics room.
 - `src/dummies.ts`: the dummies' loops. `src/push.ts`: soft pushing.
 - `src/weapons.ts`: the guns, the hitscan, the reload and the active reload. `src/fx.ts`: shot feedback.
 - `src/grenade.ts`: the grenade's flight, preview and blast. `src/nadefx.ts`: its look.
   `src/audio.ts`: the click. `src/hud.ts`: the readout, stamina, ammo and reload bar.
 - `src/camera.ts`: the follow camera. `src/input.ts`: keys and mouse.
-- `src/soldier.ts`, `src/guns.ts`, `src/look.ts`, `src/geom.ts`: the stand-in look.
+- `src/soldier.ts`, `src/guns.ts`, `src/look.ts`, `src/geom.ts`: the stand-in look (and the measuring grid, in
+  `src/look.ts`).
 
 No code here comes from the game's repository or from Shamble VFX; numbers and described behaviour only.
