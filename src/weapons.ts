@@ -178,6 +178,24 @@ function rayBlocks(ox: number, oz: number, dx: number, dz: number, y: number, ma
   return best;
 }
 
+/**
+ * One level shot ray from (ox, oz) at height y along (dx, dz), up to `range`: how far it goes, the dummy it hits
+ * (or -1), and whether a block stopped it. The guns' rule, for other shooters (the Hornet).
+ */
+export function castLevel(
+  ox: number,
+  oz: number,
+  y: number,
+  dx: number,
+  dz: number,
+  range: number,
+  targets: Target[],
+): { t: number; hit: number; hitBlock: boolean } {
+  const tb = rayBlocks(ox, oz, dx, dz, y, range);
+  const [tt, idx] = rayTargets(ox, oz, dx, dz, y, targets, Math.min(range, tb));
+  return { t: idx >= 0 ? tt : Math.min(tb, range), hit: idx, hitBlock: idx < 0 && tb <= range };
+}
+
 /** Where a level ray first meets a standing target's cylinder: [distance, index], or [Infinity, -1]. */
 function rayTargets(ox: number, oz: number, dx: number, dz: number, y: number, targets: Target[], max: number): [number, number] {
   let best = Infinity;

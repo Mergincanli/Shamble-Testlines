@@ -182,11 +182,11 @@ function overlaps(b: Block, x: number, z: number, r: number): boolean {
   return dx * dx + dz * dz < r * r;
 }
 
-/** True if a body of radius r standing on height `top` at (x, z) has its full height free above it. */
-function headroom(x: number, z: number, r: number, top: number): boolean {
+/** True if a body of radius r and this height, standing on height `top` at (x, z), has its height free above it. */
+function headroom(x: number, z: number, r: number, top: number, height = BODY_HEIGHT): boolean {
   for (const f of BLOCKS) {
     const fb = bottomOf(f);
-    if (fb <= top + 1e-6 || fb >= top + BODY_HEIGHT - 1e-6) continue;
+    if (fb <= top + 1e-6 || fb >= top + height - 1e-6) continue;
     // (A hair inside the body's edge, so touching a wall face exactly does not count as under it.)
     if (overlaps(f, x, z, r - 1e-6)) return false;
   }
@@ -197,11 +197,11 @@ function headroom(x: number, z: number, r: number, top: number): boolean {
  * The lowest underside of a floating block over a body of radius r whose head (feet + BODY_HEIGHT) is below it,
  * or Infinity: a jump stops there.
  */
-export function ceilingAt(x: number, z: number, r: number, feet: number): number {
+export function ceilingAt(x: number, z: number, r: number, feet: number, height = BODY_HEIGHT): number {
   let c = Infinity;
   for (const b of BLOCKS) {
     const bb = bottomOf(b);
-    if (bb <= 0 || bb < feet + BODY_HEIGHT - 1e-3 || bb >= c) continue;
+    if (bb <= 0 || bb < feet + height - 1e-3 || bb >= c) continue;
     if (overlaps(b, x, z, r - 1e-6)) c = bb;
   }
   return c;
@@ -235,6 +235,7 @@ export function stepUpTarget(
   stepUp: number,
   vx: number,
   vz: number,
+  height = BODY_HEIGHT,
 ): { top: number; qx: number; qz: number } | null {
   let best: { top: number; qx: number; qz: number } | null = null;
   const heads = slopesUnderfoot(x, z, r, feet, stepUp);
@@ -244,7 +245,7 @@ export function stepUpTarget(
     if (top <= feet + 1e-6 || top > feet + stepUp + EPS) continue;
     if (atSlopeHead(b, x, z, heads, stepUp)) continue;
     // Not onto a floating block from under it, nor onto a top with no headroom.
-    if (bottomOf(b) > feet + 1e-6 || !headroom(x, z, r, top)) continue;
+    if (bottomOf(b) > feet + 1e-6 || !headroom(x, z, r, top, height)) continue;
     const qx = Math.min(b.maxX, Math.max(b.minX, x));
     const qz = Math.min(b.maxZ, Math.max(b.minZ, z));
     // Moving towards it (or already over it).
@@ -296,16 +297,16 @@ export function slopeUnder(x: number, z: number, r: number): number {
  * Push a body of radius r out of every block too tall to step onto from its feet height. Returns the pushed
  * position. A few passes settle corners where two blocks meet.
  */
-export function resolveWalls(x: number, z: number, r: number, feet: number, stepUp: number): [number, number] {
+export function resolveWalls(x: number, z: number, r: number, feet: number, stepUp: number, height = BODY_HEIGHT): [number, number] {
   for (let pass = 0; pass < 3; pass++) {
     let moved = false;
     const heads = slopesUnderfoot(x, z, r, feet, stepUp);
     for (const b of BLOCKS) {
       // Wholly above the head: no wall (a jump under it bumps the head instead).
-      if (bottomOf(b) >= feet + BODY_HEIGHT - 1e-6) continue;
+      if (bottomOf(b) >= feet + height - 1e-6) continue;
       // Low enough to step onto (from no lower than its underside, with headroom on top): no wall either.
       const top = heightNear(b, x, z);
-      if (top <= feet + stepUp + EPS && bottomOf(b) <= feet + 1e-6 && headroom(x, z, r, top)) continue;
+      if (top <= feet + stepUp + EPS && bottomOf(b) <= feet + 1e-6 && headroom(x, z, r, top, height)) continue;
       // The block at the head of the slope he is walking up (a stair's landing): the slope brings him to it.
       if (atSlopeHead(b, x, z, heads, stepUp)) continue;
       const qx = Math.min(b.maxX, Math.max(b.minX, x));

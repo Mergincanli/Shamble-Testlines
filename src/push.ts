@@ -24,6 +24,8 @@ export function softPush(
   dt: number,
   wallRadius: number,
   stepUp: number,
+  /** Bodies that push but are not pushed (the Hornet): the other one takes the whole of the parting. */
+  fixed: boolean[] = [],
 ) {
   if (strength <= 0 || radius <= 0) return;
   const share = 1 - Math.exp(-strength * dt);
@@ -72,12 +74,16 @@ export function softPush(
         nx /= l;
         nz /= l;
       }
+      if (fixed[i] && fixed[j]) continue;
       const move = (min - dist) * share * 0.5;
-      px[i] -= nx * move;
-      pz[i] -= nz * move;
-      px[j] += nx * move;
-      pz[j] += nz * move;
-      touched[i] = touched[j] = 1;
+      const mi = fixed[i] ? 0 : fixed[j] ? 2 * move : move;
+      const mj = fixed[j] ? 0 : fixed[i] ? 2 * move : move;
+      px[i] -= nx * mi;
+      pz[i] -= nz * mi;
+      px[j] += nx * mj;
+      pz[j] += nz * mj;
+      if (mi > 0) touched[i] = 1;
+      if (mj > 0) touched[j] = 1;
     }
   }
   for (let i = 0; i < n; i++) {

@@ -3,6 +3,14 @@
 // drains stamina, the jump starts from the speed that gives the chosen reach, and blocks no taller than the
 // step-up are walked onto, on the ground and in the air.
 import { BODY_HEIGHT, ceilingAt, resolveWalls, slopeUnder, stepUpTarget, surfaceAt } from './yard';
+
+/** A body moving through the yard: its radius, how high a block it steps onto, its height and gravity. */
+export interface Body {
+  r: number;
+  stepUp: number;
+  height: number;
+  gravity: number;
+}
 import type { Store } from './params';
 
 export interface MoverState {
@@ -90,17 +98,26 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
   s.vx += (tx - s.vx) * k;
   s.vz += (tz - s.vz) * k;
 
-  const r = P.num('bodyRadius');
-  const stepUp = P.num('stepUp');
-  const g = P.num('gravity');
+  const body: Body = { r: P.num('bodyRadius'), stepUp: P.num('stepUp'), height: BODY_HEIGHT, gravity: P.num('gravity') };
 
   // Jump: the take-off speed that rises (reach - step-up), so the reach is the highest ledge gained.
   if (inp.jump && s.grounded) {
-    const rise = Math.max(0.01, P.num('jumpReach') - stepUp);
-    s.vy = Math.sqrt(2 * g * rise);
+    const rise = Math.max(0.01, P.num('jumpReach') - body.stepUp);
+    s.vy = Math.sqrt(2 * body.gravity * rise);
     s.grounded = false;
   }
+  moveBody(s, dt, body);
+}
 
+/**
+ * Move a body by its velocity for one step through the yard: its fall or jump arc (with the head bumping an
+ * overhead block), walls, stepping up (a pull onto the block over a few steps), standing on what is under its
+ * feet and staying on a slope going down. Shared by the soldiers and the Hornet.
+ */
+export function moveBody(s: MoverState, dt: number, body: Body) {
+  const r = body.r;
+  const stepUp = body.stepUp;
+  const g = body.gravity;
   // Vertical: the exact arc for this step, so the jump's height does not depend on the step rate.
   const wasGrounded = s.grounded;
   // Feet height for this step's wall and step-up tests: when the top of the arc falls between two steps, use
@@ -113,7 +130,7 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
     s.vy -= g * dt;
     testFeet = vy0 > 0 && s.vy <= 0 ? Math.max(s.y, y0 + (vy0 * vy0) / (2 * g)) : s.y;
     // A floating block overhead (a lintel, the wall over a window): the head bumps it and the rise stops.
-    const ceil = ceilingAt(s.x, s.z, r, y0) - BODY_HEIGHT;
+    const ceil = ceilingAt(s.x, s.z, r, y0, body.height) - body.height;
     if (s.y > ceil) {
       s.y = ceil;
       if (s.vy > 0) s.vy = 0;
@@ -126,7 +143,7 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
   const startZ = s.z;
   const wantX = s.x + s.vx * dt;
   const wantZ = s.z + s.vz * dt;
-  const [rx, rz] = resolveWalls(wantX, wantZ, r, testFeet, stepUp);
+  const [rx, rz] = resolveWalls(wantX, wantZ, r, testFeet, stepUp, body.height);
   // Lose the speed that went into a wall, so the soldier slides along it instead of pressing into it.
   const px = rx - wantX;
   const pz = rz - wantZ;
@@ -144,7 +161,7 @@ export function stepMover(s: MoverState, inp: MoveInput, dt: number, P: Store) {
   // Step up onto a block the body meets, in the air too (that is how a jump gains a ledge): rise to its top, and
   // pull the feet onto it over the next few steps.
   const rs = Math.min(FOOT_RADIUS, r);
-  const up = stepUpTarget(s.x, s.z, r, testFeet, stepUp, s.vx, s.vz);
+  const up = stepUpTarget(s.x, s.z, r, testFeet, stepUp, s.vx, s.vz, body.height);
   if (up && up.top > s.y) {
     s.y = up.top;
     s.vy = 0;
