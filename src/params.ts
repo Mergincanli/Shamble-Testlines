@@ -916,6 +916,15 @@ export const PARAMS: Param[] = [
     source: "Old game adsMode = 'hold' (its pause menu offered toggle as well).",
   },
   {
+    kind: 'toggle',
+    key: 'sightLine',
+    group: 'ads',
+    label: 'Sight line while aiming (to where the shot stops)',
+    exportKey: 'sight_line',
+    start: true,
+    source: "Old game behaviour (a line from the gun to where the shot would stop while aiming down sights); its look here is the sandbox's own: the faction's Top colour, the sun colour on a dummy.",
+  },
+  {
     kind: 'range',
     key: 'adsMoveMult',
     group: 'ads',

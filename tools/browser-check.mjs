@@ -553,6 +553,60 @@ async function run(browserName) {
     ok('Flatten keeps the soldier\'s feet on screen', feet.y < viewF.t + viewF.h, `feet at ${feet.y.toFixed(0)} of ${(viewF.t + viewF.h).toFixed(0)}`);
     await T(() => window.__testlines.preset('Iso'));
 
+    // The sight line while aiming down sights: from the gun to where the shot stops (the gun's range in the open,
+    // or a dummy, or a block), the shot's own cast.
+    await T(() => window.__testlines.preset('Original'));
+    await T(() => window.__testlines.set('dummiesWalk', false));
+    await T(() => window.__testlines.place(30, 30));
+    await sleep(1200);
+    {
+      const fwd = await T(() => window.__testlines.axes());
+      // Aim away from the camera, along the screen's up: open ground for 55 m.
+      for (let k = 0; k < 2; k++) {
+        const sp = await T((x, z) => window.__testlines.screenOf(x, 1.36, z), 30 + fwd.fwdX * 6, 30 + fwd.fwdZ * 6);
+        await page.mouse.move(sp.x, sp.y);
+        await sleep(400);
+      }
+      const off = await T(() => window.__testlines.sight());
+      await page.mouse.down({ button: 'right' });
+      await sleep(1500);
+      let sl = await T(() => window.__testlines.sight());
+      const me = await T(() => window.__testlines.state());
+      const len = (s) => Math.hypot(s.end.x - me.x, s.end.z - me.z);
+      ok('aiming down sights shows the sight line, out to the gun\'s range (55 m) in the open', !off.visible && sl.visible && Math.abs(len(sl) - 55) < 0.5 && !sl.onDummy, `visible ${off.visible} -> ${sl.visible}, ${len(sl).toFixed(1)} m`);
+      await T(() => window.__testlines.set('smgRange', 20));
+      await sleep(400);
+      sl = await T(() => window.__testlines.sight());
+      ok('the sight line follows the gun\'s range slider', Math.abs(len(sl) - 20) < 0.5, `${len(sl).toFixed(1)} m`);
+      await T(() => window.__testlines.set('smgRange', 55));
+      // A dummy on the line of aim, 8 m out: the line stops on it.
+      const yaw = await T(() => window.__testlines.aimYaw());
+      await T((x, z) => window.__testlines.placeDummy(0, x, z), me.x + Math.sin(yaw) * 8, me.z + Math.cos(yaw) * 8);
+      await sleep(500);
+      sl = await T(() => window.__testlines.sight());
+      ok('the sight line stops on a dummy in the way', sl.onDummy && Math.abs(len(sl) - 7.7) < 0.4, `on a dummy ${sl.onDummy}, ${len(sl).toFixed(2)} m`);
+      await T(() => window.__testlines.set('sightLine', false));
+      await sleep(300);
+      sl = await T(() => window.__testlines.sight());
+      ok('the sight line has an off switch', !sl.visible, `visible ${sl.visible}`);
+      await T(() => window.__testlines.set('sightLine', true));
+      // G with the right button still held: aiming down sights ends, a grenade is ready, and no throw starts until a
+      // fresh press of the right button.
+      await page.keyboard.press('KeyG');
+      await sleep(500);
+      const ndG = await T(() => window.__testlines.nades());
+      const adsG = await T(() => window.__testlines.aiming());
+      await page.mouse.up({ button: 'right' });
+      await sleep(300);
+      const ndG2 = await T(() => window.__testlines.nades());
+      ok('G with the right button held ends aiming and readies a grenade; no throw without a fresh press', !adsG && ndG.ready && !ndG.aiming && ndG2.thrown === ndG.thrown, `sights ${adsG}, ready ${ndG.ready}, aiming a throw ${ndG.aiming}`);
+      await page.keyboard.press('KeyG');
+      await sleep(300);
+      await T(() => window.__testlines.placeDummy(0, 4, 4));
+    }
+    await T(() => window.__testlines.set('dummiesWalk', true));
+    await T(() => window.__testlines.preset('Iso'));
+
     // The shotgun (key 3): one pull is one round, one click and eight pellet rays.
     await T(() => window.__testlines.set('dummiesWalk', false));
     await T(() => window.__testlines.place(40, 40));

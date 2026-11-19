@@ -198,6 +198,23 @@ export function castLevel(
   return { t: idx >= 0 ? tt : Math.min(tb, range), hit: idx, hitBlock: idx < 0 && tb <= range };
 }
 
+/**
+ * Where a shot from the soldier's gun along the aim (no scatter) ends, and what stops it: the guns' own cast, for
+ * the sight line, so the line and the shot always agree.
+ */
+export function traceAim(
+  me: MoverState,
+  aimYaw: number,
+  range: number,
+  targets: Target[],
+): { ox: number; oy: number; oz: number; ex: number; ey: number; ez: number; hit: number; hitBlock: boolean } {
+  const oy = me.y + SHOT_HEIGHT;
+  const dx = Math.sin(aimYaw);
+  const dz = Math.cos(aimYaw);
+  const c = castLevel(me.x, me.z, oy, dx, dz, range, targets);
+  return { ox: me.x, oy, oz: me.z, ex: me.x + dx * c.t, ey: oy, ez: me.z + dz * c.t, hit: c.hit, hitBlock: c.hitBlock };
+}
+
 /** Where a level ray first meets a standing target's cylinder: [distance, index], or [Infinity, -1]. */
 function rayTargets(ox: number, oz: number, dx: number, dz: number, y: number, targets: Target[], max: number): [number, number] {
   let best = Infinity;

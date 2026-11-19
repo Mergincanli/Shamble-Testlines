@@ -10,6 +10,7 @@ import { aimedThrow, blastDamage, newGrenade, previewFlight, spent, stepGrenade,
 import { NadeFx } from './nadefx';
 import { clearHornetGun, HORNET, newHornet, stepHornet } from './hornet';
 import { HornetModel } from './hornetModel';
+import { SightLine } from './sightline';
 import type { GunId } from './guns';
 import { Hud } from './hud';
 import { AIM_KEY, Input } from './input';
@@ -30,6 +31,7 @@ import {
   RISE_TIME,
   stepWeapons,
   switchGun,
+  traceAim,
   type ShotEvent,
   type Target,
 } from './weapons';
@@ -104,6 +106,17 @@ const fx = new Fx(scene, dummies.length);
 // The Hornet, waiting near the start; E gets on and off when the soldier is within reach.
 const hornet = newHornet();
 const hornetModel = new HornetModel(scene);
+// The sight line while aiming down sights.
+const sight = new SightLine(scene);
+sight.setFaction(store.get('faction') as Faction);
+let sightState: { visible: boolean; end: { x: number; y: number; z: number }; onDummy: boolean; blocked: boolean } = {
+  visible: false,
+  end: { x: 0, y: 0, z: 0 },
+  onDummy: false,
+  blocked: false,
+};
+const sightFrom = new THREE.Vector3();
+const sightTo = new THREE.Vector3();
 let riding = false;
 const nadeFx = new NadeFx(scene);
 nadeFx.setFaction(store.get('faction') as Faction);
@@ -166,6 +179,7 @@ store.onChange((key) => {
     soldier.setFaction(store.get('faction') as Faction);
     dressDummies();
     nadeFx.setFaction(store.get('faction') as Faction);
+    sight.setFaction(store.get('faction') as Faction);
   }
   if (key === null || key === 'gun') {
     const g = store.get('gun') as GunId;
@@ -694,6 +708,18 @@ function frame(now: number) {
     soldier.root.rotation.y = aimYaw;
     soldier.setPose(sprintBlend, fx.gunKick);
   }
+  // The sight line while aiming down sights: the shot's own cast from where the soldier is, drawn from his muzzle.
+  if (aiming && !riding && !nadeReady && store.get('sightLine') === true) {
+    const t = traceAim(cur, aimYaw, gunValue(store, W.gun, 'Range'), targets);
+    soldier.root.updateMatrixWorld(true);
+    soldier.muzzleWorld(sightFrom);
+    sightTo.set(t.ex, t.ey, t.ez);
+    sight.show(sightFrom, sightTo, t.hit >= 0);
+    sightState = { visible: true, end: { x: t.ex, y: t.ey, z: t.ez }, onDummy: t.hit >= 0, blocked: t.hitBlock };
+  } else {
+    sight.show(null, sightTo, false);
+    sightState = { ...sightState, visible: false };
+  }
   dummies.forEach((d, i) => {
     const s = dummySoldiers[i];
     const t = targets[i];
@@ -860,6 +886,8 @@ requestAnimationFrame(frame);
       prev = { ...cur };
     }
   },
+  /** The sight line as drawn at the last frame. */
+  sight: () => ({ ...sightState }),
   /** The soldier's measured height and size on screen at the last frame. */
   measured: () => ({ ...MEASURED }),
   aiming: () => aiming,
