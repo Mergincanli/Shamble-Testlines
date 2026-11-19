@@ -808,7 +808,9 @@ async function run(browserName) {
         await sleep(100);
         const now = await T(() => window.__testlines.state());
         top = Math.max(top, now.y);
-        minX = Math.min(minX, now.x);
+        // Only in front of the piece aimed at (within 1.5 m of its centre along the wall): sliding along a wall
+        // and round its end is not passing through it.
+        if (Math.abs(now.z - pz) < 1.5) minX = Math.min(minX, now.x);
       }
       await page.keyboard.up('KeyW');
       await sleep(200);
