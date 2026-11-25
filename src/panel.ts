@@ -95,7 +95,21 @@ export class Panel {
     });
     importFile.addEventListener('change', async () => {
       const f = importFile.files?.[0];
-      if (f) this.importText(await f.text());
+      if (!f) return;
+      // (An Export is about 30 KB; a file far bigger than that is not one.)
+      if (f.size > 5_000_000) {
+        this.importText('');
+        return;
+      }
+      let text: string;
+      try {
+        text = await f.text();
+      } catch {
+        this.importLine.textContent = 'Import refused: the file could not be read. Nothing was changed.';
+        this.importLine.hidden = false;
+        return;
+      }
+      this.importText(text);
     });
     selectAll.addEventListener('click', () => {
       this.exportText.focus();
@@ -106,7 +120,10 @@ export class Panel {
       this.exportText.blur();
     });
     resetAll.addEventListener('click', () => {
-      if (window.confirm('Put every value back to its start value?')) this.store.resetAll();
+      if (window.confirm('Put every value back to its start value?')) {
+        this.store.resetAll();
+        this.importLine.hidden = true;
+      }
     });
     hide.addEventListener('click', () => this.toggle());
 
@@ -185,6 +202,8 @@ export class Panel {
       return 'cancelled';
     }
     this.store.setMany(values);
+    // An open Export box shows the values as they are now.
+    if (!this.exportBox.hidden) this.exportText.value = buildExport(this.store);
     say(`Imported from ${r.build} (commit ${r.commit.slice(0, 12)}), exported ${r.exported}: ${differ} value${differ === 1 ? '' : 's'} changed.${extra ? ` ${extra[0].toUpperCase()}${extra.slice(1)}.` : ''}`);
     return 'imported';
   }

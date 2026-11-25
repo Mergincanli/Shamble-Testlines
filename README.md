@@ -197,22 +197,28 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
 ## Handing values to the game
 
 - The Export is the only route from this sandbox to the game: the game's builder takes its starting values from
-  it. Values flow one way, from here to the game, never back.
+  it (the owner's decision of 19 November). Values flow one way, from here to the game, never back.
 - No code is copied either way, between this repository and the game's (or Shamble VFX).
 - Nothing here is a decision until the owner says so in the game's builder chat.
 - What the Export holds for that: its format name and version (`"format": "testlines-export"`,
-  `"format_version": 1`); the build's step (`build`) and the commit it was built from (`build_commit`: the full
-  id, with `-dirty` if the page was built from uncommitted files); `changed_from_start`, every value that differs
-  from its start value with both values (by its group and name as in `values`); and `warnings`, which holds a line
-  when the step rate is not 30, the game's rate. Everything else is as before.
+  `"format_version": 1`); the build's step (`build`) and the commit it was built from (`build_commit`: the last
+  commit that changed anything but the built page, with `-dirty` if the page was built from uncommitted files; the
+  page itself is committed after it, in a commit that changes only the page); `changed_from_start`, every value
+  that differs from its start value, by its group and name as in `values`, with both values; and `warnings`, which
+  holds a line when the step rate is not 30, the game's rate. Everything else is as before. Values are written with
+  3 decimals (or the slider's own digits, if more): a value typed into a field with more decimals than that is
+  handed over, and backed up, rounded.
 - **Import** makes a saved Export a real backup: it loads every value from the file into the panel, after asking.
-  It reads only this format name and version, and only values the sliders can take; anything else is refused and
-  nothing changes. Exports made before step E have no format name, so Import refuses them. Any file name will do:
-  an Export pasted into a text file is judged by what it holds.
+  A file of another format name or version, with a value a slider cannot take, or with none of this page's values
+  is refused, and nothing changes; names this page does not know are passed over, and values missing from the file
+  stay as they are (the question says how many of each). A value whose rounded form matches its start value comes
+  back exactly as the start value. Exports made before step E have no format name, so Import refuses them. Any file
+  name will do: an Export pasted into a text file is judged by what it holds.
 - Your tuned values live in your browser, under one fixed name (`shamble-testlines.values.v2`); a new build of this
-  page, opened from the same place, keeps them. Only **Reset all** and **Import** replace them, and both ask first.
-  To carry them to a copy of the page somewhere else (some browsers keep a page's values per file), Export in one
-  and Import in the other.
+  page, opened from the same place, keeps them. Only **Reset all** and **Import** replace them all at once, and
+  both ask first (the sliders, the resets, the camera profiles and the gun keys change single values or the camera
+  as you use them). To carry them to a copy of the page somewhere else (some browsers keep a page's values per
+  file), Export in one and Import in the other.
 
 ## How the guns differ from the old game
 

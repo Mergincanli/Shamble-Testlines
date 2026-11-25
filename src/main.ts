@@ -963,12 +963,6 @@ requestAnimationFrame(frame);
   blastBits: () => nadeFx.shown(),
   /** The drawn camera's turn (the explosion pictures copy it). */
   camQuat: () => camera.cam.quaternion.toArray(),
-  /**
-   * Draw the frame now and read the picture in a box (CSS pixels, from the top left): how many pixels are pure
-   * chroma blue, how many are white-hot (the fireball's core) and where their middle is, how many are fire, and how
-   * many are the sheet's own deep red (about 104, 8, 8) and orange (about 248, 136, 56), which a wrong colour
-   * conversion would move.
-   */
   /** Import an Export's text through the same path as the Import button (it asks first, as the button does). */
   importText: (text: string) => panel.importText(text),
   /** The Export's text as the Export button would make it. */
@@ -981,6 +975,12 @@ requestAnimationFrame(frame);
       return null;
     }
   },
+  /**
+   * Draw the frame now and read the picture in a box (CSS pixels, from the top left): how many pixels are pure
+   * chroma blue, how many are white-hot (the fireball's core) and where their middle is, how many are fire, and how
+   * many are the sheet's own deep red (about 104, 8, 8) and orange (about 248, 136, 56), which a wrong colour
+   * conversion would move.
+   */
   pixels: (x0: number, y0: number, w: number, h: number) => {
     nadeFx.place(camera.cam, explosionLook());
     renderer.render(scene, camera.cam);

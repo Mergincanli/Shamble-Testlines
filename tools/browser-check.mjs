@@ -1275,11 +1275,14 @@ async function run(browserName) {
     // warning (the rate is 60 here), and everything the Export held before still in its place.
     {
       const commitOk = typeof doc?.build_commit === 'string' && /^[0-9a-f]{40}$/.test(doc.build_commit);
+      // (The page must be built from committed files: a page built from uncommitted ones says "-dirty" and fails here.)
       let ancestor = false;
-      try {
-        execSync('git merge-base --is-ancestor ' + doc.build_commit + ' HEAD', { stdio: 'ignore' });
-        ancestor = true;
-      } catch {}
+      if (commitOk) {
+        try {
+          execSync('git merge-base --is-ancestor ' + doc.build_commit + ' HEAD', { stdio: 'ignore' });
+          ancestor = true;
+        } catch {}
+      }
       ok('Export names its format and version and the commit the page was built from (a commit of this branch)', !!doc && doc.format === 'testlines-export' && doc.format_version === 1 && commitOk && ancestor, `${doc?.format} ${doc?.format_version}, build_commit ${doc?.build_commit}`);
       const keys = doc ? Object.keys(doc) : [];
       const before = ['what', 'note', 'build', 'camera_profile', 'exported', 'exported_utc', 'values', 'derived', 'constants', 'measured', 'old_game_terms'];
@@ -1287,8 +1290,8 @@ async function run(browserName) {
       ok('everything the Export held keeps its name and order; the commit sits beside the step name', at.every((i, j) => i >= 0 && (j === 0 || i > at[j - 1])) && keys.indexOf('build_commit') === keys.indexOf('build') + 1, keys.join(', '));
       const warnUnder = await page.$eval('#panel .p-warn', (e) => (e.hidden ? '' : e.textContent));
       ok('at 60 steps a second a warning line shows in the Export and under the Export button', !!doc && doc.warnings.length === 1 && /60/.test(doc.warnings[0]) && /30/.test(doc.warnings[0]) && warnUnder === doc.warnings[0], `Export: ${JSON.stringify(doc?.warnings)}; under the button: "${warnUnder}"`);
-      const listed = doc ? doc.changed_from_start.find((c) => c.group === 'simulation' && c.value === 'step_rate_hz') : null;
-      ok('changed_from_start lists the step rate with its start and current value, and agrees with the values', !!listed && listed.start === 30 && listed.current === 60 && doc.changed_from_start.every((c) => JSON.stringify(doc.values[c.group][c.value]) === JSON.stringify(c.current) && JSON.stringify(c.start) !== JSON.stringify(c.current)), JSON.stringify(listed));
+      const listed = doc ? doc.changed_from_start.find((c) => c.group === 'simulation' && c.name === 'step_rate_hz') : null;
+      ok('changed_from_start lists the step rate with its start and current value, and agrees with the values', !!listed && listed.start === 30 && listed.current === 60 && doc.changed_from_start.every((c) => JSON.stringify(doc.values[c.group][c.name]) === JSON.stringify(c.current) && JSON.stringify(c.start) !== JSON.stringify(c.current)), JSON.stringify(listed));
     }
     // One dialog handler for the rest: it answers as told (yes by default).
     let dialogAnswer = true;
@@ -1323,12 +1326,14 @@ async function run(browserName) {
         t.set('nadeLook', 'plain');
       });
       const dA = await ex();
-      const got = dA.changed_from_start.map((c) => c.group + '.' + c.value + ': ' + JSON.stringify(c.start) + ' -> ' + JSON.stringify(c.current)).sort();
+      const got = dA.changed_from_start.map((c) => c.group + '.' + c.name + ': ' + JSON.stringify(c.start) + ' -> ' + JSON.stringify(c.current)).sort();
       const want = ['camera.angle_override_deg: "auto" -> 30', 'grenade.explosion_look: "sheet" -> "plain"', 'measuring_grid.grid_on: true -> false', 'measuring_grid.grid_thin_step_m: 0.5 -> 0.25', 'movement.walk_speed_m_per_s: 6.3 -> 7'];
       ok('changed_from_start lists exactly the values moved, each with its start and current value', JSON.stringify(got) === JSON.stringify(want), got.join('; '));
       const textA = JSON.stringify(dA, null, 2);
       const storedA = await stored();
-      // State B: each of those moved again (the angle back to auto), the step rate (a number choice) to 60, a word choice.
+      // State B: each of those moved again (the angle back to auto), the step rate (a number choice) to 60, a word
+      // choice, and the speed-up time, whose start (0.16447...) has more decimals than the Export keeps: the Export
+      // says 0.164, and the Import must give back the exact start, not 0.164.
       await T(() => {
         const t = window.__testlines;
         t.set('walkSpeed', 8);
@@ -1338,6 +1343,7 @@ async function run(browserName) {
         t.set('nadeLook', 'sheet');
         t.set('tickRate', '60');
         t.set('aimAt', 'level');
+        t.set('accelTime', 0.3);
       });
       const valuesB = JSON.stringify((await ex()).values);
       const storedB = await stored();
@@ -1351,6 +1357,8 @@ async function run(browserName) {
         ['another version', { ...dA, format_version: 2 }],
         ['an Export from before step E (no format name)', noFormat],
         ['a value no slider takes', { ...dA, values: { ...dA.values, movement: { ...dA.values.movement, walk_speed_m_per_s: 'fast' } } }],
+        ['a group that holds no values', { ...dA, values: { ...dA.values, movement: 'x' } }],
+        ['a file with none of the values', { ...dA, values: {} }],
       ];
       for (const [name, bad] of variants) {
         const r = await T((t) => window.__testlines.importText(t), JSON.stringify(bad));
@@ -1363,24 +1371,47 @@ async function run(browserName) {
       const rc = await T((t) => window.__testlines.importText(t), textA);
       dialogAnswer = true;
       ok('Import asks first; a no changes nothing', rc === 'cancelled' && JSON.stringify((await ex()).values) === valuesB && (await stored()) === storedB, rc);
-      // The Import button's file input with a saved Export under any file name: every value comes back exactly.
+      // The Import button with a saved Export under any file name: the button opens the file chooser (where the
+      // browser's driver can answer it; otherwise the file goes straight into the button's file input).
       const file = resolve(shots, `${browserName}-saved-export.txt`);
       writeFileSync(file, textA);
-      let how = "the Import button's file input";
-      try {
-        const input = await page.$('#panel input[type=file]');
-        await input.uploadFile(file);
-      } catch (e) {
-        how = 'the same import path (the file input could not be driven here: ' + String(e).slice(0, 60) + ')';
-        await T((t) => window.__testlines.importText(t), textA);
-      }
-      for (let i = 0; i < 20 && !/Imported/.test(await importLine()); i++) await sleep(100);
+      const importByButton = async () => {
+        const before = await importLine();
+        await T(() => {
+          const l = document.querySelector('#panel .p-import');
+          l.textContent = '';
+        });
+        let how = 'the Import button and its file chooser';
+        if (isFx) {
+          // (Here the file chooser is answered only in Chromium: a real one opened in Firefox could take the focus
+          // from the checks that follow.)
+          how = "the Import button's file input";
+          await (await page.$('#panel input[type=file]')).uploadFile(file);
+        } else {
+          const [chooser] = await Promise.all([page.waitForFileChooser({ timeout: 5000 }), (await page.$$('#panel .p-btns .p-btn'))[1].click()]);
+          await chooser.accept([file]);
+        }
+        for (let i = 0; i < 50 && !(await importLine()); i++) await sleep(100);
+        return { how, line: await importLine(), before };
+      };
+      const first = await importByButton();
       const dBack = await ex();
-      const line = await importLine();
       // (The very values come back, not values nudged by the Export's rounding: what the browser keeps is the same
-      // string as when the Export was made.)
+      // string as when the Export was made, the speed-up time back at its exact start.)
       const storedBack = await stored();
-      ok('Import loads a saved Export back: every value exactly as exported, none nudged by rounding', JSON.stringify(dBack.values) === JSON.stringify(dA.values) && JSON.stringify(dBack.changed_from_start) === JSON.stringify(dA.changed_from_start) && storedBack === storedA && /Imported/.test(line) && /7 values changed/.test(line), `through ${how}; kept ${storedBack === storedA ? 'the same' : `${storedA} -> ${storedBack}`}; "${line}"`);
+      const accel = await T(() => window.__testlines.values().accelTime);
+      ok('Import loads a saved Export back: every value exactly as exported, none nudged by rounding', JSON.stringify(dBack.values) === JSON.stringify(dA.values) && JSON.stringify(dBack.changed_from_start) === JSON.stringify(dA.changed_from_start) && storedBack === storedA && Math.abs(accel - Math.log(10) / 14) < 1e-12 && /Imported/.test(first.line) && /8 values changed/.test(first.line), `through ${first.how}; kept ${storedBack === storedA ? 'the same' : `${storedA} -> ${storedBack}`}; speed-up time ${accel}; "${first.line}"`);
+      // The same file again through the button, after a change: it loads again.
+      await T(() => window.__testlines.set('walkSpeed', 9));
+      const second = await importByButton();
+      ok('the same saved file loads again through the Import button', (await T(() => window.__testlines.values().walkSpeed)) === 7 && /Imported/.test(second.line) && /1 value changed/.test(second.line), `"${second.line}"`);
+      // A value finer than the Export keeps (typed into its field) stays exactly as it is when the file's rounded value
+      // is the same: an Import nudges nothing.
+      await T(() => window.__testlines.set('walkSpeed', 7.00004));
+      const rFine = await T((t) => window.__testlines.importText(t), textA);
+      const fine = await T(() => window.__testlines.values().walkSpeed);
+      ok('Import leaves a value finer than the Export keeps exactly as it is', rFine === 'imported' && fine === 7.00004 && /0 values changed/.test(await importLine()), `${rFine}, walk speed ${fine}`);
+      await T(() => window.__testlines.set('walkSpeed', 7));
       // What the browser keeps is never cleared by a reload, an Export, a refused or a cancelled Import.
       const s0 = await stored();
       await page.reload();

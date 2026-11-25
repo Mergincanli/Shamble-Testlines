@@ -70,12 +70,12 @@ export function buildExport(store: Store): string {
     values[g.exportName] = out;
   }
   // Every value that differs from its start value (as written in the Export), with both.
-  const changedFromStart: { group: string; value: string; label: string; start: unknown; current: unknown }[] = [];
+  const changedFromStart: { group: string; name: string; label: string; start: unknown; current: unknown }[] = [];
   for (const g of GROUPS) {
     for (const p of PARAMS.filter((q) => q.group === g.id)) {
       const start = exportValue(p, p.start);
       const current = exportValue(p, store.get(p.key));
-      if (JSON.stringify(start) !== JSON.stringify(current)) changedFromStart.push({ group: g.exportName, value: p.exportKey, label: p.label, start, current });
+      if (JSON.stringify(start) !== JSON.stringify(current)) changedFromStart.push({ group: g.exportName, name: p.exportKey, label: p.label, start, current });
     }
   }
   const warning = stepRateWarning(store);
@@ -231,8 +231,12 @@ export function readExport(text: string): ImportRead {
   }
   if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return { ok: false, reason: 'the file is not an Export.' };
   const d = doc as Record<string, unknown>;
+  const short = (v: unknown) => {
+    const t = JSON.stringify(v) ?? String(v);
+    return t.length > 40 ? `${t.slice(0, 40)}...` : t;
+  };
   if (d.format !== EXPORT_FORMAT || d.format_version !== EXPORT_FORMAT_VERSION) {
-    const what = d.format === undefined ? 'no format name (an Export from before step E, or another file)' : `format "${String(d.format)}" version ${String(d.format_version)}`;
+    const what = d.format === undefined ? 'no format name (an Export from before step E, or another file)' : `format ${short(d.format)} version ${short(d.format_version)}`;
     return { ok: false, reason: `the file has ${what}; this page reads "${EXPORT_FORMAT}" version ${EXPORT_FORMAT_VERSION}.` };
   }
   const groups = d.values;
@@ -243,16 +247,25 @@ export function readExport(text: string): ImportRead {
   for (const [path, p] of EXPORT_PATH) {
     const [g, k] = path.split('.');
     const gv = (groups as Record<string, unknown>)[g];
-    if (!gv || typeof gv !== 'object' || !(k in gv)) {
+    if (gv === undefined || (gv && typeof gv === 'object' && !Array.isArray(gv) && !Object.prototype.hasOwnProperty.call(gv, k))) {
       missing.push(path);
+      continue;
+    }
+    // A group that is there but holds no values (a word, a list, nothing) is not something this page can take.
+    if (!gv || typeof gv !== 'object' || Array.isArray(gv)) {
+      bad.push(`${g} = ${short(gv)}`);
       continue;
     }
     const raw = (gv as Record<string, unknown>)[k];
     const v = importValue(p, raw);
-    if (v === undefined) bad.push(`${path} = ${JSON.stringify(raw)}`);
+    if (v === undefined) bad.push(`${path} = ${short(raw)}`);
     else values[p.key] = v;
   }
-  if (bad.length) return { ok: false, reason: `${bad.length} value${bad.length > 1 ? 's' : ''} this page cannot take: ${bad.slice(0, 3).join(', ')}${bad.length > 3 ? ', ...' : ''}.` };
+  if (bad.length) {
+    const list = [...new Set(bad)];
+    return { ok: false, reason: `${list.length} value${list.length > 1 ? 's' : ''} this page cannot take: ${list.slice(0, 3).join(', ')}${list.length > 3 ? ', ...' : ''}.` };
+  }
+  if (!Object.keys(values).length) return { ok: false, reason: 'the file holds none of the values this page has.' };
   const unknown: string[] = [];
   for (const [g, gv] of Object.entries(groups as Record<string, unknown>)) {
     if (gv && typeof gv === 'object') for (const k of Object.keys(gv)) if (!EXPORT_PATH.has(`${g}.${k}`)) unknown.push(`${g}.${k}`);
