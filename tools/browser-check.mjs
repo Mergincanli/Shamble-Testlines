@@ -2,7 +2,8 @@
 // Usage: node tools/browser-check.mjs [chromium|firefox|both]   (Firefox needs a display: run under xvfb-run)
 // Paths: CHROMIUM_PATH (default /opt/pw-browsers/chromium) and FIREFOX_PATH. Screenshots go to SHOTS_DIR.
 import puppeteer from 'puppeteer-core';
-import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const which = process.argv[2] || 'both';
@@ -1270,19 +1271,134 @@ async function run(browserName) {
     }
     ok('Export carries the room sizes, the grid and the measured soldier', !!doc && doc.values.metrics_room?.door_width_m === 1 && doc.values.metrics_room?.door_height_m === 2.1 && doc.values.measuring_grid?.grid_thin_step_m === 0.5 && doc.derived?.metrics_room_built?.door_height_m === 2.1 && !!doc.constants?.metrics_room_layout && Math.abs(doc.measured?.soldier_height_m - 1.8) < 0.005 && doc.measured?.soldier_on_screen_px > 20, doc ? JSON.stringify(doc.measured) : '');
 
+    // The hand-over to the game: the format's name and version, the commit the page was built from, the step-rate
+    // warning (the rate is 60 here), and everything the Export held before still in its place.
+    {
+      const commitOk = typeof doc?.build_commit === 'string' && /^[0-9a-f]{40}$/.test(doc.build_commit);
+      let ancestor = false;
+      try {
+        execSync('git merge-base --is-ancestor ' + doc.build_commit + ' HEAD', { stdio: 'ignore' });
+        ancestor = true;
+      } catch {}
+      ok('Export names its format and version and the commit the page was built from (a commit of this branch)', !!doc && doc.format === 'testlines-export' && doc.format_version === 1 && commitOk && ancestor, `${doc?.format} ${doc?.format_version}, build_commit ${doc?.build_commit}`);
+      const keys = doc ? Object.keys(doc) : [];
+      const before = ['what', 'note', 'build', 'camera_profile', 'exported', 'exported_utc', 'values', 'derived', 'constants', 'measured', 'old_game_terms'];
+      const at = before.map((k) => keys.indexOf(k));
+      ok('everything the Export held keeps its name and order; the commit sits beside the step name', at.every((i, j) => i >= 0 && (j === 0 || i > at[j - 1])) && keys.indexOf('build_commit') === keys.indexOf('build') + 1, keys.join(', '));
+      const warnUnder = await page.$eval('#panel .p-warn', (e) => (e.hidden ? '' : e.textContent));
+      ok('at 60 steps a second a warning line shows in the Export and under the Export button', !!doc && doc.warnings.length === 1 && /60/.test(doc.warnings[0]) && /30/.test(doc.warnings[0]) && warnUnder === doc.warnings[0], `Export: ${JSON.stringify(doc?.warnings)}; under the button: "${warnUnder}"`);
+      const listed = doc ? doc.changed_from_start.find((c) => c.group === 'simulation' && c.value === 'step_rate_hz') : null;
+      ok('changed_from_start lists the step rate with its start and current value, and agrees with the values', !!listed && listed.start === 30 && listed.current === 60 && doc.changed_from_start.every((c) => JSON.stringify(doc.values[c.group][c.value]) === JSON.stringify(c.current) && JSON.stringify(c.start) !== JSON.stringify(c.current)), JSON.stringify(listed));
+    }
+    // One dialog handler for the rest: it answers as told (yes by default).
+    let dialogAnswer = true;
+    page.on('dialog', (d) => (dialogAnswer ? d.accept() : d.dismiss()));
     // Values survive a reload; Reset all restores them.
     await page.reload();
     await sleep(2000);
     v = await T(() => window.__testlines.values().tickRate);
     ok('values are kept after a reload', v === '60', String(v));
-    page.on('dialog', (d) => d.accept());
+    dialogAnswer = true;
     const btns = await page.$$('#panel .p-btns .p-btn');
-    await btns[1].click();
+    await btns[2].click();
     await sleep(200);
     v = await T(() => window.__testlines.values().tickRate);
     ok('Reset all restores the start values', v === '30', String(v));
     cv = await T(() => window.__testlines.values());
     ok('Reset all puts the camera back on Original', cv.camHeight === 24.5 && cv.camTurn === 64, `height ${cv.camHeight}, turn ${cv.camTurn}`);
+    {
+      const ex = async () => JSON.parse(await T(() => window.__testlines.exportText()));
+      const stored = () => T(() => window.__testlines.storedRaw());
+      const importLine = () => page.$eval('#panel .p-import', (e) => (e.hidden ? '' : e.textContent));
+      const d0 = await ex();
+      const warnShown = await page.$eval('#panel .p-warn', (e) => !e.hidden);
+      ok('at the start values changed_from_start is empty and there is no warning', d0.changed_from_start.length === 0 && d0.warnings.length === 0 && !warnShown, `${d0.changed_from_start.length} listed, warnings ${JSON.stringify(d0.warnings)}, line shown ${warnShown}`);
+      // State A: a number, the "auto" value set, a toggle, a choice written as a number, a word choice.
+      await T(() => {
+        const t = window.__testlines;
+        t.set('walkSpeed', 7);
+        t.set('camAngle', 30);
+        t.set('gridOn', false);
+        t.set('gridStep', '0.25');
+        t.set('nadeLook', 'plain');
+      });
+      const dA = await ex();
+      const got = dA.changed_from_start.map((c) => c.group + '.' + c.value + ': ' + JSON.stringify(c.start) + ' -> ' + JSON.stringify(c.current)).sort();
+      const want = ['camera.angle_override_deg: "auto" -> 30', 'grenade.explosion_look: "sheet" -> "plain"', 'measuring_grid.grid_on: true -> false', 'measuring_grid.grid_thin_step_m: 0.5 -> 0.25', 'movement.walk_speed_m_per_s: 6.3 -> 7'];
+      ok('changed_from_start lists exactly the values moved, each with its start and current value', JSON.stringify(got) === JSON.stringify(want), got.join('; '));
+      const textA = JSON.stringify(dA, null, 2);
+      const storedA = await stored();
+      // State B: each of those moved again (the angle back to auto), the step rate (a number choice) to 60, a word choice.
+      await T(() => {
+        const t = window.__testlines;
+        t.set('walkSpeed', 8);
+        t.set('camAngle', null);
+        t.set('gridOn', true);
+        t.set('gridStep', '0.1');
+        t.set('nadeLook', 'sheet');
+        t.set('tickRate', '60');
+        t.set('aimAt', 'level');
+      });
+      const valuesB = JSON.stringify((await ex()).values);
+      const storedB = await stored();
+      // Refused: another format name, another version, an Export from before step E (no format), a value no slider
+      // takes. Each changes nothing: the values and what the browser keeps stay as they were.
+      const noFormat = { ...dA };
+      delete noFormat.format;
+      delete noFormat.format_version;
+      const variants = [
+        ['another format name', { ...dA, format: 'other-export' }],
+        ['another version', { ...dA, format_version: 2 }],
+        ['an Export from before step E (no format name)', noFormat],
+        ['a value no slider takes', { ...dA, values: { ...dA.values, movement: { ...dA.values.movement, walk_speed_m_per_s: 'fast' } } }],
+      ];
+      for (const [name, bad] of variants) {
+        const r = await T((t) => window.__testlines.importText(t), JSON.stringify(bad));
+        const line = await importLine();
+        const same = JSON.stringify((await ex()).values) === valuesB && (await stored()) === storedB;
+        ok(`Import refuses ${name} and changes nothing`, r === 'refused' && same && /refused/i.test(line) && /Nothing was changed/.test(line), `${r}; "${line}"`);
+      }
+      // A "no" to the question changes nothing either.
+      dialogAnswer = false;
+      const rc = await T((t) => window.__testlines.importText(t), textA);
+      dialogAnswer = true;
+      ok('Import asks first; a no changes nothing', rc === 'cancelled' && JSON.stringify((await ex()).values) === valuesB && (await stored()) === storedB, rc);
+      // The Import button's file input with a saved Export under any file name: every value comes back exactly.
+      const file = resolve(shots, `${browserName}-saved-export.txt`);
+      writeFileSync(file, textA);
+      let how = "the Import button's file input";
+      try {
+        const input = await page.$('#panel input[type=file]');
+        await input.uploadFile(file);
+      } catch (e) {
+        how = 'the same import path (the file input could not be driven here: ' + String(e).slice(0, 60) + ')';
+        await T((t) => window.__testlines.importText(t), textA);
+      }
+      for (let i = 0; i < 20 && !/Imported/.test(await importLine()); i++) await sleep(100);
+      const dBack = await ex();
+      const line = await importLine();
+      // (The very values come back, not values nudged by the Export's rounding: what the browser keeps is the same
+      // string as when the Export was made.)
+      const storedBack = await stored();
+      ok('Import loads a saved Export back: every value exactly as exported, none nudged by rounding', JSON.stringify(dBack.values) === JSON.stringify(dA.values) && JSON.stringify(dBack.changed_from_start) === JSON.stringify(dA.changed_from_start) && storedBack === storedA && /Imported/.test(line) && /7 values changed/.test(line), `through ${how}; kept ${storedBack === storedA ? 'the same' : `${storedA} -> ${storedBack}`}; "${line}"`);
+      // What the browser keeps is never cleared by a reload, an Export, a refused or a cancelled Import.
+      const s0 = await stored();
+      await page.reload();
+      await sleep(2000);
+      const s1 = await stored();
+      await page.click('#panel .p-primary');
+      await sleep(300);
+      const s2 = await stored();
+      await T((t) => window.__testlines.importText(t), JSON.stringify({ ...dA, format_version: 2 }));
+      const s3 = await stored();
+      dialogAnswer = false;
+      await T((t) => window.__testlines.importText(t), textA);
+      dialogAnswer = true;
+      const s4 = await stored();
+      ok('the values kept in the browser stay exactly as they were after a reload, an Export, a refused and a cancelled Import', !!s0 && s0.length > 2 && [s1, s2, s3, s4].every((x) => x === s0), s0);
+      await (await page.$$('#panel .p-btns .p-btn'))[2].click();
+      await sleep(200);
+    }
     // Values saved by the first builds (every value, under the old key): the old camera defaults count as
     // untouched, anything moved by hand is kept.
     await T(() => {

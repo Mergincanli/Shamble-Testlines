@@ -1,13 +1,46 @@
-// The Export: every current value as JSON, with the date, the build it came from, units in the names, and the
-// old game's own names beside them, so the numbers can be handed to the Advisor as they are.
+// The Export: every current value as JSON, with the date, the build it came from (step and commit), units in the
+// names, the old game's own names beside them, and the values that differ from their start values, so the numbers
+// can be handed to the Advisor and the game's builder as they are. Its format has a name and a version, and Import
+// reads it back (readExport below).
 import { GRID_COLOURS, GRID_LOOK } from './look';
 import { ROOM_LAYOUT } from './metrics';
 import { HORNET } from './hornet';
 import { AIM_DEAD_ZONE, HEIGHT_GRACE, HIT_HEIGHT, HIT_RADIUS, SHOT_HEIGHT } from './weapons';
 import { EXPLOSION_MAX_STRETCH, EXPLOSION_POOL, EXPLOSION_SHEET } from './explosion';
-import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Store } from './params';
+import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Param, type Store, type Value, type Values } from './params';
 
-export const BUILD = { step: 'D', name: "Comic explosion from the owner's sprite sheet" };
+export const BUILD = { step: 'E', name: 'Export fit for the hand-over to the game' };
+/** The Export's format: Import reads only this name and version. */
+export const EXPORT_FORMAT = 'testlines-export';
+export const EXPORT_FORMAT_VERSION = 1;
+/** The commit the page was built from (vite.config.ts writes it in): a full id, "<id>-dirty", or "unknown". */
+export const BUILD_COMMIT: string = __BUILD_COMMIT__;
+/** The game's simulation steps this many times a second. */
+export const GAME_STEP_RATE = 30;
+
+/** Where each value sits in the Export: its group's export name and its own export name. */
+const EXPORT_PATH = new Map<string, Param>();
+for (const g of GROUPS) {
+  for (const p of PARAMS.filter((q) => q.group === g.id)) {
+    const path = `${g.exportName}.${p.exportKey}`;
+    // Two values under one name would overwrite each other in the Export and on Import.
+    if (EXPORT_PATH.has(path)) console.error(`Export: two values under ${path}`);
+    EXPORT_PATH.set(path, p);
+  }
+}
+
+/** One value as the Export writes it. */
+function exportValue(p: Param, v: Value): unknown {
+  if (p.kind === 'range') return v === null ? 'auto' : round(v as number, Math.max(p.digits, 3));
+  if (p.kind === 'choice' && (p.key === 'tickRate' || p.key === 'gridStep')) return Number(v);
+  return v;
+}
+
+/** The warning line when the step rate is not the game's, or null. */
+export function stepRateWarning(store: Store): string | null {
+  const rate = Number(store.get('tickRate'));
+  return rate === GAME_STEP_RATE ? null : `The step rate is ${rate} steps a second: the game runs at ${GAME_STEP_RATE}.`;
+}
 
 /** Measured at the last frame (set by the main loop): the soldier's height and his size on screen. */
 export const MEASURED = { soldierHeightM: 0, soldierOnScreenPx: 0, viewHeightPx: 0 };
@@ -24,25 +57,28 @@ function localStamp(d: Date): string {
   );
 }
 
-const round = (n: number, digits = 4) => Number(n.toFixed(digits));
+function round(n: number, digits = 4): number {
+  return Number(n.toFixed(digits));
+}
 
 export function buildExport(store: Store): string {
   const now = new Date();
   const values: Record<string, Record<string, unknown>> = {};
   for (const g of GROUPS) {
     const out: Record<string, unknown> = {};
-    for (const p of PARAMS.filter((q) => q.group === g.id)) {
-      const v = store.get(p.key);
-      if (p.kind === 'range') {
-        out[p.exportKey] = v === null ? 'auto' : round(v as number, Math.max(p.digits, 3));
-      } else if (p.kind === 'choice' && (p.key === 'tickRate' || p.key === 'gridStep')) {
-        out[p.exportKey] = Number(v);
-      } else {
-        out[p.exportKey] = v;
-      }
-    }
+    for (const p of PARAMS.filter((q) => q.group === g.id)) out[p.exportKey] = exportValue(p, store.get(p.key));
     values[g.exportName] = out;
   }
+  // Every value that differs from its start value (as written in the Export), with both.
+  const changedFromStart: { group: string; value: string; label: string; start: unknown; current: unknown }[] = [];
+  for (const g of GROUPS) {
+    for (const p of PARAMS.filter((q) => q.group === g.id)) {
+      const start = exportValue(p, p.start);
+      const current = exportValue(p, store.get(p.key));
+      if (JSON.stringify(start) !== JSON.stringify(current)) changedFromStart.push({ group: g.exportName, value: p.exportKey, label: p.label, start, current });
+    }
+  }
+  const warning = stepRateWarning(store);
 
   const n = (k: string) => store.num(k);
   const rise = Math.max(0.01, n('jumpReach') - n('stepUp'));
@@ -117,14 +153,19 @@ export function buildExport(store: Store): string {
   }
 
   const doc = {
+    format: EXPORT_FORMAT,
+    format_version: EXPORT_FORMAT_VERSION,
     what: 'Shamble Testlines feel values',
     note: 'Sandbox values, not decisions. Start values are the old game\'s numbers unless the sandbox says otherwise.',
     build: `step ${BUILD.step} (${BUILD.name})`,
+    build_commit: BUILD_COMMIT,
     camera_profile:
       [...CAMERA_PROFILES, ...CAMERA_PRESETS].find((p) => profileActive(p.values, store.values))?.name ?? 'custom',
     exported: localStamp(now),
     exported_utc: now.toISOString(),
+    warnings: warning ? [warning] : [],
     values,
+    changed_from_start: changedFromStart,
     derived,
     constants: {
       metrics_room_layout: ROOM_LAYOUT,
@@ -155,6 +196,95 @@ export function buildExport(store: Store): string {
     old_game_terms: gameTerms,
   };
   return JSON.stringify(doc, null, 2);
+}
+
+/** One value as Import reads it back, or undefined when the slider cannot take it. */
+function importValue(p: Param, raw: unknown): Value | undefined {
+  if (p.kind === 'range') {
+    if (raw === 'auto') return p.auto ? null : undefined;
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < p.min - 1e-9 || raw > p.max + 1e-9) return undefined;
+    return Math.min(p.max, Math.max(p.min, raw));
+  }
+  if (p.kind === 'choice') {
+    // (The step rate and the grid step are written as numbers.)
+    const s = typeof raw === 'number' ? String(raw) : raw;
+    return typeof s === 'string' && p.options.some((o) => o.value === s) ? s : undefined;
+  }
+  return typeof raw === 'boolean' ? raw : undefined;
+}
+
+export type ImportRead =
+  | { ok: true; values: Values; build: string; commit: string; exported: string; missing: string[]; unknown: string[] }
+  | { ok: false; reason: string };
+
+/**
+ * Read an Export back for Import. Only this format name and version are read; every value must be one its slider
+ * takes, or nothing is taken. Values missing from the file are left as they are; names this page does not know
+ * are passed over (both are listed).
+ */
+export function readExport(text: string): ImportRead {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: 'the file is not an Export (it is not JSON).' };
+  }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return { ok: false, reason: 'the file is not an Export.' };
+  const d = doc as Record<string, unknown>;
+  if (d.format !== EXPORT_FORMAT || d.format_version !== EXPORT_FORMAT_VERSION) {
+    const what = d.format === undefined ? 'no format name (an Export from before step E, or another file)' : `format "${String(d.format)}" version ${String(d.format_version)}`;
+    return { ok: false, reason: `the file has ${what}; this page reads "${EXPORT_FORMAT}" version ${EXPORT_FORMAT_VERSION}.` };
+  }
+  const groups = d.values;
+  if (!groups || typeof groups !== 'object' || Array.isArray(groups)) return { ok: false, reason: 'the file has no values.' };
+  const values: Values = {};
+  const missing: string[] = [];
+  const bad: string[] = [];
+  for (const [path, p] of EXPORT_PATH) {
+    const [g, k] = path.split('.');
+    const gv = (groups as Record<string, unknown>)[g];
+    if (!gv || typeof gv !== 'object' || !(k in gv)) {
+      missing.push(path);
+      continue;
+    }
+    const raw = (gv as Record<string, unknown>)[k];
+    const v = importValue(p, raw);
+    if (v === undefined) bad.push(`${path} = ${JSON.stringify(raw)}`);
+    else values[p.key] = v;
+  }
+  if (bad.length) return { ok: false, reason: `${bad.length} value${bad.length > 1 ? 's' : ''} this page cannot take: ${bad.slice(0, 3).join(', ')}${bad.length > 3 ? ', ...' : ''}.` };
+  const unknown: string[] = [];
+  for (const [g, gv] of Object.entries(groups as Record<string, unknown>)) {
+    if (gv && typeof gv === 'object') for (const k of Object.keys(gv)) if (!EXPORT_PATH.has(`${g}.${k}`)) unknown.push(`${g}.${k}`);
+  }
+  return {
+    ok: true,
+    values,
+    build: typeof d.build === 'string' ? d.build : 'an unnamed build',
+    commit: typeof d.build_commit === 'string' ? d.build_commit : 'unknown',
+    exported: typeof d.exported === 'string' ? d.exported : 'an unknown time',
+    missing,
+    unknown,
+  };
+}
+
+/**
+ * The values an Import puts in the panel. The Export rounds (to 3 decimals or the slider's own digits), so a value
+ * whose rounded form is the current value's stays exactly as it is, and one whose rounded form is its start value's
+ * becomes exactly the start value: an Import of an Export gives back the very values it was made from, and nudges
+ * no value by rounding.
+ */
+export function settleImported(values: Values, store: Store): Values {
+  const out: Values = {};
+  for (const [k, v] of Object.entries(values)) {
+    const p = PARAMS.find((q) => q.key === k);
+    if (!p) continue;
+    const shown = JSON.stringify(exportValue(p, v));
+    if (shown === JSON.stringify(exportValue(p, store.get(k)))) out[k] = store.get(k);
+    else if (shown === JSON.stringify(exportValue(p, p.start))) out[k] = p.start;
+    else out[k] = v;
+  }
+  return out;
 }
 
 /** Copy to the clipboard; returns false when the browser refuses (the text box is shown either way). */

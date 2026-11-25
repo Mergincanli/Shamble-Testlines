@@ -1,6 +1,6 @@
-// The tuning panel: one row per entry of the slider table, each with a reset; camera presets; Export and
+// The tuning panel: one row per entry of the slider table, each with a reset; camera presets; Export, Import and
 // "Reset all". Built from plain DOM, no library.
-import { BUILD, buildExport, copyText } from './exporter';
+import { BUILD, buildExport, copyText, readExport, settleImported, stepRateWarning } from './exporter';
 import {
   CAMERA_PRESETS,
   CAMERA_PROFILES,
@@ -34,6 +34,9 @@ export class Panel {
   private exportBox: HTMLDivElement;
   private exportText: HTMLTextAreaElement;
   private exportStatus: HTMLSpanElement;
+  /** Under the buttons: the step-rate warning, and what the last Import did. */
+  private warnLine: HTMLDivElement;
+  private importLine: HTMLDivElement;
 
   constructor(private store: Store, extraGroups: Partial<Record<GroupId, (body: HTMLElement) => void>> = {}) {
     this.root = el('div');
@@ -45,13 +48,24 @@ export class Panel {
     const btns = el('div', 'p-btns');
     const exportBtn = el('button', 'p-btn p-primary', 'Export');
     exportBtn.title = 'Copy every current value as JSON, with the date';
+    const importBtn = el('button', 'p-btn', 'Import');
+    importBtn.title = 'Load a saved Export back into the panel (it asks before replacing anything)';
+    // Any file: an Export pasted into a text file is judged by what it holds, not by its name.
+    const importFile = el('input');
+    importFile.type = 'file';
+    importFile.hidden = true;
     const resetAll = el('button', 'p-btn', 'Reset all');
     resetAll.title = 'Put every value back to its start value';
     const hide = el('button', 'p-btn', 'Hide `');
     hide.title = 'Hide or show this panel (backquote key)';
-    btns.append(exportBtn, resetAll, hide);
+    btns.append(exportBtn, importBtn, importFile, resetAll, hide);
     head.append(title, btns);
     this.root.append(head);
+    this.warnLine = el('div', 'p-warn');
+    this.warnLine.hidden = true;
+    this.importLine = el('div', 'p-import');
+    this.importLine.hidden = true;
+    this.root.append(this.warnLine, this.importLine);
     this.root.append(el('div', 'p-note', 'Sandbox values, not decisions. Hover a name to see where its start value comes from.'));
 
     this.exportBox = el('div', 'p-export');
@@ -74,6 +88,14 @@ export class Panel {
       const ok = await copyText(text);
       this.exportStatus.textContent = ok ? 'Copied to the clipboard.' : 'Copy blocked by the browser: select the text below and copy it.';
       this.exportText.scrollTop = 0;
+    });
+    importBtn.addEventListener('click', () => {
+      importFile.value = '';
+      importFile.click();
+    });
+    importFile.addEventListener('change', async () => {
+      const f = importFile.files?.[0];
+      if (f) this.importText(await f.text());
     });
     selectAll.addEventListener('click', () => {
       this.exportText.focus();
@@ -137,6 +159,36 @@ export class Panel {
     this.refresh();
   }
 
+  /**
+   * Import: read an Export and, after asking, put its values in the panel (they are then kept in the browser as
+   * any change is). A file of another format name or version, or with a value a slider cannot take, is refused and
+   * nothing changes; so does a "no" to the question. Returns what happened, for the test hook.
+   */
+  importText(text: string): 'imported' | 'refused' | 'cancelled' {
+    const r = readExport(text);
+    const say = (msg: string) => {
+      this.importLine.textContent = msg;
+      this.importLine.hidden = false;
+    };
+    if (!r.ok) {
+      say(`Import refused: ${r.reason} Nothing was changed.`);
+      return 'refused';
+    }
+    const values = settleImported(r.values, this.store);
+    const differ = Object.entries(values).filter(([k, v]) => JSON.stringify(this.store.get(k)) !== JSON.stringify(v)).length;
+    const extra = [r.missing.length ? `${r.missing.length} not in the file stay as they are` : '', r.unknown.length ? `${r.unknown.length} names this page does not know are passed over` : '']
+      .filter(Boolean)
+      .join('; ');
+    const ask = `Import the Export from ${r.build}, exported ${r.exported}?\n\nIt replaces the panel's values with the file's: ${differ} differ from now${extra ? ` (${extra})` : ''}. Export first if you want to keep the current ones.`;
+    if (!window.confirm(ask)) {
+      say('Import cancelled: nothing was changed.');
+      return 'cancelled';
+    }
+    this.store.setMany(values);
+    say(`Imported from ${r.build} (commit ${r.commit.slice(0, 12)}), exported ${r.exported}: ${differ} value${differ === 1 ? '' : 's'} changed.${extra ? ` ${extra[0].toUpperCase()}${extra.slice(1)}.` : ''}`);
+    return 'imported';
+  }
+
   toggle() {
     const hidden = this.root.classList.toggle('hidden');
     document.body.classList.toggle('panel-open', !hidden);
@@ -144,6 +196,10 @@ export class Panel {
 
   refresh() {
     for (const r of this.refreshers) r();
+    // The step-rate warning under the buttons, while the rate is not the game's.
+    const w = stepRateWarning(this.store);
+    this.warnLine.textContent = w ?? '';
+    this.warnLine.hidden = !w;
   }
 
   private presetRow(): HTMLElement {

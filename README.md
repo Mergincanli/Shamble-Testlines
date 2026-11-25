@@ -186,11 +186,33 @@ dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped 
   throw starts (the soldier's middle at 1.5 m, no slider) and how an aimed throw picks its angle (raised in step
   with a higher target's elevation; lobs up to 80° when the plain arc is blocked; no slider). Every slider has its own reset (↺, lit when the value has moved);
   hover a name to see where its start value comes from. The Export names the camera profile in use.
-- **Export** copies every value as JSON with the date and time, the build it came from, units in the names and
-  the old game's own names beside them. The JSON also appears in a box, in case the browser blocks copying.
+- **Export** copies every value as JSON with the date and time, the build it came from (step and commit), units in
+  the names and the old game's own names beside them, and lists every value that differs from its start value. The
+  JSON also appears in a box, in case the browser blocks copying. **Import** loads a saved Export back (see below).
 - Values are kept in the browser between visits. **Reset all** puts everything back to the start values.
 - Steps per second: 30 (the game's rate) or 60. The picture is smoothed between steps. The jump follows its exact
-  arc at each step, so its height is the same at either rate.
+  arc at each step, so its height is the same at either rate. At 60 a warning line shows under the buttons and in
+  the Export.
+
+## Handing values to the game
+
+- The Export is the only route from this sandbox to the game: the game's builder takes its starting values from
+  it. Values flow one way, from here to the game, never back.
+- No code is copied either way, between this repository and the game's (or Shamble VFX).
+- Nothing here is a decision until the owner says so in the game's builder chat.
+- What the Export holds for that: its format name and version (`"format": "testlines-export"`,
+  `"format_version": 1`); the build's step (`build`) and the commit it was built from (`build_commit`: the full
+  id, with `-dirty` if the page was built from uncommitted files); `changed_from_start`, every value that differs
+  from its start value with both values (by its group and name as in `values`); and `warnings`, which holds a line
+  when the step rate is not 30, the game's rate. Everything else is as before.
+- **Import** makes a saved Export a real backup: it loads every value from the file into the panel, after asking.
+  It reads only this format name and version, and only values the sliders can take; anything else is refused and
+  nothing changes. Exports made before step E have no format name, so Import refuses them. Any file name will do:
+  an Export pasted into a text file is judged by what it holds.
+- Your tuned values live in your browser, under one fixed name (`shamble-testlines.values.v2`); a new build of this
+  page, opened from the same place, keeps them. Only **Reset all** and **Import** replace them, and both ask first.
+  To carry them to a copy of the page somewhere else (some browsers keep a page's values per file), Export in one
+  and Import in the other.
 
 ## How the guns differ from the old game
 

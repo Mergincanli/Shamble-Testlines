@@ -192,6 +192,8 @@ html, body {
 .p-primary:hover { background: #ecc266; }
 .p-small { padding: 1px 6px; }
 .p-note { padding: 5px 10px; color: var(--panel-dim); border-bottom: 1px solid var(--panel-line); }
+.p-warn { padding: 5px 10px; color: #1a1a1a; background: var(--accent); font-weight: 600; }
+.p-import { padding: 5px 10px; color: var(--accent); border-bottom: 1px solid var(--panel-line); }
 .p-export { padding: 6px 10px; border-bottom: 1px solid var(--panel-line); }
 .p-export-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
 .p-export-status { flex: 1; color: var(--accent); }

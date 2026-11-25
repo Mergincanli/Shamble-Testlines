@@ -16,7 +16,7 @@ import { Hud } from './hud';
 import { AIM_KEY, Input } from './input';
 import { addLights, GRID, GRID_COLOURS, setInkResolution, type Faction, type GridGroup } from './look';
 import { MetricsRoom } from './metrics';
-import { MEASURED } from './exporter';
+import { buildExport, MEASURED } from './exporter';
 import { newMover, stepMover, type MoveInput, type MoverState } from './movement';
 import { Panel } from './panel';
 import { CAMERA_PRESETS, CAMERA_PROFILES, Store } from './params';
@@ -969,6 +969,18 @@ requestAnimationFrame(frame);
    * many are the sheet's own deep red (about 104, 8, 8) and orange (about 248, 136, 56), which a wrong colour
    * conversion would move.
    */
+  /** Import an Export's text through the same path as the Import button (it asks first, as the button does). */
+  importText: (text: string) => panel.importText(text),
+  /** The Export's text as the Export button would make it. */
+  exportText: () => buildExport(store),
+  /** The values as saved in the browser (the raw string), to check that nothing clears them. */
+  storedRaw: () => {
+    try {
+      return window.localStorage.getItem('shamble-testlines.values.v2');
+    } catch {
+      return null;
+    }
+  },
   pixels: (x0: number, y0: number, w: number, h: number) => {
     nadeFx.place(camera.cam, explosionLook());
     renderer.render(scene, camera.cam);
