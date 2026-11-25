@@ -1386,6 +1386,10 @@ async function run(browserName) {
           // (Here the file chooser is answered only in Chromium: a real one opened in Firefox could take the focus
           // from the checks that follow.)
           how = "the Import button's file input";
+          // (Cleared first, as the button itself does, so the same file chosen again still counts as a choice.)
+          await T(() => {
+            document.querySelector('#panel input[type=file]').value = '';
+          });
           await (await page.$('#panel input[type=file]')).uploadFile(file);
         } else {
           const [chooser] = await Promise.all([page.waitForFileChooser({ timeout: 5000 }), (await page.$$('#panel .p-btns .p-btn'))[1].click()]);
