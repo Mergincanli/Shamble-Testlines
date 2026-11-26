@@ -115,6 +115,8 @@ const fx = new Fx(scene, dummies.length);
 const present = dummies.map(() => true);
 const seen = dummies.map(() => true);
 let lastEye: Eye = { x: 0, y: 1.65, z: 0, aim: 0, widthDeg: 190 };
+/** For the scripted checks only: a facing held still (radians), or null (the cursor decides, as always). */
+let aimHold: number | null = null;
 let lastBlockers: Blockers | null = null;
 const stepAcc = dummies.map(() => 0);
 let shooterClock = 0;
@@ -800,7 +802,9 @@ function frame(now: number) {
   const facePoint = aimPoint3() && !riding ? cursorPoint : null;
   aimPlane.constant = -(renderPos.y + (riding ? HORNET.gun_height_m : 1.36));
   const onPlane = raycaster.ray.intersectPlane(aimPlane, aimPoint) !== null;
-  if (facePoint || onPlane) {
+  // (The scripted checks can hold the facing still; the player never does.)
+  if (aimHold !== null) aimYaw = aimHold;
+  else if (facePoint || onPlane) {
     const dx = (facePoint ? facePoint.x : aimPoint.x) - renderPos.x;
     const dz = (facePoint ? facePoint.z : aimPoint.z) - renderPos.z;
     if (dx * dx + dz * dz > AIM_DEAD_ZONE * AIM_DEAD_ZONE) aimYaw = Math.atan2(dx, dz);
@@ -1170,6 +1174,10 @@ requestAnimationFrame(frame);
     outlined: ghosts.map((g) => g.visible),
     bars: dummies.map((_, i) => fx.barShown(i)),
   }),
+  /** For the scripted checks only: hold the soldier's facing at a direction (radians), or give it back (null). */
+  holdAim: (yaw: number | null) => {
+    aimHold = yaw;
+  },
   /** Whether something blocks sight between two points (with what blocks it now). */
   visionLine: (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number) =>
     sightBlocked(lastBlockers ?? sightBlockers(null), x1, y1, z1, x2, y2, z2),

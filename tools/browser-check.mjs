@@ -1269,15 +1269,6 @@ async function run(browserName) {
       // Wait for whole drawn frames (with the rule on, this machine draws about 1.5 a second in software).
       const frames = (n = 3) => T((k) => new Promise((res) => { let i = 0; const f = () => (++i >= k ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
       const put = async (i, x, z, y = 0) => T((a, b, c, d) => window.__testlines.placeDummy(a, b, c, d), i, x, z, y);
-      const faceToward = async (x, z) => {
-        for (let k = 0; k < 3; k++) {
-          // (At gun height: the soldier faces where the cursor's ray crosses it, as the shots fly level here.)
-          const sp = await T((a, b) => window.__testlines.screenOf(a, 1.36, b), x, z);
-          const view = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
-          await page.mouse.move(Math.max(view.l + 5, Math.min(view.l + view.w - 5, sp.x)), Math.max(view.t + 5, Math.min(view.t + view.h - 5, sp.y)));
-          await frames();
-        }
-      };
       await T(() => window.__testlines.preset('Original'));
       await T(() => window.__testlines.set('dummiesWalk', false));
       await T(() => window.__testlines.set('visionOn', true));
@@ -1347,9 +1338,11 @@ async function run(browserName) {
       // The cone (190 degrees): in front drawn, behind the back not, in the open.
       await T(() => window.__testlines.set('visionWidth', 190));
       await T(() => window.__testlines.place(30, 30));
+      await page.mouse.move(640, 450);
+      // (The facing is held still for these checks: the camera follows the cursor, so a spot under it drifts away.)
+      const yaw = 0.3;
+      await T((y) => window.__testlines.holdAim(y), yaw);
       await frames();
-      await faceToward(30, 45);
-      const yaw = await T(() => window.__testlines.aimYaw());
       await put(0, 30 + Math.sin(yaw) * 8, 30 + Math.cos(yaw) * 8);
       await put(1, 30 - Math.sin(yaw) * 8, 30 - Math.cos(yaw) * 8);
       await frames();
@@ -1362,7 +1355,6 @@ async function run(browserName) {
       ok('at 190 degrees a dummy in front is drawn and one behind your back is not, in the open; at 360 both are', coneFront && !coneBack && v.drawn[0] && v.drawn[1], `190°: front ${coneFront}, behind ${coneBack}; 360°: ${v.drawn[0]}, ${v.drawn[1]}`);
       await T(() => window.__testlines.set('visionWidth', 190));
       // A hidden dummy's health bar is hidden too: shoot the one in front, then it goes behind your back.
-      await faceToward(30 + Math.sin(yaw) * 8, 30 + Math.cos(yaw) * 8);
       await page.mouse.down();
       await frames();
       await page.mouse.up();
@@ -1373,6 +1365,8 @@ async function run(browserName) {
       v = await V();
       ok('a hidden dummy hides its health bar too', barFront && !v.drawn[0] && !v.bars[0], `bar shown in front ${barFront}; behind: drawn ${v.drawn[0]}, bar ${v.bars[0]}`);
       // The white: the ground in front, in the open, is lighter with the rule on; behind the 3.07 m ledge it is not.
+      // (The test dummies put away: the walker's path runs behind that ledge.)
+      await T(() => window.__testlines.set('visionDummies', false));
       await T(() => window.__testlines.set('visionWidth', 360));
       await T(() => window.__testlines.place(-8, -8));
       await put(0, 40, -40);
@@ -1395,16 +1389,16 @@ async function run(browserName) {
       const openZero = lum(await box(-5, -8));
       await T(() => window.__testlines.set('visionWhite', 0.35));
       await page.screenshot({ path: `${shots}/${browserName}-vision.png` });
+      await T(() => window.__testlines.set('visionDummies', true));
       ok('the white: the ground the eyes see is lighter with the rule on, the ground behind the 3.07 m ledge is not, and a white of 0 shows nothing', openOn > openOff + 15 && Math.abs(shadeOn - shadeOff) < 4 && Math.abs(openZero - openOff) < 4, `in the open ${openOff.toFixed(0)} -> ${openOn.toFixed(0)} (white 0: ${openZero.toFixed(0)}); behind the ledge ${shadeOff.toFixed(0)} -> ${shadeOn.toFixed(0)}`);
       // The sight line passes a hidden dummy (in the smoke): no stop, no colour; with the rule off it stops on it.
       await T(() => window.__testlines.set('visionWidth', 190));
       await T(() => window.__testlines.place(-36, 15));
       await put(1, -36, 21.8);
+      await T(() => window.__testlines.holdAim(0));
       await frames();
-      await faceToward(-36, 30);
       await page.mouse.down({ button: 'right' });
       await frames();
-      await faceToward(-36, 30);
       const lineHidden = await T(() => window.__testlines.sight());
       const hiddenNow = !(await V()).drawn[1];
       await T(() => window.__testlines.set('visionOn', false));
@@ -1413,27 +1407,33 @@ async function run(browserName) {
       await page.mouse.up({ button: 'right' });
       await T(() => window.__testlines.set('visionOn', true));
       ok('the sight line passes a hidden dummy (no stop, no colour); with the rule off it stops on it', hiddenNow && lineHidden.visible && !lineHidden.onDummy && lineShown.onDummy, `hidden ${hiddenNow}; rule on: on a dummy ${lineHidden.onDummy}; rule off: ${lineShown.onDummy}`);
-      // The cursor's aim point passes a hidden dummy too (on its chest: off the body with the rule on, on it with it off).
+      // The cursor's aim point passes a hidden dummy too. With the rule off the cursor is brought onto its chest (halfway
+      // each time, as the camera follows it); then, the mouse still, the rule goes on and the aim point leaves the body.
       {
-        for (let k = 0; k < 2; k++) {
-          const sp = await T(() => window.__testlines.screenOf(-36, 1.2, 21.8));
-          await page.mouse.move(sp.x, sp.y);
-          await frames();
-        }
         const onBody = (c) => !!c && Math.hypot(c.x + 36, c.z - 21.8) < 0.35 && c.y > 0.05;
-        const cpOn = await T(() => window.__testlines.cursorPoint());
         await T(() => window.__testlines.set('visionOn', false));
-        await frames();
-        await frames();
-        const cpOff = await T(() => window.__testlines.cursorPoint());
+        const m = await T(() => window.__testlines.screenOf(-36, 1.2, 21.8));
+        let cpOff = null;
+        for (let k = 0; k < 10; k++) {
+          const sp = await T(() => window.__testlines.screenOf(-36, 1.2, 21.8));
+          m.x += (sp.x - m.x) / 2;
+          m.y += (sp.y - m.y) / 2;
+          await page.mouse.move(m.x, m.y);
+          await frames();
+          cpOff = await T(() => window.__testlines.cursorPoint());
+          if (k >= 1 && onBody(cpOff)) break;
+        }
         await T(() => window.__testlines.set('visionOn', true));
         await frames();
+        await frames();
+        const cpOn = await T(() => window.__testlines.cursorPoint());
         ok("the cursor's aim point passes a hidden dummy (it lands on it only with the rule off)", !onBody(cpOn) && onBody(cpOff), `rule on: ${cpOn ? `${cpOn.x.toFixed(2)}, ${cpOn.y.toFixed(2)}, ${cpOn.z.toFixed(2)}` : 'none'}; rule off: ${cpOff ? `${cpOff.x.toFixed(2)}, ${cpOff.y.toFixed(2)}, ${cpOff.z.toFixed(2)}` : 'none'}`);
       }
       // The shooter: behind the tall hedge, firing at you while you face away; its tracers are drawn and its shots heard.
       await T(() => window.__testlines.place(-28, 18));
+      // (Facing away from it: its post is at z 27.6.)
+      await T(() => window.__testlines.holdAim(Math.PI));
       await frames();
-      await faceToward(-28, 5);
       const s0 = await T(() => window.__testlines.shooter());
       const snd0 = await T(() => window.__testlines.sounds());
       await T(() => window.__testlines.set('shooterOn', true));
@@ -1472,6 +1472,7 @@ async function run(browserName) {
       await T(() => window.__testlines.set('soundCurve', 'linear'));
       ok('the falloff curve can be changed (inverse drops sooner)', inv < 0.5 && inv > 0, inv.toFixed(3));
       // Put it all back for the checks that follow.
+      await T(() => window.__testlines.holdAim(null));
       await T(() => window.__testlines.set('stepVolume', 0));
       await T(() => window.__testlines.set('dummiesWalk', false));
       await T(() => window.__testlines.set('visionOn', false));
