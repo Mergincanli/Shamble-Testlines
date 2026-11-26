@@ -1377,16 +1377,18 @@ async function run(browserName) {
         return (await T((a, b) => window.__testlines.pixels(a, b, 12, 12), sp.x - 6, sp.y - 6)).mean;
       };
       const lum = (m) => 0.3 * m[0] + 0.59 * m[1] + 0.11 * m[2];
-      const openOn = lum(await box(-5, -8));
-      const shadeOn = lum(await box(-17.5, -8));
+      // (Both in the middle of a grid square; the hidden one 6 m behind the ledge, where the camera sees the ground
+      // over the ledge but the soldier's eyes do not.)
+      const openOn = lum(await box(-4.5, -8.5));
+      const shadeOn = lum(await box(-22.5, -8.5));
       await T(() => window.__testlines.set('visionOn', false));
       await frames();
-      const openOff = lum(await box(-5, -8));
-      const shadeOff = lum(await box(-17.5, -8));
+      const openOff = lum(await box(-4.5, -8.5));
+      const shadeOff = lum(await box(-22.5, -8.5));
       await T(() => window.__testlines.set('visionOn', true));
       await T(() => window.__testlines.set('visionWhite', 0));
       await frames();
-      const openZero = lum(await box(-5, -8));
+      const openZero = lum(await box(-4.5, -8.5));
       await T(() => window.__testlines.set('visionWhite', 0.35));
       await page.screenshot({ path: `${shots}/${browserName}-vision.png` });
       await T(() => window.__testlines.set('visionDummies', true));
