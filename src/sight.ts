@@ -129,7 +129,12 @@ function hitsCyl(c: SightCyl, ax: number, ay: number, az: number, dx: number, dy
 
 /** Whether a point is inside a box (strictly): the eyes inside something are not blocked by it. */
 function insideBox(b: SightBox, x: number, y: number, z: number): boolean {
-  return x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ;
+  if (!(x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ)) return false;
+  // A ramp is solid only under its slope: eyes over the slope (standing on it) are not inside it.
+  const r = b.ramp;
+  if (!r) return true;
+  const c = r.axis === 'x' ? x : z;
+  return y < r.top * Math.min(1, Math.max(0, (c - r.low) / (r.high - r.low)));
 }
 function insideCyl(c: SightCyl, x: number, y: number, z: number): boolean {
   return (x - c.cx) ** 2 + (z - c.cz) ** 2 < c.r * c.r && y > c.y0 && y < c.y1;

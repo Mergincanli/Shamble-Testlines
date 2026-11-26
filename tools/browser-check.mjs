@@ -1321,6 +1321,12 @@ async function run(browserName) {
       await frames();
       const farBack = (await V()).drawn[0];
       ok('a dummy on the 2.5 m ledge: hidden from right under the edge, drawn from 8 m back (its head over the edge)', !nearWall && farBack, `1 m off the wall ${nearWall}, 8 m back ${farBack}`);
+      // Standing on the ramp's low part, the ramp still blocks a line that passes under its slope (the eyes over a slope
+      // are not inside the ramp).
+      {
+        const underSlope = await T(() => window.__testlines.visionLine(-6, 2.07, -15, -3, 0.3, -21));
+        ok('on the ramp, the ramp still blocks a line that passes under its slope', underSlope, `blocked ${underSlope}`);
+      }
       // The Hornet blocks sight (an upright 1.4 m cylinder) unless you ride it; riding, the eyes stand on its footplates.
       const hb = await T(() => window.__testlines.hornet());
       const through = await T((x, z) => window.__testlines.visionLine(x - 3, 1, z, x + 3, 1, z), hb.x, hb.z);

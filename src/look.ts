@@ -202,7 +202,16 @@ bool visBlocked(vec3 p, vec3 e) {
     if (i >= uVisBoxCount) break;
     vec3 bmin = uVisBoxMin[i].xyz;
     vec3 bmax = uVisBoxMax[i].xyz;
-    if (all(greaterThan(e, bmin)) && all(lessThan(e, bmax))) continue;
+    float code = uVisBoxMin[i].w;
+    bool alongX = abs(code) < 1.5;
+    float lowC = alongX ? (code > 0.0 ? bmin.x : bmax.x) : (code > 0.0 ? bmin.z : bmax.z);
+    float highC = alongX ? (code > 0.0 ? bmax.x : bmin.x) : (code > 0.0 ? bmax.z : bmin.z);
+    // The eyes inside it (for a ramp: under its slope, not standing over it) do not count.
+    if (all(greaterThan(e, bmin)) && all(lessThan(e, bmax))) {
+      if (abs(code) < 0.5) continue;
+      float he = bmax.y * clamp(((alongX ? e.x : e.z) - lowC) / (highC - lowC), 0.0, 1.0);
+      if (e.y < he) continue;
+    }
     vec3 ta = (bmin - p) * inv;
     vec3 tb = (bmax - p) * inv;
     vec3 tlo = min(ta, tb);
@@ -210,11 +219,7 @@ bool visBlocked(vec3 p, vec3 e) {
     float lo = max(max(tlo.x, tlo.y), max(tlo.z, t0));
     float hi = min(min(thi.x, thi.y), min(thi.z, t1));
     if (lo >= hi) continue;
-    float code = uVisBoxMin[i].w;
     if (abs(code) < 0.5) return true;
-    bool alongX = abs(code) < 1.5;
-    float lowC = alongX ? (code > 0.0 ? bmin.x : bmax.x) : (code > 0.0 ? bmin.z : bmax.z);
-    float highC = alongX ? (code > 0.0 ? bmax.x : bmin.x) : (code > 0.0 ? bmax.z : bmin.z);
     float ca = alongX ? p.x + dd.x * lo : p.z + dd.z * lo;
     float cb = alongX ? p.x + dd.x * hi : p.z + dd.z * hi;
     float ha = bmax.y * clamp((ca - lowC) / (highC - lowC), 0.0, 1.0);
