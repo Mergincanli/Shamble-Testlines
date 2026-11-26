@@ -10,7 +10,7 @@
 import { BLOCKS, bottomOf } from './yard';
 import { HEDGES, SMOKE } from './standins';
 import { HIT_RADIUS } from './weapons';
-import { VISION, VISION_MAX_BOXES, VISION_MAX_CYLS } from './look';
+import { buildVisionIntoShaders, VISION, VISION_MAX_BOXES, VISION_MAX_CYLS } from './look';
 
 /** An axis-aligned box that blocks sight; a ramp blocks only under its slope. */
 export interface SightBox {
@@ -176,7 +176,9 @@ export function dummySeen(B: Blockers, e: Eye, x: number, y: number, z: number):
 
 /** Hand the eyes, the cone and what blocks sight to the grid shader, so the white is the very same test. */
 export function packVision(B: Blockers, e: Eye, on: boolean, white: number) {
+  buildVisionIntoShaders(on);
   VISION.on.value = on ? 1 : 0;
+  if (!on) return;
   VISION.white.value = white;
   VISION.eye.value.set(e.x, e.y, e.z);
   VISION.aim.value.set(Math.sin(e.aim), Math.cos(e.aim));

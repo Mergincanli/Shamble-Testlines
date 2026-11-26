@@ -251,6 +251,19 @@ if (uVisOn > 0.5 && uVisWhite > 0.0) {
 }
 `;
 
+/** Every gridded material, and whether their shaders carry the vision rule's test (only while the rule is on). */
+const gridMaterials: THREE.MeshToonMaterial[] = [];
+let visionBuilt = false;
+/**
+ * Build the vision rule's test into the gridded surfaces' shaders, or leave it out (so the rule costs nothing while
+ * it is off). Each way is compiled once and kept, so switching back and forth stays quick.
+ */
+export function buildVisionIntoShaders(on: boolean) {
+  if (on === visionBuilt) return;
+  visionBuilt = on;
+  for (const m of gridMaterials) m.needsUpdate = true;
+}
+
 /**
  * A surface that carries the measuring grid: the same flat shading as toon(), in its Art colour when the grid is
  * off, and in its group's grid colour with lines laid in world space when it is on (a thick dark line every
@@ -259,6 +272,7 @@ if (uVisOn > 0.5 && uVisWhite > 0.0) {
  */
 export function gridToon(hex: string, group: GridGroup): THREE.MeshToonMaterial {
   const m = new THREE.MeshToonMaterial({ color: new THREE.Color(hex), gradientMap: gradient });
+  gridMaterials.push(m);
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uGridOn = GRID.on;
     sh.uniforms.uGridMinor = GRID.minor;
@@ -281,11 +295,11 @@ export function gridToon(hex: string, group: GridGroup): THREE.MeshToonMaterial 
       .replace('#include <common>', '#include <common>' + GRID_VERT_HEAD)
       .replace('#include <project_vertex>', '#include <project_vertex>' + GRID_VERT_BODY);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>' + GRID_FRAG_HEAD + VISION_FRAG_HEAD)
+      .replace('#include <common>', '#include <common>' + GRID_FRAG_HEAD + (visionBuilt ? VISION_FRAG_HEAD : ''))
       .replace('#include <color_fragment>', '#include <color_fragment>' + GRID_FRAG_BODY)
-      .replace('#include <opaque_fragment>', '#include <opaque_fragment>' + VISION_FRAG_BODY);
+      .replace('#include <opaque_fragment>', '#include <opaque_fragment>' + (visionBuilt ? VISION_FRAG_BODY : ''));
   };
-  m.customProgramCacheKey = () => 'grid-toon-2';
+  m.customProgramCacheKey = () => (visionBuilt ? 'grid-toon-2-vision' : 'grid-toon-2');
   return m;
 }
 

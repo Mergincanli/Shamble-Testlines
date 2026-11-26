@@ -86,7 +86,9 @@ export function worldSound(kind: 'step' | 'gun', gain: number, pan: number, dist
   if (gain <= 0) return;
   worldSounds[kind]++;
   worldSounds.last = { kind, gain, pan, distance };
-  const c = ensure();
+  // Only once the audio runs (your first click or key starts it): a dummy's sound never tries to start it, since the
+  // browser refuses that before a click and says so in the console every time.
+  const c = ctx;
   if (!c || !noise || c.state !== 'running') return;
   try {
     const src = c.createBufferSource();

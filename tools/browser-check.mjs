@@ -1264,13 +1264,15 @@ async function run(browserName) {
     // cone itself.
     {
       const V = () => T(() => window.__testlines.vision());
+      // Wait for whole drawn frames (with the rule on, this machine draws about 1.5 a second in software).
+      const frames = (n = 3) => T((k) => new Promise((res) => { let i = 0; const f = () => (++i >= k ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
       const put = async (i, x, z, y = 0) => T((a, b, c, d) => window.__testlines.placeDummy(a, b, c, d), i, x, z, y);
       const faceToward = async (x, z) => {
         for (let k = 0; k < 3; k++) {
           const sp = await T((a, b) => window.__testlines.screenOf(a, 0, b), x, z);
           const view = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
           await page.mouse.move(Math.max(view.l + 5, Math.min(view.l + view.w - 5, sp.x)), Math.max(view.t + 5, Math.min(view.t + view.h - 5, sp.y)));
-          await sleep(400);
+          await frames();
         }
       };
       await T(() => window.__testlines.preset('Original'));
@@ -1284,11 +1286,11 @@ async function run(browserName) {
       await T(() => window.__testlines.place(-8, -8));
       await put(0, -18, -8);
       await put(1, -30, -8);
-      await sleep(900);
+      await frames();
       let v = await V();
       const ledgeLow = [v.drawn[0], v.drawn[1]];
       await T(() => window.__testlines.set('visionEye', 4));
-      await sleep(600);
+      await frames();
       v = await V();
       const ledgeHigh = [v.drawn[0], v.drawn[1]];
       await T(() => window.__testlines.set('visionEye', 1.65));
@@ -1296,7 +1298,7 @@ async function run(browserName) {
       // The 1.5 m cover wall: a standing dummy's head shows over it; the dummy is drawn.
       await T(() => window.__testlines.place(-2, -4));
       await put(0, -2, -10.5);
-      await sleep(700);
+      await frames();
       v = await V();
       ok('behind the 1.5 m cover wall a standing dummy is drawn (its head shows over the wall)', v.drawn[0], `drawn ${v.drawn[0]}`);
       // The test corner: over the 1.4 m hedge yes, behind the 2.0 m hedge (the shooter's post) no, the smoke hides.
@@ -1304,67 +1306,67 @@ async function run(browserName) {
       await put(0, -28, 21.5);
       await put(1, -36, 23);
       await put(2, -32.5, 28);
-      await sleep(900);
+      await frames();
       v = await V();
       ok('in the test corner: drawn over the 1.4 m hedge, not behind the 2.0 m hedge, not in the smoke, drawn beside it', v.drawn[0] && !v.drawn[12] && !v.drawn[1] && v.drawn[2], `low hedge ${v.drawn[0]}, tall hedge (the shooter) ${v.drawn[12]}, in the smoke ${v.drawn[1]}, beside it ${v.drawn[2]}`);
       // Outlines of the hidden ones, for explaining only.
       await T(() => window.__testlines.set('visionGhosts', true));
-      await sleep(500);
+      await frames();
       v = await V();
       const outlinesOk = v.outlined[12] && v.outlined[1] && !v.outlined[0] && !v.outlined[2];
       await T(() => window.__testlines.set('visionGhosts', false));
-      await sleep(400);
+      await frames();
       const vOff = await V();
       ok('the outline switch draws the hidden dummies as outlines, and only them', outlinesOk && !vOff.outlined.some(Boolean), `on: shooter ${v.outlined[12]}, in the smoke ${v.outlined[1]}, seen ones ${v.outlined[0]}/${v.outlined[2]}; off: ${vOff.outlined.filter(Boolean).length}`);
       // A dummy on the 2.5 m ledge, 2.5 m back from its edge: hidden from 1 m off the wall, drawn from 8 m back.
       await put(0, -14.5, -2, 2.5);
       await T(() => window.__testlines.place(-11, -2));
-      await sleep(700);
+      await frames();
       const nearWall = (await V()).drawn[0];
       await T(() => window.__testlines.place(-4, -2));
-      await sleep(700);
+      await frames();
       const farBack = (await V()).drawn[0];
       ok('a dummy on the 2.5 m ledge: hidden from right under the edge, drawn from 8 m back (its head over the edge)', !nearWall && farBack, `1 m off the wall ${nearWall}, 8 m back ${farBack}`);
       // The Hornet blocks sight (an upright 1.4 m cylinder) unless you ride it; riding, the eyes stand on its footplates.
       const hb = await T(() => window.__testlines.hornet());
       const through = await T((x, z) => window.__testlines.visionLine(x - 3, 1, z, x + 3, 1, z), hb.x, hb.z);
       await T((x, z) => window.__testlines.place(x + 1.2, z), hb.x, hb.z);
-      await sleep(600);
+      await frames();
       await page.keyboard.press('KeyE');
-      await sleep(800);
+      await frames();
       const ridingNow = (await T(() => window.__testlines.hornet())).riding;
       const throughRiding = await T((x, z) => window.__testlines.visionLine(x - 3, 1, z, x + 3, 1, z), hb.x, hb.z);
       const eyeRiding = (await V()).eye.y;
       const hb2 = await T(() => window.__testlines.hornet());
       await page.keyboard.press('KeyE');
-      await sleep(800);
+      await frames();
       ok('the Hornet blocks sight unless you ride it; riding, the eyes are 1.65 m over its footplates', through && ridingNow && !throughRiding && Math.abs(eyeRiding - (hb2.y + 0.25 + 1.65)) < 0.05, `a line through it blocked ${through}; riding ${ridingNow}, blocked ${throughRiding}, eyes at ${eyeRiding.toFixed(2)} m`);
       // The cone (190 degrees): in front drawn, behind the back not, in the open.
       await T(() => window.__testlines.set('visionWidth', 190));
       await T(() => window.__testlines.place(30, 30));
-      await sleep(800);
+      await frames();
       await faceToward(30, 45);
       const yaw = await T(() => window.__testlines.aimYaw());
       await put(0, 30 + Math.sin(yaw) * 8, 30 + Math.cos(yaw) * 8);
       await put(1, 30 - Math.sin(yaw) * 8, 30 - Math.cos(yaw) * 8);
-      await sleep(700);
+      await frames();
       v = await V();
       const coneFront = v.drawn[0];
       const coneBack = v.drawn[1];
       await T(() => window.__testlines.set('visionWidth', 360));
-      await sleep(500);
+      await frames();
       v = await V();
       ok('at 190 degrees a dummy in front is drawn and one behind your back is not, in the open; at 360 both are', coneFront && !coneBack && v.drawn[0] && v.drawn[1], `190°: front ${coneFront}, behind ${coneBack}; 360°: ${v.drawn[0]}, ${v.drawn[1]}`);
       await T(() => window.__testlines.set('visionWidth', 190));
       // A hidden dummy's health bar is hidden too: shoot the one in front, then it goes behind your back.
       await faceToward(30 + Math.sin(yaw) * 8, 30 + Math.cos(yaw) * 8);
       await page.mouse.down();
-      await sleep(400);
+      await frames();
       await page.mouse.up();
-      await sleep(300);
+      await frames();
       const barFront = (await V()).bars[0];
       await put(0, 30 - Math.sin(yaw) * 9, 30 - Math.cos(yaw) * 9 + 0.5);
-      await sleep(600);
+      await frames();
       v = await V();
       ok('a hidden dummy hides its health bar too', barFront && !v.drawn[0] && !v.bars[0], `bar shown in front ${barFront}; behind: drawn ${v.drawn[0]}, bar ${v.bars[0]}`);
       // The white: the ground in front, in the open, is lighter with the rule on; behind the 3.07 m ledge it is not.
@@ -1372,7 +1374,7 @@ async function run(browserName) {
       await T(() => window.__testlines.place(-8, -8));
       await put(0, 40, -40);
       await put(1, 42, -40);
-      await sleep(1200);
+      await frames();
       const box = async (x, z) => {
         const sp = await T((a, b) => window.__testlines.screenOf(a, 0, b), x, z);
         return (await T((a, b) => window.__testlines.pixels(a, b, 12, 12), sp.x - 6, sp.y - 6)).mean;
@@ -1381,12 +1383,12 @@ async function run(browserName) {
       const openOn = lum(await box(-5, -8));
       const shadeOn = lum(await box(-17.5, -8));
       await T(() => window.__testlines.set('visionOn', false));
-      await sleep(400);
+      await frames();
       const openOff = lum(await box(-5, -8));
       const shadeOff = lum(await box(-17.5, -8));
       await T(() => window.__testlines.set('visionOn', true));
       await T(() => window.__testlines.set('visionWhite', 0));
-      await sleep(400);
+      await frames();
       const openZero = lum(await box(-5, -8));
       await T(() => window.__testlines.set('visionWhite', 0.35));
       await page.screenshot({ path: `${shots}/${browserName}-vision.png` });
@@ -1395,22 +1397,22 @@ async function run(browserName) {
       await T(() => window.__testlines.set('visionWidth', 190));
       await T(() => window.__testlines.place(-36, 15));
       await put(1, -36, 21.8);
-      await sleep(800);
+      await frames();
       await faceToward(-36, 30);
       await page.mouse.down({ button: 'right' });
-      await sleep(900);
+      await frames();
       await faceToward(-36, 30);
       const lineHidden = await T(() => window.__testlines.sight());
       const hiddenNow = !(await V()).drawn[1];
       await T(() => window.__testlines.set('visionOn', false));
-      await sleep(500);
+      await frames();
       const lineShown = await T(() => window.__testlines.sight());
       await page.mouse.up({ button: 'right' });
       await T(() => window.__testlines.set('visionOn', true));
       ok('the sight line passes a hidden dummy (no stop, no colour); with the rule off it stops on it', hiddenNow && lineHidden.visible && !lineHidden.onDummy && lineShown.onDummy, `hidden ${hiddenNow}; rule on: on a dummy ${lineHidden.onDummy}; rule off: ${lineShown.onDummy}`);
       // The shooter: behind the tall hedge, firing at you while you face away; its tracers are drawn and its shots heard.
       await T(() => window.__testlines.place(-28, 18));
-      await sleep(600);
+      await frames();
       await faceToward(-28, 5);
       const s0 = await T(() => window.__testlines.shooter());
       const snd0 = await T(() => window.__testlines.sounds());
@@ -1445,7 +1447,7 @@ async function run(browserName) {
       await T(() => window.__testlines.set('visionDummies', false));
       await T(() => window.__testlines.set('visionWidth', 190));
       await T(() => window.__testlines.place(30, 30));
-      await sleep(400);
+      await frames();
     }
 
     // Export.
@@ -1520,6 +1522,13 @@ async function run(browserName) {
       const d0 = await ex();
       const warnShown = await page.$eval('#panel .p-warn', (e) => !e.hidden);
       ok('at the start values changed_from_start is empty and there is no warning', d0.changed_from_start.length === 0 && d0.warnings.length === 0 && !warnShown, `${d0.changed_from_start.length} listed, warnings ${JSON.stringify(d0.warnings)}, line shown ${warnShown}`);
+      // (Reset all turned the vision rule, its test dummies and the footsteps back on: off again for speed here.)
+      await T(() => {
+        const t = window.__testlines;
+        t.set('visionOn', false);
+        t.set('visionDummies', false);
+        t.set('stepVolume', 0);
+      });
       // State A: a number, the "auto" value set, a toggle, a choice written as a number, a word choice.
       await T(() => {
         const t = window.__testlines;
@@ -1531,7 +1540,7 @@ async function run(browserName) {
       });
       const dA = await ex();
       const got = dA.changed_from_start.map((c) => c.group + '.' + c.name + ': ' + JSON.stringify(c.start) + ' -> ' + JSON.stringify(c.current)).sort();
-      const want = ['camera.angle_override_deg: "auto" -> 30', 'grenade.explosion_look: "sheet" -> "plain"', 'measuring_grid.grid_on: true -> false', 'measuring_grid.grid_thin_step_m: 0.5 -> 0.25', 'movement.walk_speed_m_per_s: 6.3 -> 7'];
+      const want = ['camera.angle_override_deg: "auto" -> 30', 'grenade.explosion_look: "sheet" -> "plain"', 'measuring_grid.grid_on: true -> false', 'measuring_grid.grid_thin_step_m: 0.5 -> 0.25', 'movement.walk_speed_m_per_s: 6.3 -> 7', 'vision.vision_rule: true -> false', 'vision.test_dummies: true -> false', 'dummy_sounds.footsteps_volume: 0.3 -> 0'].sort();
       ok('changed_from_start lists exactly the values moved, each with its start and current value', JSON.stringify(got) === JSON.stringify(want), got.join('; '));
       const textA = JSON.stringify(dA, null, 2);
       const storedA = await stored();
@@ -1596,7 +1605,7 @@ async function run(browserName) {
           });
           await (await page.$('#panel input[type=file]')).uploadFile(file);
         } else {
-          const [chooser] = await Promise.all([page.waitForFileChooser({ timeout: 5000 }), (await page.$$('#panel .p-btns .p-btn'))[1].click()]);
+          const [chooser] = await Promise.all([page.waitForFileChooser({ timeout: 20000 }), (await page.$$('#panel .p-btns .p-btn'))[1].click()]);
           await chooser.accept([file]);
         }
         for (let i = 0; i < 50 && !(await importLine()); i++) await sleep(100);
