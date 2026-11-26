@@ -7,9 +7,13 @@ import { ROOM_LAYOUT } from './metrics';
 import { HORNET } from './hornet';
 import { AIM_DEAD_ZONE, HEIGHT_GRACE, HIT_HEIGHT, HIT_RADIUS, SHOT_HEIGHT } from './weapons';
 import { EXPLOSION_MAX_STRETCH, EXPLOSION_POOL, EXPLOSION_SHEET } from './explosion';
+import { BODY_POINTS, CONE_NEAR_M, HORNET_SIGHT_HEIGHT_M, SIGHT_END_MARGIN_M } from './sight';
+import { HEDGES, SMOKE } from './standins';
+import { PARKED, SHOOTER_POST, TEST_DUMMY_RULES, WALKER_LOOP } from './dummies';
+import { CLICK_VOLUME, FALLOFF_FORMULAS } from './audio';
 import { builtOpening, CAMERA_PRESETS, CAMERA_PROFILES, GROUPS, PARAMS, profileActive, type Param, type Store, type Value, type Values } from './params';
 
-export const BUILD = { step: 'E', name: 'Export fit for the hand-over to the game' };
+export const BUILD = { step: 'F', name: "The vision rule and the dummies' sounds" };
 /** The Export's format: Import reads only this name and version. */
 export const EXPORT_FORMAT = 'testlines-export';
 export const EXPORT_FORMAT_VERSION = 1;
@@ -184,6 +188,23 @@ export function buildExport(store: Store): string {
         drawn_at_once: EXPLOSION_POOL,
         max_stretch: EXPLOSION_MAX_STRETCH,
         note: "The owner's sheet, keyed at build time by tools/key-sheet.mjs: the key colour is the measured mean of the flat blue background; cover below the noise floor is clear. The anchor (ground line from the top, middle from the left, as shares of a frame) is measured on the sheet and sits on the burst point. Frames play in reading order, in even steps. The picture stands upright, turned toward the camera, stretched up by 1 / cos of the camera's height angle over it (at most max_stretch).",
+      },
+      vision: {
+        sight: '3D: a straight line from the eyes (eye_height_m above the feet; on the Hornet above its footplates) to each body point; blocks, the ramp under its slope, the hedges, the smoke column and the Hornet (unless ridden) block it; soldiers and dummies do not.',
+        body_points: BODY_POINTS,
+        cone: 'By direction on the ground only (no reach, no up or down limit), centred on where the soldier faces.',
+        cone_near_m: CONE_NEAR_M,
+        sight_end_margin_m: SIGHT_END_MARGIN_M,
+        hornet_sight_height_m: HORNET_SIGHT_HEIGHT_M,
+        stand_ins: { hedges: HEDGES, smoke_column: SMOKE, note: 'They block sight only: walked through and shot through.' },
+        test_dummies: { walker_loop: WALKER_LOOP, shooter_post: SHOOTER_POST, parked_at: PARKED, ...TEST_DUMMY_RULES },
+        decided: 'Each drawn frame, from the drawn positions. The white is the same test, run on every gridded surface.',
+        hidden_means: 'Body, ink line, shadow and health bar not drawn; the cursor and the sight line pass hidden dummies; shots still hit them and the hit marker still shows.',
+      },
+      dummy_sounds: {
+        loudness: `A volume of 1 is as loud as your own shot's click (${CLICK_VOLUME}) inside the inner radius.`,
+        falloff_formulas: FALLOFF_FORMULAS,
+        heard_from: "Your soldier; the pan by the sound's side on screen.",
       },
     },
     measured: {

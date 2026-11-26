@@ -44,6 +44,15 @@ async function run(browserName) {
     // they set level, and the aiming-at-height checks set the point again.
     ok('shots start aimed at the point under the cursor', (await T(() => window.__testlines.values())).aimAt === 'point', String((await T(() => window.__testlines.values())).aimAt));
     await T(() => window.__testlines.set('aimAt', 'level'));
+    // The vision rule starts on, with its two test dummies and the dummies' footsteps: the older checks below were
+    // written without them, so they go off here, and the vision checks turn them on again.
+    {
+      const v0 = await T(() => window.__testlines.values());
+      ok('the vision rule starts on at 190 degrees, eyes at 1.65 m, outlines and the shooter off', v0.visionOn === true && v0.visionWidth === 190 && v0.visionEye === 1.65 && v0.visionGhosts === false && v0.visionDummies === true && v0.shooterOn === false, `rule ${v0.visionOn}, ${v0.visionWidth}°, eyes ${v0.visionEye} m, outlines ${v0.visionGhosts}, test dummies ${v0.visionDummies}, shooter ${v0.shooterOn}`);
+    }
+    await T(() => window.__testlines.set('visionOn', false));
+    await T(() => window.__testlines.set('visionDummies', false));
+    await T(() => window.__testlines.set('stepVolume', 0));
     await page.screenshot({ path: `${shots}/${browserName}-start.png` });
     // The camera starts on the Original profile; the movement checks below were written for the old Iso turn.
     let cv = await T(() => window.__testlines.values());
@@ -1250,6 +1259,195 @@ async function run(browserName) {
     peak = await T(() => window.__testlines.peak());
     ok('jump rises 2.52 m at 60 steps too', Math.abs(peak - 2.52) < 0.03, peak.toFixed(3));
 
+    // The vision rule (the owner's, 26 November): a dummy is drawn only while part of its body is inside the cone with
+    // a clear 3D line from the soldier's eyes. Geometry first at 360 degrees (only what blocks sight hides), then the
+    // cone itself.
+    {
+      const V = () => T(() => window.__testlines.vision());
+      const put = async (i, x, z, y = 0) => T((a, b, c, d) => window.__testlines.placeDummy(a, b, c, d), i, x, z, y);
+      const faceToward = async (x, z) => {
+        for (let k = 0; k < 3; k++) {
+          const sp = await T((a, b) => window.__testlines.screenOf(a, 0, b), x, z);
+          const view = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
+          await page.mouse.move(Math.max(view.l + 5, Math.min(view.l + view.w - 5, sp.x)), Math.max(view.t + 5, Math.min(view.t + view.h - 5, sp.y)));
+          await sleep(400);
+        }
+      };
+      await T(() => window.__testlines.preset('Original'));
+      await T(() => window.__testlines.set('dummiesWalk', false));
+      await T(() => window.__testlines.set('visionOn', true));
+      await T(() => window.__testlines.set('visionDummies', true));
+      await T(() => window.__testlines.set('visionWidth', 360));
+      await T(() => { for (let i = 0; i < 11; i++) window.__testlines.placeDummy(i, 40 + i * 2, -45); });
+      // Behind the 3.07 m ledge (x -16 to -12, z -10 to -6), from x -8: hidden; far behind it, hidden at 1.65 m and
+      // seen with the eyes raised to 4 m (over the ledge).
+      await T(() => window.__testlines.place(-8, -8));
+      await put(0, -18, -8);
+      await put(1, -30, -8);
+      await sleep(900);
+      let v = await V();
+      const ledgeLow = [v.drawn[0], v.drawn[1]];
+      await T(() => window.__testlines.set('visionEye', 4));
+      await sleep(600);
+      v = await V();
+      const ledgeHigh = [v.drawn[0], v.drawn[1]];
+      await T(() => window.__testlines.set('visionEye', 1.65));
+      ok('behind the 3.07 m ledge a dummy is not drawn; far behind it, drawn only with the eyes raised over the ledge (4 m)', !ledgeLow[0] && !ledgeLow[1] && !ledgeHigh[0] && ledgeHigh[1], `eyes 1.65 m: near ${ledgeLow[0]}, far ${ledgeLow[1]}; eyes 4 m: near ${ledgeHigh[0]}, far ${ledgeHigh[1]}`);
+      // The 1.5 m cover wall: a standing dummy's head shows over it; the dummy is drawn.
+      await T(() => window.__testlines.place(-2, -4));
+      await put(0, -2, -10.5);
+      await sleep(700);
+      v = await V();
+      ok('behind the 1.5 m cover wall a standing dummy is drawn (its head shows over the wall)', v.drawn[0], `drawn ${v.drawn[0]}`);
+      // The test corner: over the 1.4 m hedge yes, behind the 2.0 m hedge (the shooter's post) no, the smoke hides.
+      await T(() => window.__testlines.place(-28, 16));
+      await put(0, -28, 21.5);
+      await put(1, -36, 23);
+      await put(2, -32.5, 28);
+      await sleep(900);
+      v = await V();
+      ok('in the test corner: drawn over the 1.4 m hedge, not behind the 2.0 m hedge, not in the smoke, drawn beside it', v.drawn[0] && !v.drawn[12] && !v.drawn[1] && v.drawn[2], `low hedge ${v.drawn[0]}, tall hedge (the shooter) ${v.drawn[12]}, in the smoke ${v.drawn[1]}, beside it ${v.drawn[2]}`);
+      // Outlines of the hidden ones, for explaining only.
+      await T(() => window.__testlines.set('visionGhosts', true));
+      await sleep(500);
+      v = await V();
+      const outlinesOk = v.outlined[12] && v.outlined[1] && !v.outlined[0] && !v.outlined[2];
+      await T(() => window.__testlines.set('visionGhosts', false));
+      await sleep(400);
+      const vOff = await V();
+      ok('the outline switch draws the hidden dummies as outlines, and only them', outlinesOk && !vOff.outlined.some(Boolean), `on: shooter ${v.outlined[12]}, in the smoke ${v.outlined[1]}, seen ones ${v.outlined[0]}/${v.outlined[2]}; off: ${vOff.outlined.filter(Boolean).length}`);
+      // A dummy on the 2.5 m ledge, 2.5 m back from its edge: hidden from 1 m off the wall, drawn from 8 m back.
+      await put(0, -14.5, -2, 2.5);
+      await T(() => window.__testlines.place(-11, -2));
+      await sleep(700);
+      const nearWall = (await V()).drawn[0];
+      await T(() => window.__testlines.place(-4, -2));
+      await sleep(700);
+      const farBack = (await V()).drawn[0];
+      ok('a dummy on the 2.5 m ledge: hidden from right under the edge, drawn from 8 m back (its head over the edge)', !nearWall && farBack, `1 m off the wall ${nearWall}, 8 m back ${farBack}`);
+      // The Hornet blocks sight (an upright 1.4 m cylinder) unless you ride it; riding, the eyes stand on its footplates.
+      const hb = await T(() => window.__testlines.hornet());
+      const through = await T((x, z) => window.__testlines.visionLine(x - 3, 1, z, x + 3, 1, z), hb.x, hb.z);
+      await T((x, z) => window.__testlines.place(x + 1.2, z), hb.x, hb.z);
+      await sleep(600);
+      await page.keyboard.press('KeyE');
+      await sleep(800);
+      const ridingNow = (await T(() => window.__testlines.hornet())).riding;
+      const throughRiding = await T((x, z) => window.__testlines.visionLine(x - 3, 1, z, x + 3, 1, z), hb.x, hb.z);
+      const eyeRiding = (await V()).eye.y;
+      const hb2 = await T(() => window.__testlines.hornet());
+      await page.keyboard.press('KeyE');
+      await sleep(800);
+      ok('the Hornet blocks sight unless you ride it; riding, the eyes are 1.65 m over its footplates', through && ridingNow && !throughRiding && Math.abs(eyeRiding - (hb2.y + 0.25 + 1.65)) < 0.05, `a line through it blocked ${through}; riding ${ridingNow}, blocked ${throughRiding}, eyes at ${eyeRiding.toFixed(2)} m`);
+      // The cone (190 degrees): in front drawn, behind the back not, in the open.
+      await T(() => window.__testlines.set('visionWidth', 190));
+      await T(() => window.__testlines.place(30, 30));
+      await sleep(800);
+      await faceToward(30, 45);
+      const yaw = await T(() => window.__testlines.aimYaw());
+      await put(0, 30 + Math.sin(yaw) * 8, 30 + Math.cos(yaw) * 8);
+      await put(1, 30 - Math.sin(yaw) * 8, 30 - Math.cos(yaw) * 8);
+      await sleep(700);
+      v = await V();
+      const coneFront = v.drawn[0];
+      const coneBack = v.drawn[1];
+      await T(() => window.__testlines.set('visionWidth', 360));
+      await sleep(500);
+      v = await V();
+      ok('at 190 degrees a dummy in front is drawn and one behind your back is not, in the open; at 360 both are', coneFront && !coneBack && v.drawn[0] && v.drawn[1], `190°: front ${coneFront}, behind ${coneBack}; 360°: ${v.drawn[0]}, ${v.drawn[1]}`);
+      await T(() => window.__testlines.set('visionWidth', 190));
+      // A hidden dummy's health bar is hidden too: shoot the one in front, then it goes behind your back.
+      await faceToward(30 + Math.sin(yaw) * 8, 30 + Math.cos(yaw) * 8);
+      await page.mouse.down();
+      await sleep(400);
+      await page.mouse.up();
+      await sleep(300);
+      const barFront = (await V()).bars[0];
+      await put(0, 30 - Math.sin(yaw) * 9, 30 - Math.cos(yaw) * 9 + 0.5);
+      await sleep(600);
+      v = await V();
+      ok('a hidden dummy hides its health bar too', barFront && !v.drawn[0] && !v.bars[0], `bar shown in front ${barFront}; behind: drawn ${v.drawn[0]}, bar ${v.bars[0]}`);
+      // The white: the ground in front, in the open, is lighter with the rule on; behind the 3.07 m ledge it is not.
+      await T(() => window.__testlines.set('visionWidth', 360));
+      await T(() => window.__testlines.place(-8, -8));
+      await put(0, 40, -40);
+      await put(1, 42, -40);
+      await sleep(1200);
+      const box = async (x, z) => {
+        const sp = await T((a, b) => window.__testlines.screenOf(a, 0, b), x, z);
+        return (await T((a, b) => window.__testlines.pixels(a, b, 12, 12), sp.x - 6, sp.y - 6)).mean;
+      };
+      const lum = (m) => 0.3 * m[0] + 0.59 * m[1] + 0.11 * m[2];
+      const openOn = lum(await box(-5, -8));
+      const shadeOn = lum(await box(-17.5, -8));
+      await T(() => window.__testlines.set('visionOn', false));
+      await sleep(400);
+      const openOff = lum(await box(-5, -8));
+      const shadeOff = lum(await box(-17.5, -8));
+      await T(() => window.__testlines.set('visionOn', true));
+      await T(() => window.__testlines.set('visionWhite', 0));
+      await sleep(400);
+      const openZero = lum(await box(-5, -8));
+      await T(() => window.__testlines.set('visionWhite', 0.35));
+      await page.screenshot({ path: `${shots}/${browserName}-vision.png` });
+      ok('the white: the ground the eyes see is lighter with the rule on, the ground behind the 3.07 m ledge is not, and a white of 0 shows nothing', openOn > openOff + 15 && Math.abs(shadeOn - shadeOff) < 4 && Math.abs(openZero - openOff) < 4, `in the open ${openOff.toFixed(0)} -> ${openOn.toFixed(0)} (white 0: ${openZero.toFixed(0)}); behind the ledge ${shadeOff.toFixed(0)} -> ${shadeOn.toFixed(0)}`);
+      // The sight line passes a hidden dummy (in the smoke): no stop, no colour; with the rule off it stops on it.
+      await T(() => window.__testlines.set('visionWidth', 190));
+      await T(() => window.__testlines.place(-36, 15));
+      await put(1, -36, 21.8);
+      await sleep(800);
+      await faceToward(-36, 30);
+      await page.mouse.down({ button: 'right' });
+      await sleep(900);
+      await faceToward(-36, 30);
+      const lineHidden = await T(() => window.__testlines.sight());
+      const hiddenNow = !(await V()).drawn[1];
+      await T(() => window.__testlines.set('visionOn', false));
+      await sleep(500);
+      const lineShown = await T(() => window.__testlines.sight());
+      await page.mouse.up({ button: 'right' });
+      await T(() => window.__testlines.set('visionOn', true));
+      ok('the sight line passes a hidden dummy (no stop, no colour); with the rule off it stops on it', hiddenNow && lineHidden.visible && !lineHidden.onDummy && lineShown.onDummy, `hidden ${hiddenNow}; rule on: on a dummy ${lineHidden.onDummy}; rule off: ${lineShown.onDummy}`);
+      // The shooter: behind the tall hedge, firing at you while you face away; its tracers are drawn and its shots heard.
+      await T(() => window.__testlines.place(-28, 18));
+      await sleep(600);
+      await faceToward(-28, 5);
+      const s0 = await T(() => window.__testlines.shooter());
+      const snd0 = await T(() => window.__testlines.sounds());
+      await T(() => window.__testlines.set('shooterOn', true));
+      let s1 = s0;
+      for (let i = 0; i < 80 && s1.shots < s0.shots + 2; i++) {
+        await sleep(100);
+        s1 = await T(() => window.__testlines.shooter());
+      }
+      await T(() => window.__testlines.set('shooterOn', false));
+      const snd1 = await T(() => window.__testlines.sounds());
+      ok('the shooter fires at you from behind the tall hedge while hidden; its tracers are drawn and its shots heard', s1.shots >= s0.shots + 2 && s1.last?.hidden === true && s1.tracersStarted >= s0.tracersStarted + 2 && snd1.gun >= snd0.gun + 2 && snd1.clicks === snd0.clicks, `${s1.shots - s0.shots} shots, last hidden ${s1.last?.hidden}, tracers ${s1.tracersStarted - s0.tracersStarted}, heard ${snd1.gun - snd0.gun}, your clicks +${snd1.clicks - snd0.clicks}`);
+      // Footsteps: walking dummies are heard (hidden or not), softer with distance as the settings say.
+      await T(() => window.__testlines.set('stepVolume', 0.3));
+      await T(() => window.__testlines.set('dummiesWalk', true));
+      await T(() => window.__testlines.place(-8, 0));
+      const f0 = await T(() => window.__testlines.sounds());
+      await sleep(2500);
+      const f1 = await T(() => window.__testlines.sounds());
+      const att = await T(() => [window.__testlines.attenuationAt(2), window.__testlines.attenuationAt(21.5), window.__testlines.attenuationAt(41)]);
+      const g = f1.last;
+      const expected = 0.3 * 0.25 * (await T((d) => window.__testlines.attenuationAt(d), g.distance));
+      ok('walking dummies are heard step by step, at the volume their distance gives (linear, 3 m to 40 m)', f1.step > f0.step + 3 && Math.abs(att[0] - 1) < 1e-9 && Math.abs(att[1] - 0.5) < 1e-9 && att[2] === 0 && (g.kind !== 'step' || Math.abs(g.gain - expected) < 1e-6), `${f1.step - f0.step} footsteps in 2.5 s; at 2 / 21.5 / 41 m: ${att.map((a) => a.toFixed(2)).join(' / ')}; last ${g.kind} at ${g.distance.toFixed(1)} m, gain ${g.gain.toFixed(4)}`);
+      await T(() => window.__testlines.set('soundCurve', 'inverse'));
+      const inv = await T(() => window.__testlines.attenuationAt(21.5));
+      await T(() => window.__testlines.set('soundCurve', 'linear'));
+      ok('the falloff curve can be changed (inverse drops sooner)', inv < 0.5 && inv > 0, inv.toFixed(3));
+      // Put it all back for the checks that follow.
+      await T(() => window.__testlines.set('stepVolume', 0));
+      await T(() => window.__testlines.set('dummiesWalk', false));
+      await T(() => window.__testlines.set('visionOn', false));
+      await T(() => window.__testlines.set('visionDummies', false));
+      await T(() => window.__testlines.set('visionWidth', 190));
+      await T(() => window.__testlines.place(30, 30));
+      await sleep(400);
+    }
+
     // Export.
     await page.click('#panel .p-primary');
     await sleep(400);
@@ -1268,6 +1466,12 @@ async function run(browserName) {
       const keyed = JSON.parse(readFileSync(resolve('src/assets/explosion-keyed.json'), 'utf8'));
       const same = !!es && Object.entries(keyed).every(([k, v]) => JSON.stringify(es[k]) === JSON.stringify(v));
       ok('Export carries the explosion: its look, play time, width, pull and fragments, and the sheet as keyed', !!g && g.explosion_look === 'sheet' && g.explosion_play_time_s === 1 && g.explosion_width_m === 8 && g.explosion_pull_to_camera_m === 2 && g.fragments === true && same && es.drawn_at_once === 8 && es.max_stretch === 4, es ? JSON.stringify({ look: g?.explosion_look, ground: es.anchor_ground_line_from_top, clear: es.clear_share, key: es.key_colour_rgb, same }) : 'no explosion_sheet');
+    }
+    {
+      const vv = doc?.values?.vision;
+      const ds = doc?.values?.dummy_sounds;
+      const cv = doc?.constants?.vision;
+      ok("Export carries the vision rule and the dummies' sounds, with their fixed numbers, in format 1", !!vv && vv.cone_width_deg === 190 && vv.eye_height_m === 1.65 && vv.cone_white_strength === 0.35 && vv.show_hidden_outlines === false && vv.shooter_fires === false && 'vision_rule' in vv && 'test_dummies' in vv && !!ds && ds.inner_radius_m === 3 && ds.outer_radius_m === 40 && ds.falloff_curve === 'linear' && ds.pan_by_screen_side === true && ds.gunfire_volume === 1 && 'footsteps_volume' in ds && !!cv && cv.stand_ins.hedges.length === 2 && cv.stand_ins.hedges[0].top === 1.4 && cv.stand_ins.hedges[1].top === 2 && cv.body_points.middle_heights_m.length === 5 && !!doc.constants?.dummy_sounds?.falloff_formulas && doc.format_version === 1, vv ? JSON.stringify({ vision: vv, sounds: ds }) : 'no vision values');
     }
     ok('Export carries the room sizes, the grid and the measured soldier', !!doc && doc.values.metrics_room?.door_width_m === 1 && doc.values.metrics_room?.door_height_m === 2.1 && doc.values.measuring_grid?.grid_thin_step_m === 0.5 && doc.derived?.metrics_room_built?.door_height_m === 2.1 && !!doc.constants?.metrics_room_layout && Math.abs(doc.measured?.soldier_height_m - 1.8) < 0.005 && doc.measured?.soldier_on_screen_px > 20, doc ? JSON.stringify(doc.measured) : '');
 
@@ -1416,6 +1620,18 @@ async function run(browserName) {
       const fine = await T(() => window.__testlines.values().walkSpeed);
       ok('Import leaves a value finer than the Export keeps exactly as it is', rFine === 'imported' && fine === 7.00004 && /0 values changed/.test(await importLine()), `${rFine}, walk speed ${fine}`);
       await T(() => window.__testlines.set('walkSpeed', 7));
+      // An Export from before step F (no vision or dummy sound values) still imports; those values stay as they are.
+      {
+        await T(() => window.__testlines.set('visionWidth', 250));
+        const old = JSON.parse(textA);
+        delete old.values.vision;
+        delete old.values.dummy_sounds;
+        const rOld = await T((t) => window.__testlines.importText(t), JSON.stringify(old));
+        const lineOld = await importLine();
+        const widthAfter = (await T(() => window.__testlines.values())).visionWidth;
+        ok('an Export from before step F (no vision values) still imports, and leaves the vision values as they are', rOld === 'imported' && widthAfter === 250 && /not in the file stay as they are/.test(lineOld), `${rOld}; cone width ${widthAfter}; "${lineOld}"`);
+        await T(() => window.__testlines.set('visionWidth', 190));
+      }
       // What the browser keeps is never cleared by a reload, an Export, a refused or a cancelled Import.
       const s0 = await stored();
       await page.reload();

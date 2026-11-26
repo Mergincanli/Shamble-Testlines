@@ -1,10 +1,12 @@
 // Shamble Testlines: a throwaway feel sandbox for Shamble Frontlines. Nothing here is the game.
 import * as THREE from 'three';
 import './style.css';
-import { audioState, click, clicksPlayed, unlockAudio } from './audio';
+import { attenuation, audioState, click, CLICK_VOLUME, clicksPlayed, unlockAudio, worldSound, worldSounds, type FalloffCurve } from './audio';
 import { FollowCamera } from './camera';
 import { springStep } from './spring';
-import { makeDummies, otherFactions, steerDummy } from './dummies';
+import { makeDummies, otherFactions, PARKED, SHOOTER, startOf, steerDummy, TEST_DUMMY_RULES, WALKER } from './dummies';
+import { dummySeen, packVision, sightBlocked, sightBlockers, type Blockers, type Eye } from './sight';
+import { addStandIns } from './standins';
 import { Fx } from './fx';
 import { aimedThrow, blastDamage, newGrenade, previewFlight, spent, stepGrenade, throwStart, type Blast, type Flight, type Grenade } from './grenade';
 import { NadeFx } from './nadefx';
@@ -54,6 +56,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color('#cdd5de');
 const lights = addLights(scene);
 buildYard(scene);
+// The vision rule's stand-ins: two hedges and a smoke column in a test corner (they block sight only).
+addStandIns(scene);
 
 const camera = new FollowCamera(window.innerWidth / window.innerHeight);
 const input = new Input(renderer.domElement);
@@ -106,6 +110,74 @@ function dressDummies() {
 }
 
 const fx = new Fx(scene, dummies.length);
+
+// The vision rule: which dummies are here (the two test dummies can be put away) and which are seen this frame.
+const present = dummies.map(() => true);
+const seen = dummies.map(() => true);
+let lastEye: Eye = { x: 0, y: 1.65, z: 0, aim: 0, widthDeg: 190 };
+let lastBlockers: Blockers | null = null;
+const stepAcc = dummies.map(() => 0);
+let shooterClock = 0;
+let burstLeft = 0;
+let burstGap = 0;
+let shooterShots = 0;
+let lastShooterShot: { from: { x: number; y: number; z: number }; to: { x: number; y: number; z: number }; hit: boolean; hidden: boolean } | null = null;
+const shooterEvents: { from: THREE.Vector3; to: THREE.Vector3; hit: boolean }[] = [];
+/** Outlines of hidden dummies (for explaining only): a ring at the feet and a line up the body, seen through walls. */
+const ghostMat = new THREE.MeshBasicMaterial({ color: '#C9695A', transparent: true, opacity: 0.85, depthTest: false, depthWrite: false });
+const ghosts = dummies.map(() => {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.42, 28), ghostMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.03;
+  const line = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.8, 0.04), ghostMat);
+  line.position.y = 0.9;
+  g.add(ring, line);
+  g.renderOrder = 9;
+  ring.renderOrder = line.renderOrder = 9;
+  g.visible = false;
+  scene.add(g);
+  return g;
+});
+/** Put the test dummies away (far outside the yard, out of every reach) or back on their loops, as switched. */
+function placeTestDummies() {
+  const on = store.get('visionDummies') === true;
+  for (const i of [WALKER, SHOOTER]) {
+    if (present[i] === on) continue;
+    present[i] = on;
+    const [x, z] = on ? startOf(i) : PARKED;
+    const d = dummies[i];
+    Object.assign(d.state, newMover(x, z));
+    d.prev = { ...d.state };
+    d.next = 1 % d.loop.length;
+    d.best = Infinity;
+    d.stalled = 0;
+    targets[i].health = store.num('dummyHealth');
+    targets[i].downFor = 0;
+    stepAcc[i] = 0;
+  }
+}
+placeTestDummies();
+store.onChange(() => placeTestDummies());
+/** The dummies the player can see now (all of them here, with the vision rule off): the cursor and the sight line use only these. */
+const shownTargets = (): Target[] => targets.filter((_, i) => seen[i]);
+/** A dummy's sound at a point, heard from the player's soldier: the attenuation by distance and the pan by screen side. */
+function dummySound(kind: 'step' | 'gun', x: number, y: number, z: number) {
+  const vol = store.num(kind === 'step' ? 'stepVolume' : 'gunVolume');
+  if (vol <= 0) return;
+  const dx = x - cur.x;
+  const dz = z - cur.z;
+  const dist = Math.hypot(dx, y - cur.y, dz);
+  const att = attenuation(dist, store.num('soundInner'), store.num('soundOuter'), store.get('soundCurve') as FalloffCurve);
+  if (att <= 0) return;
+  let pan = 0;
+  if (store.get('soundPan') === true) {
+    const ax = camera.axes(store);
+    const h = Math.hypot(dx, dz);
+    if (h > 1e-6) pan = (dx * ax.rightX + dz * ax.rightZ) / h;
+  }
+  worldSound(kind, vol * CLICK_VOLUME * att, pan, dist);
+}
 // The Hornet, waiting near the start; E gets on and off when the soldier is within reach.
 const hornet = newHornet();
 const hornetModel = new HornetModel(scene);
@@ -350,6 +422,8 @@ function simStep(dt: number) {
   dummies.forEach((d, i) => {
     const t = targets[i];
     d.prev = { ...d.state };
+    // A test dummy put away stays where it was put (the yard's edge would pull it back in).
+    if (!present[i]) return;
     if (t.downFor > 0) {
       // Down: lie still, then stand again with full health.
       t.downFor -= dt;
@@ -362,7 +436,16 @@ function simStep(dt: number) {
       }
     } else steerDummy(d, walking, dt);
     stepMover(d.state, d.input, dt, store);
+    // A footstep every so many metres walked on the ground, heard as the dummies' sounds are (hidden or not).
+    if (t.downFor <= 0 && d.state.grounded) {
+      stepAcc[i] += Math.hypot(d.state.x - d.prev.x, d.state.z - d.prev.z);
+      if (stepAcc[i] >= TEST_DUMMY_RULES.footstep_every_m) {
+        stepAcc[i] %= TEST_DUMMY_RULES.footstep_every_m;
+        dummySound('step', d.state.x, d.state.y, d.state.z);
+      }
+    }
   });
+  stepShooter(dt);
   softPush(
     [cur, ...dummies.map((d) => d.state)],
     [true, ...targets.map((t) => t.downFor <= 0)],
@@ -376,6 +459,91 @@ function simStep(dt: number) {
   );
   stepNades(dt);
   if (cur.y > peakY) peakY = cur.y;
+}
+
+/**
+ * The vision rule, each drawn frame from the drawn positions: the eyes (on the Hornet, from its footplates) and the
+ * cone where the soldier faces; what blocks sight (the Hornet too, unless he rides it); which dummies are seen. The
+ * grid shader gets the same test, so the white shows exactly where the eyes reach.
+ */
+function updateVision(alpha: number) {
+  const on = store.get('visionOn') === true;
+  const eye: Eye = {
+    x: renderPos.x,
+    y: renderPos.y + (riding ? HORNET.footplate_height_m : 0) + store.num('visionEye'),
+    z: renderPos.z,
+    aim: aimYaw,
+    widthDeg: store.num('visionWidth'),
+  };
+  lastEye = eye;
+  const hb = hornet.body;
+  const B = sightBlockers(riding ? null : { x: hb.x, y: hb.y, z: hb.z, r: store.num('hornetRadius') });
+  lastBlockers = B;
+  packVision(B, eye, on, store.num('visionWhite'));
+  dummies.forEach((d, i) => {
+    if (!present[i]) {
+      seen[i] = false;
+      return;
+    }
+    if (!on) {
+      seen[i] = true;
+      return;
+    }
+    seen[i] = dummySeen(B, eye, d.prev.x + (d.state.x - d.prev.x) * alpha, d.prev.y + (d.state.y - d.prev.y) * alpha, d.prev.z + (d.state.z - d.prev.z) * alpha);
+  });
+}
+
+/**
+ * The vision rule's shooter: while switched on, every few seconds, if no wall stands between its gun and your
+ * soldier's chest, a short burst at you (with some spread). Its shots pass through hedges and smoke, stop at blocks
+ * and the ground, and do no damage; their tracers are always drawn and each is heard.
+ */
+function stepShooter(dt: number) {
+  const R = TEST_DUMMY_RULES;
+  const s = dummies[SHOOTER].state;
+  if (!present[SHOOTER] || store.get('shooterOn') !== true || targets[SHOOTER].downFor > 0) {
+    burstLeft = 0;
+    shooterClock = 0;
+    return;
+  }
+  const gx = s.x;
+  const gy = s.y + R.shooter_gun_height_m;
+  const gz = s.z;
+  const chestY = cur.y + (riding ? HORNET.footplate_height_m : 0) + R.shooter_aims_at_height_m;
+  if (burstLeft > 0) {
+    burstGap -= dt;
+    if (burstGap > 0) return;
+    burstLeft--;
+    burstGap = R.shooter_gap_s;
+    const sp = R.shooter_spread_m;
+    const tx = cur.x + (Math.random() * 2 - 1) * sp;
+    const ty = chestY + (Math.random() * 2 - 1) * sp * 0.5;
+    const tz = cur.z + (Math.random() * 2 - 1) * sp;
+    const len = Math.hypot(tx - gx, ty - gy, tz - gz) || 1;
+    const dx = (tx - gx) / len;
+    const dy = (ty - gy) / len;
+    const dz = (tz - gz) / len;
+    const w = rayWorld(gx, gy, gz, dx, dy, dz);
+    const wd = w ? Math.hypot(w.x - gx, w.y - gy, w.z - gz) : Infinity;
+    const hit = wd <= R.shooter_range_m;
+    const d = hit ? wd : R.shooter_range_m;
+    const from = new THREE.Vector3(gx, gy, gz);
+    const to = new THREE.Vector3(gx + dx * d, gy + dy * d, gz + dz * d);
+    shooterEvents.push({ from, to, hit });
+    shooterShots++;
+    lastShooterShot = { from: { x: gx, y: gy, z: gz }, to: { x: to.x, y: to.y, z: to.z }, hit, hidden: !seen[SHOOTER] };
+    return;
+  }
+  shooterClock += dt;
+  if (shooterClock < R.shooter_period_s) return;
+  shooterClock = 0;
+  // Only with a clear line of fire: no block between its gun and your chest.
+  const len = Math.hypot(cur.x - gx, chestY - gy, cur.z - gz);
+  if (len < 1e-6) return;
+  const w = rayWorld(gx, gy, gz, (cur.x - gx) / len, (chestY - gy) / len, (cur.z - gz) / len);
+  if (w && Math.hypot(w.x - gx, w.y - gy, w.z - gz) < len - 0.3) return;
+  burstLeft = R.shooter_burst;
+  burstGap = 0;
 }
 
 /** True if a waist-high line between two points on the ground meets no block. */
@@ -614,9 +782,10 @@ function frame(now: number) {
   const ro = raycaster.ray.origin;
   const rd = raycaster.ray.direction;
   nadeTarget = rayWorld(ro.x, ro.y, ro.z, rd.x, rd.y, rd.z);
-  // The shots' aim point: the nearer of a standing dummy's body (where it really stands) and that surface.
+  // The shots' aim point: the nearer of a standing dummy's body (where it really stands) and that surface. (Only the
+  // dummies you see: under the vision rule the cursor does not land on a hidden one.)
   {
-    const [tb] = rayBodies(ro.x, ro.y, ro.z, rd.x, rd.y, rd.z, targets);
+    const [tb] = rayBodies(ro.x, ro.y, ro.z, rd.x, rd.y, rd.z, shownTargets());
     const tw = nadeTarget ? Math.hypot(nadeTarget.x - ro.x, nadeTarget.y - ro.y, nadeTarget.z - ro.z) : Infinity;
     const t = Math.min(tb, tw);
     cursorPoint = Number.isFinite(t) ? { x: ro.x + rd.x * t, y: ro.y + rd.y * t, z: ro.z + rd.z * t } : null;
@@ -632,6 +801,7 @@ function frame(now: number) {
     const dz = (facePoint ? facePoint.z : aimPoint.z) - renderPos.z;
     if (dx * dx + dz * dz > AIM_DEAD_ZONE * AIM_DEAD_ZONE) aimYaw = Math.atan2(dx, dz);
   }
+  updateVision(alpha);
 
   // Effects age first; then this frame's shots start theirs, so they are drawn at full strength. The tracer
   // leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
@@ -719,6 +889,13 @@ function frame(now: number) {
     events.length = 0;
   }
 
+  // The shooter's shots: tracers always drawn (whether it is seen or not), and each heard from where it fired.
+  for (const e of shooterEvents) {
+    fx.enemyShot(e.from, e.to, e.hit);
+    dummySound('gun', e.from.x, e.from.y, e.from.z);
+  }
+  shooterEvents.length = 0;
+
   // The sprint pose comes in quickly; going back to aiming takes the gun's sprint-to-fire delay.
   const sprintTarget = cur.sprinting ? 1 : 0;
   const back = Math.max(0.05, gunValue(store, W.gun, 'SprintDelay'));
@@ -738,7 +915,9 @@ function frame(now: number) {
   }
   // The sight line while aiming down sights: the shot's own cast from where the soldier is, drawn from his muzzle.
   if (aiming && !riding && !nadeReady && store.get('sightLine') === true) {
-    const t = traceAim(cur, aimYaw, gunValue(store, W.gun, 'Range'), targets, aimPoint3());
+    // (Under the vision rule the line passes hidden dummies: it does not stop on them or take their colour. The shot
+    // itself still hits them.)
+    const t = traceAim(cur, aimYaw, gunValue(store, W.gun, 'Range'), shownTargets(), aimPoint3());
     soldier.root.updateMatrixWorld(true);
     soldier.muzzleWorld(sightFrom);
     sightTo.set(t.ex, t.ey, t.ez);
@@ -758,10 +937,18 @@ function frame(now: number) {
       d.prev.y + (d.state.y - d.prev.y) * alpha,
       d.prev.z + (d.state.z - d.prev.z) * alpha + knock.y,
     );
-    // Face the way they walk, turning smoothly.
+    // Under the vision rule only the dummies the soldier sees are drawn (body, ink line and shadow alike); a test
+    // dummy put away is never drawn.
+    s.root.visible = seen[i];
+    // Outlines of the hidden ones, when asked for (for explaining only).
+    const g = ghosts[i];
+    g.visible = present[i] && !seen[i] && store.get('visionOn') === true && store.get('visionGhosts') === true;
+    if (g.visible) g.position.set(s.root.position.x, s.root.position.y, s.root.position.z);
+    // Face the way they walk, turning smoothly; the shooter faces the soldier.
     const sp = Math.hypot(d.state.vx, d.state.vz);
-    if (sp > 0.3 && t.downFor <= 0) {
-      const want = Math.atan2(d.state.vx, d.state.vz);
+    const facesYou = i === SHOOTER && present[i];
+    if ((sp > 0.3 || facesYou) && t.downFor <= 0) {
+      const want = facesYou ? Math.atan2(renderPos.x - d.state.x, renderPos.z - d.state.z) : Math.atan2(d.state.vx, d.state.vz);
       let diff = want - dummyYaw[i];
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       dummyYaw[i] += diff * (1 - Math.exp(-10 * dt));
@@ -785,6 +972,7 @@ function frame(now: number) {
       health: targets[i].health,
       max: store.num('dummyHealth'),
       down: targets[i].downFor > 0,
+      hidden: !seen[i],
     })),
   );
   lights.follow(renderPos.x, renderPos.y, renderPos.z);
@@ -963,6 +1151,28 @@ requestAnimationFrame(frame);
   blastBits: () => nadeFx.shown(),
   /** The drawn camera's turn (the explosion pictures copy it). */
   camQuat: () => camera.cam.quaternion.toArray(),
+  /**
+   * The vision rule now: on or off, the eyes and the cone, which dummies are here, seen, drawn and outlined, and
+   * whether their bars show.
+   */
+  vision: () => ({
+    on: store.get('visionOn') === true,
+    eye: { ...lastEye },
+    present: [...present],
+    seen: [...seen],
+    drawn: dummySoldiers.map((s) => s.root.visible),
+    outlined: ghosts.map((g) => g.visible),
+    bars: dummies.map((_, i) => fx.barShown(i)),
+  }),
+  /** Whether something blocks sight between two points (with what blocks it now). */
+  visionLine: (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number) =>
+    sightBlocked(lastBlockers ?? sightBlockers(null), x1, y1, z1, x2, y2, z2),
+  /** The shooter: its shots so far, the last one, and the tracers drawn now. */
+  shooter: () => ({ shots: shooterShots, last: lastShooterShot, burstLeft, clock: shooterClock, tracers: fx.tracersShown(), tracersStarted: fx.enemyTracers }),
+  /** The dummies' sounds heard so far (footsteps, the shooter's shots), the last one, and your own clicks. */
+  sounds: () => ({ step: worldSounds.step, gun: worldSounds.gun, last: { ...worldSounds.last }, clicks: clicksPlayed }),
+  /** How loud a dummy's sound is at a distance with the current settings (1 inside the inner radius). */
+  attenuationAt: (d: number) => attenuation(d, store.num('soundInner'), store.num('soundOuter'), store.get('soundCurve') as FalloffCurve),
   /** Import an Export's text through the same path as the Import button (it asks first, as the button does). */
   importText: (text: string) => panel.importText(text),
   /** The Export's text as the Export button would make it. */
@@ -993,11 +1203,14 @@ requestAnimationFrame(frame);
     const by = Math.round(gl.drawingBufferHeight - (y0 - r.top) * pr - bh);
     const buf = new Uint8Array(bw * bh * 4);
     gl.readPixels(bx, by, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-    let blue = 0, hot = 0, fire = 0, deep = 0, orange = 0, hx = 0, hy = 0;
+    let blue = 0, hot = 0, fire = 0, deep = 0, orange = 0, hx = 0, hy = 0, sr = 0, sg = 0, sb = 0;
     for (let j = 0; j < bh; j++) {
       for (let i = 0; i < bw; i++) {
         const o = (j * bw + i) * 4;
         const R = buf[o], G = buf[o + 1], B = buf[o + 2];
+        sr += R;
+        sg += G;
+        sb += B;
         if (B > 180 && R < 80 && G < 80) blue++;
         if (R > 235 && G > 215 && B > 170) {
           hot++;
@@ -1009,6 +1222,7 @@ requestAnimationFrame(frame);
         if (R > 235 && G >= 115 && G <= 160 && B >= 30 && B <= 85) orange++;
       }
     }
-    return { total: bw * bh, blue, hot, fire, deep, orange, hotX: hot ? x0 + hx / hot / pr : null, hotY: hot ? y0 + hy / hot / pr : null };
+    const n = bw * bh;
+    return { total: n, mean: [sr / n, sg / n, sb / n], blue, hot, fire, deep, orange, hotX: hot ? x0 + hx / hot / pr : null, hotY: hot ? y0 + hy / hot / pr : null };
   },
 };

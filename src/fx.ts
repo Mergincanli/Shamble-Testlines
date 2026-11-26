@@ -143,6 +143,37 @@ export class Fx {
     this.gunKick = Math.min(1.1, this.gunKick + 0.4 + recoil * 0.05);
   }
 
+  /**
+   * Another soldier's shot (the vision rule's shooter): its tracer and, where it ends on something, a spark. No
+   * flash and no view kick (those are your own gun's). Projectiles are always drawn, whoever fired them.
+   */
+  enemyShot(from: THREE.Vector3, to: THREE.Vector3, hitSomething: boolean) {
+    this.enemyTracers++;
+    const t = this.take(this.tracers, 'tracer');
+    t.mesh.position.copy(from);
+    t.mesh.lookAt(to);
+    t.mesh.scale.set(0.05, 0.05, Math.max(0.01, from.distanceTo(to)));
+    (t.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
+    if (hitSomething) {
+      const sp = this.take(this.sparks, 'spark');
+      sp.mesh.position.copy(to);
+      sp.mesh.scale.setScalar(0.18);
+    }
+  }
+
+  /** Tracers of other soldiers' shots started so far (for the scripted checks). */
+  enemyTracers = 0;
+
+  /** Whether a dummy's health bar is drawn now (for the scripted checks). */
+  barShown(dummy: number): boolean {
+    return this.bars[dummy]?.group.visible ?? false;
+  }
+
+  /** Tracers drawn right now (for the scripted checks). */
+  tracersShown(): number {
+    return this.tracers.filter((p) => p.life > 0).length;
+  }
+
   /** Show a dummy's health bar for a while (after any hit on it). */
   showBar(dummy: number) {
     if (dummy >= 0) this.bars[dummy].shownFor = 3;
@@ -187,11 +218,12 @@ export class Fx {
   }
 
   /** Health bars: shown for a while after a hit, hidden while the dummy is down. */
-  updateBars(dt: number, cam: THREE.Camera, dummies: { x: number; y: number; z: number; health: number; max: number; down: boolean }[]) {
+  updateBars(dt: number, cam: THREE.Camera, dummies: { x: number; y: number; z: number; health: number; max: number; down: boolean; hidden: boolean }[]) {
     dummies.forEach((d, i) => {
       const b = this.bars[i];
       b.shownFor = Math.max(0, b.shownFor - dt);
-      const show = b.shownFor > 0 && !d.down && d.health < d.max;
+      // (A dummy hidden by the vision rule hides its bar too.)
+      const show = b.shownFor > 0 && !d.down && d.health < d.max && !d.hidden;
       b.group.visible = show;
       if (!show) return;
       b.group.position.set(d.x, d.y + 2.2, d.z);

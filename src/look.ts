@@ -145,10 +145,117 @@ if (uGridOn > 0.5) {
 }
 `;
 
+/** How many boxes and upright cylinders the vision rule's sight test can take on a surface (see sight.ts). */
+export const VISION_MAX_BOXES = 64;
+export const VISION_MAX_CYLS = 4;
+/**
+ * The vision rule's cone, shared by every gridded surface: on or off, how white, the eyes, the facing on the ground,
+ * the cosine of half the cone (below -1.5: all round), and what blocks sight (filled by sight.ts each frame).
+ */
+export const VISION = {
+  on: { value: 0 },
+  white: { value: 0.35 },
+  eye: { value: new THREE.Vector3() },
+  aim: { value: new THREE.Vector2(0, 1) },
+  cosHalf: { value: -2 },
+  margin: { value: 0.02 },
+  near: { value: 0.3 },
+  boxMin: { value: Array.from({ length: VISION_MAX_BOXES }, () => new THREE.Vector3()) },
+  boxMax: { value: Array.from({ length: VISION_MAX_BOXES }, () => new THREE.Vector3()) },
+  /** x: 0 a box, 1 a ramp along x, 2 a ramp along z; y: low; z: high; w: top. */
+  boxRamp: { value: Array.from({ length: VISION_MAX_BOXES }, () => new THREE.Vector4()) },
+  boxCount: { value: 0 },
+  /** x, z, radius, and (cylY) bottom and top. */
+  cyl: { value: Array.from({ length: VISION_MAX_CYLS }, () => new THREE.Vector3()) },
+  cylY: { value: Array.from({ length: VISION_MAX_CYLS }, () => new THREE.Vector2()) },
+  cylCount: { value: 0 },
+};
+const VISION_FRAG_HEAD = `
+uniform float uVisOn;
+uniform float uVisWhite;
+uniform vec3 uVisEye;
+uniform vec2 uVisAim;
+uniform float uVisCosHalf;
+uniform float uVisMargin;
+uniform float uVisNear;
+uniform vec3 uVisBoxMin[${VISION_MAX_BOXES}];
+uniform vec3 uVisBoxMax[${VISION_MAX_BOXES}];
+uniform vec4 uVisBoxRamp[${VISION_MAX_BOXES}];
+uniform int uVisBoxCount;
+uniform vec3 uVisCyl[${VISION_MAX_CYLS}];
+uniform vec2 uVisCylY[${VISION_MAX_CYLS}];
+uniform int uVisCylCount;
+// The same sight test as sight.ts, from this surface point p toward the eyes (cut short at the surface).
+bool visBlocked(vec3 p, vec3 e) {
+  vec3 d = e - p;
+  float len = length(d);
+  if (len < 1e-4) return false;
+  float t0 = uVisMargin / len;
+  float t1 = 1.0 - 1e-4;
+  if (t1 <= t0) return false;
+  vec3 dd = d;
+  if (abs(dd.x) < 1e-6) dd.x = 1e-6;
+  if (abs(dd.y) < 1e-6) dd.y = 1e-6;
+  if (abs(dd.z) < 1e-6) dd.z = 1e-6;
+  vec3 inv = 1.0 / dd;
+  for (int i = 0; i < ${VISION_MAX_BOXES}; i++) {
+    if (i >= uVisBoxCount) break;
+    vec3 ta = (uVisBoxMin[i] - p) * inv;
+    vec3 tb = (uVisBoxMax[i] - p) * inv;
+    vec3 tlo = min(ta, tb);
+    vec3 thi = max(ta, tb);
+    float lo = max(max(tlo.x, tlo.y), max(tlo.z, t0));
+    float hi = min(min(thi.x, thi.y), min(thi.z, t1));
+    if (lo >= hi) continue;
+    vec4 r = uVisBoxRamp[i];
+    if (r.x < 0.5) return true;
+    float ca = r.x < 1.5 ? p.x + dd.x * lo : p.z + dd.z * lo;
+    float cb = r.x < 1.5 ? p.x + dd.x * hi : p.z + dd.z * hi;
+    float ha = r.w * clamp((ca - r.y) / (r.z - r.y), 0.0, 1.0);
+    float hb = r.w * clamp((cb - r.y) / (r.z - r.y), 0.0, 1.0);
+    if (min(p.y + dd.y * lo - ha, p.y + dd.y * hi - hb) < 0.0) return true;
+  }
+  for (int i = 0; i < ${VISION_MAX_CYLS}; i++) {
+    if (i >= uVisCylCount) break;
+    vec3 c = uVisCyl[i];
+    vec2 f = p.xz - c.xy;
+    float a = dot(d.xz, d.xz);
+    float lo = t0;
+    float hi = t1;
+    if (a < 1e-12) {
+      if (dot(f, f) > c.z * c.z) continue;
+    } else {
+      float b = 2.0 * dot(f, d.xz);
+      float k = dot(f, f) - c.z * c.z;
+      float disc = b * b - 4.0 * a * k;
+      if (disc < 0.0) continue;
+      float q = sqrt(disc);
+      lo = max(lo, (-b - q) / (2.0 * a));
+      hi = min(hi, (-b + q) / (2.0 * a));
+      if (lo >= hi) continue;
+    }
+    float ya = p.y + d.y * lo;
+    float yb = p.y + d.y * hi;
+    if (max(ya, yb) > uVisCylY[i].x && min(ya, yb) < uVisCylY[i].y) return true;
+  }
+  return false;
+}
+`;
+// After the lighting: the surfaces your soldier sees, inside the cone, lightened toward white.
+const VISION_FRAG_BODY = `
+if (uVisOn > 0.5 && uVisWhite > 0.0) {
+  vec2 v = vGridPos.xz - uVisEye.xz;
+  float lv = length(v);
+  bool inside = uVisCosHalf < -1.5 || lv < uVisNear || dot(v / lv, uVisAim) >= uVisCosHalf;
+  if (inside && !visBlocked(vGridPos, uVisEye)) gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.0), uVisWhite);
+}
+`;
+
 /**
  * A surface that carries the measuring grid: the same flat shading as toon(), in its Art colour when the grid is
  * off, and in its group's grid colour with lines laid in world space when it is on (a thick dark line every
- * metre, thinner lighter lines at the thin step). A new material each call, so soldiers and guns are untouched.
+ * metre, thinner lighter lines at the thin step). It also shows the vision rule's cone (VISION above). A new
+ * material each call, so soldiers and guns are untouched.
  */
 export function gridToon(hex: string, group: GridGroup): THREE.MeshToonMaterial {
   const m = new THREE.MeshToonMaterial({ color: new THREE.Color(hex), gradientMap: gradient });
@@ -156,14 +263,29 @@ export function gridToon(hex: string, group: GridGroup): THREE.MeshToonMaterial 
     sh.uniforms.uGridOn = GRID.on;
     sh.uniforms.uGridMinor = GRID.minor;
     sh.uniforms.uGridBase = GRID.base[group];
+    sh.uniforms.uVisOn = VISION.on;
+    sh.uniforms.uVisWhite = VISION.white;
+    sh.uniforms.uVisEye = VISION.eye;
+    sh.uniforms.uVisAim = VISION.aim;
+    sh.uniforms.uVisCosHalf = VISION.cosHalf;
+    sh.uniforms.uVisMargin = VISION.margin;
+    sh.uniforms.uVisNear = VISION.near;
+    sh.uniforms.uVisBoxMin = VISION.boxMin;
+    sh.uniforms.uVisBoxMax = VISION.boxMax;
+    sh.uniforms.uVisBoxRamp = VISION.boxRamp;
+    sh.uniforms.uVisBoxCount = VISION.boxCount;
+    sh.uniforms.uVisCyl = VISION.cyl;
+    sh.uniforms.uVisCylY = VISION.cylY;
+    sh.uniforms.uVisCylCount = VISION.cylCount;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>' + GRID_VERT_HEAD)
       .replace('#include <project_vertex>', '#include <project_vertex>' + GRID_VERT_BODY);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>' + GRID_FRAG_HEAD)
-      .replace('#include <color_fragment>', '#include <color_fragment>' + GRID_FRAG_BODY);
+      .replace('#include <common>', '#include <common>' + GRID_FRAG_HEAD + VISION_FRAG_HEAD)
+      .replace('#include <color_fragment>', '#include <color_fragment>' + GRID_FRAG_BODY)
+      .replace('#include <opaque_fragment>', '#include <opaque_fragment>' + VISION_FRAG_BODY);
   };
-  m.customProgramCacheKey = () => 'grid-toon-1';
+  m.customProgramCacheKey = () => 'grid-toon-2';
   return m;
 }
 

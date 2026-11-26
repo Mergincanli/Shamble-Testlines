@@ -173,8 +173,51 @@ by walking up (not by an early step-up, and its face is no wall to him), a slope
 holds him back along itself, and running down an ordinary stair he stays on it at either step rate.
 
 What is in it: a test yard with steps, a cover wall, ledges and a ramp; your soldier; eleven dummies walking loops
-in the other two factions' colours, which push softly and never block; the SMG and the rifle, firing at the
-dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped dummy stands again after 4 s).
+in the other two factions' colours, which push softly and never block (and two more for the vision rule, below);
+the SMG and the rifle, firing at the dummies (tracers, a muzzle flash, a hit marker on a hit, health bars; a dropped
+dummy stands again after 4 s).
+
+## The vision rule
+
+The owner's rule (26 November), to see and tune before the game builds it; nothing here is decided for the game.
+You see a dummy only while some part of its body is inside your vision cone with a clear line from your soldier's
+eyes; otherwise it is not drawn at all, also in the open behind your back. It appears and disappears at once.
+
+- The cone starts at the eyes (1.65 m above the feet, a slider; on the Hornet above its footplates) and points where
+  the soldier faces. It is 190° wide to start (40 to 360) and has no reach limit; it is a direction on the ground
+  only, with no limit up or down.
+- Sight is 3D: a straight line from the eyes to nine points of the dummy's body (five up its middle, two each side
+  at chest and hip height); it is seen if any of them is inside the cone with nothing solid on the line. So a thing
+  lower than your eyes is seen over: a standing dummy's head shows over the 1.5 m cover wall, the Hornet and the
+  1.4 m hedge, while what stands right behind them is hidden from the feet up (the closer and higher the cover,
+  the deeper that hidden ground). A thing higher than your eyes hides everything behind it. From higher up you see
+  over more; a dummy at a ledge's edge is seen from below, and hidden once it steps back.
+- What blocks sight: every block of the yard and the metrics room (walls, ledges, steps, posts, the ramp under its
+  slope, the pieces over the door and window), the two hedges, the smoke column, and the Hornet (an upright
+  cylinder 1.4 m tall) unless you ride it. Soldiers and dummies do not block. The ground, walls and buildings always
+  show; only dummies are hidden.
+- The white: every surface the eyes see inside the cone (the ground, and the faces of blocks turned to you) is
+  lightened toward white, by the same test run per pixel, so the white and the dummies always agree. A dummy can
+  show while the ground it stands on is not white: its head is in view while that ground is hidden behind cover.
+- Hidden means: its body, ink line, shadow and health bar are not drawn; the cursor's aim point and the sight line
+  pass it (the line does not stop on it or take its colour). Your shots still hit it, the hit marker still shows,
+  and soft pushing still works. It is decided each drawn frame from the drawn positions.
+- Projectiles are always drawn (tracers, grenades), and sounds are heard, whoever made them.
+- Stand-ins, in a test corner past the lane (x -22 to -38, z 18 to 32): a 1.4 m hedge (you see over it), a 2.0 m
+  hedge (it hides) and a smoke column (3 m across, 3.5 m tall). They block sight only: they are walked through and
+  shot through. Test dummies (a switch, on at the start): a walker whose loop runs behind the 3.07 m ledge and
+  steps out between the ledges, and a shooter at its post behind the 2.0 m hedge. The shooter (its own switch, off
+  at the start) fires a burst of three at your chest every 2.5 s when no block stands between them; its shots pass
+  hedges and smoke, stop at blocks, do no damage, and their tracers are drawn whether it is seen or not.
+- The panel: the rule on or off, the cone's width, the eyes' height, how white the cone is, outlines of hidden
+  dummies (for explaining only, off at the start), the test dummies and the shooter.
+
+The dummies' sounds (the owner's ask): each walking dummy's footstep (one per metre walked, a soft thud) and the
+shooter's shots (a click like yours) are heard from your soldier, hidden dummies as well. Their volume follows the
+distance as Unreal's attenuation settings do: full inside the inner radius (3 m), nothing beyond the outer radius
+(40 m), and between them a linear, logarithmic or inverse falloff; a sound to the left of your soldier on screen comes
+from the left speaker (a switch). A volume of 1 is as loud as your own shot's click. All of it is in the panel and
+the Export; your own clicks are counted apart.
 
 ## The panel
 
@@ -273,11 +316,13 @@ and Firefox needs a display (on Linux: `xvfb-run -a npm run check`).
   all come from it). `src/panel.ts`, `src/exporter.ts`: the panel and the Export.
 - `src/main.ts`: the fixed-step loop (30 or 60 per second) and the smoothing between steps.
 - `src/movement.ts`: the movement. `src/yard.ts`: the test blocks and collision. `src/metrics.ts`: the metrics room.
-- `src/dummies.ts`: the dummies' loops. `src/push.ts`: soft pushing.
+- `src/dummies.ts`: the dummies' loops (and the vision rule's two test dummies). `src/push.ts`: soft pushing.
+- `src/sight.ts`: the vision rule's sight test (and the cone it hands to the grid shader in `src/look.ts`).
+  `src/standins.ts`: the hedges and the smoke column.
 - `src/weapons.ts`: the guns, the hitscan, the reload and the active reload. `src/fx.ts`: shot feedback.
 - `src/grenade.ts`: the grenade's flight, preview and blast. `src/nadefx.ts`: its look. `src/explosion.ts`: the
   explosion sheet's playback; `tools/key-sheet.mjs` keys `art/explosion-sheet.png` into `src/assets/`.
-  `src/audio.ts`: the click. `src/hud.ts`: the readout, stamina, ammo and reload bar.
+  `src/audio.ts`: the click, and the dummies' sounds with their falloff. `src/hud.ts`: the readout, stamina, ammo and reload bar.
 - `src/hornet.ts`: the Hornet's driving, lean and gun. `src/hornetModel.ts`: its blockout. `src/spring.ts`: the
   exact spring (the Hornet's lean, the grenade's camera kick).
 - `src/camera.ts`: the follow camera. `src/input.ts`: keys and mouse.

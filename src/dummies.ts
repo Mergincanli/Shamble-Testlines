@@ -1,9 +1,18 @@
-// Eleven dummies that walk loops around the blocks, in the other two factions' colours. They move by the same
+// Eleven dummies that walk loops around the blocks, in the other two factions' colours (and the vision rule's two
+// test dummies after them: a walker behind the 3.07 m ledge and a shooter at its post behind the tall hedge). They move by the same
 // movement step as the player's soldier, steered toward the next point of their loop, so every movement value
 // on the panel applies to them too.
 import { newMover, type MoveInput, type MoverState } from './movement';
 import { FACTIONS, type Faction } from './look';
 
+/** The vision rule's test dummies (the last two): the walker's loop and the shooter's post (x, z). */
+export const WALKER_LOOP: [number, number][] = [
+  [-11.3, -5],
+  [-17.5, -5],
+  [-17.5, -11],
+  [-11.3, -11],
+];
+export const SHOOTER_POST: [number, number] = [-28, 27.6];
 /** Closed loops on open ground (x, z), clear of the blocks; some are walked one way, some the other. */
 const LOOPS: [number, number][][] = [
   // Around the spawn, crossing the lane between the steps.
@@ -18,6 +27,10 @@ const LOOPS: [number, number][][] = [
   [[8, -2], [14, -14], [6, -20], [5, -11]],
   // A small square near the start, crossing the first loop.
   [[6, 9], [1, 13], [-4, 9], [1, 5]],
+  // The vision rule's walker: behind the 3.07 m ledge, stepping out through the gaps between the ledges.
+  WALKER_LOOP,
+  // The vision rule's shooter: one point, its post behind the tall hedge in the test corner.
+  [SHOOTER_POST],
 ];
 
 interface Assignment {
@@ -39,9 +52,32 @@ const ASSIGN: Assignment[] = [
   { loop: 4, phase: 0.3, dir: 1 },
   { loop: 5, phase: 0.0, dir: 1 },
   { loop: 5, phase: 0.5, dir: -1 },
+  // The vision rule's test dummies, after the eleven so nothing else moves.
+  { loop: 6, phase: 0.0, dir: 1 },
+  { loop: 7, phase: 0.0, dir: 1 },
 ];
 
 export const DUMMY_COUNT = ASSIGN.length;
+/** The vision rule's walker and shooter (the twelfth and the thirteenth). */
+export const WALKER = 11;
+export const SHOOTER = 12;
+/** The test dummies' fixed numbers (in the Export): the shooter's rhythm and aim, and the footsteps' length. */
+export const TEST_DUMMY_RULES = {
+  shooter_period_s: 2.5,
+  shooter_burst: 3,
+  shooter_gap_s: 0.15,
+  shooter_gun_height_m: 1.36,
+  shooter_aims_at_height_m: 1.2,
+  shooter_spread_m: 0.6,
+  shooter_range_m: 60,
+  footstep_every_m: 1.0,
+};
+/** Where the test dummies are put away while switched off: far outside the yard and out of every reach. */
+export const PARKED: [number, number] = [500, 500];
+/** Where a test dummy starts (back on its loop) when switched on. */
+export function startOf(i: number): [number, number] {
+  return [...LOOPS[ASSIGN[i].loop][0]] as [number, number];
+}
 
 export interface Dummy {
   state: MoverState;

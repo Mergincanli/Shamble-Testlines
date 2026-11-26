@@ -19,7 +19,9 @@ export type GroupId =
   | 'ads'
   | 'camera'
   | 'framing'
-  | 'mouse';
+  | 'mouse'
+  | 'vision'
+  | 'sounds';
 
 export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: string }[] = [
   { id: 'sim', title: 'Simulation', open: true, exportName: 'simulation' },
@@ -39,6 +41,8 @@ export const GROUPS: { id: GroupId; title: string; open: boolean; exportName: st
   { id: 'camera', title: 'Camera', open: true, exportName: 'camera' },
   { id: 'framing', title: 'Camera framing (dead zone, look-ahead, smoothing)', open: false, exportName: 'camera_framing' },
   { id: 'mouse', title: 'Mouse', open: true, exportName: 'mouse' },
+  { id: 'vision', title: "Vision (the owner's rule: a dummy shows only along a clear line from your eyes)", open: true, exportName: 'vision' },
+  { id: 'sounds', title: "Dummies' sounds (footsteps, the shooter's shots)", open: true, exportName: 'dummy_sounds' },
 ];
 
 interface Base {
@@ -1169,6 +1173,76 @@ export const PARAMS: Param[] = [
     source:
       'Old game T.camYawSens. The old game aimed with the system cursor, so this camera turn was its only mouse sensitivity.',
     legacy: 'T.camYawSens',
+  },
+
+  // Vision: the owner's rule (26 November); the values are the sandbox's to tune, nothing here is decided.
+  {
+    kind: 'toggle',
+    key: 'visionOn',
+    group: 'vision',
+    label: 'Vision rule on (off: every dummy shows, as before)',
+    exportKey: 'vision_rule',
+    start: true,
+    source: "The owner's rule: a dummy is drawn only while part of its body is inside the cone with a clear line from your soldier's eyes; walls, blocks, the Hornet, hedges and smoke block, soldiers do not.",
+  },
+  { kind: 'range', key: 'visionWidth', group: 'vision', label: 'Cone width', exportKey: 'cone_width_deg', unit: '°', min: 40, max: 360, step: 5, start: 190, digits: 0, source: "The owner's start value (190°: a bit more than a half circle). 360 sees all round; only what blocks sight hides." },
+  { kind: 'range', key: 'visionEye', group: 'vision', label: 'Eyes above the feet (where the cone starts)', exportKey: 'eye_height_m', unit: 'm', min: 0.2, max: 4, step: 0.05, start: 1.65, digits: 2, source: "The sandbox's pick for the 1.80 m stand-in (about 15 cm under the top of the head); the owner asked to move it higher or lower to play with. On the Hornet it counts from the footplates." },
+  { kind: 'range', key: 'visionWhite', group: 'vision', label: 'White of the cone', exportKey: 'cone_white_strength', unit: '', min: 0, max: 1, step: 0.05, start: 0.35, digits: 2, source: "The sandbox's pick: how strongly the surfaces your soldier sees are lightened toward white (0: not shown)." },
+  {
+    kind: 'toggle',
+    key: 'visionGhosts',
+    group: 'vision',
+    label: 'Show hidden dummies as outlines (for explaining only)',
+    exportKey: 'show_hidden_outlines',
+    start: false,
+    source: "The owner's ask: off at the start; in the game hidden enemies are simply not drawn.",
+  },
+  {
+    kind: 'toggle',
+    key: 'visionDummies',
+    group: 'vision',
+    label: 'Test dummies: a walker behind the 3.07 m ledge and a shooter behind the tall hedge',
+    exportKey: 'test_dummies',
+    start: true,
+    source: "The sandbox's addition for the vision rule: a 12th dummy walks a loop behind the 3.07 m ledge and steps out between the ledges; a 13th stands behind the tall hedge in the test corner (x -22 to -38, z 18 to 32). Off: both are put away.",
+  },
+  {
+    kind: 'toggle',
+    key: 'shooterOn',
+    group: 'vision',
+    label: 'The shooter fires at you (a burst every few seconds when no wall stops it)',
+    exportKey: 'shooter_fires',
+    start: false,
+    source: "The sandbox's addition: its tracers are always drawn and each shot is heard; it does no damage (your soldier has no health). Off at the start so it does not fire through other tuning.",
+  },
+
+  // The dummies' sounds: footsteps and the shooter's shots, heard from your soldier, as Unreal's attenuation settings.
+  { kind: 'range', key: 'stepVolume', group: 'sounds', label: 'Footsteps volume', exportKey: 'footsteps_volume', unit: '', min: 0, max: 2, step: 0.05, start: 0.3, digits: 2, source: "The sandbox's pick, on the owner's ask (26 November). 1 is as loud as your own shot's click, at or inside the inner radius." },
+  { kind: 'range', key: 'gunVolume', group: 'sounds', label: "The shooter's shots volume", exportKey: 'gunfire_volume', unit: '', min: 0, max: 2, step: 0.05, start: 1, digits: 2, source: "The sandbox's pick. 1 is as loud as your own shot's click, at or inside the inner radius." },
+  { kind: 'range', key: 'soundInner', group: 'sounds', label: 'Inner radius (full volume inside it)', exportKey: 'inner_radius_m', unit: 'm', min: 0, max: 50, step: 0.5, start: 3, digits: 1, source: "The sandbox's pick, like Unreal's inner radius: full volume up to this distance from your soldier." },
+  { kind: 'range', key: 'soundOuter', group: 'sounds', label: 'Outer radius (silent beyond it)', exportKey: 'outer_radius_m', unit: 'm', min: 1, max: 150, step: 1, start: 40, digits: 0, source: "The sandbox's pick, like the end of Unreal's falloff distance: silent from here on." },
+  {
+    kind: 'choice',
+    key: 'soundCurve',
+    group: 'sounds',
+    label: 'Falloff between the two radii',
+    exportKey: 'falloff_curve',
+    options: [
+      { value: 'linear', label: 'Linear' },
+      { value: 'log', label: 'Logarithmic (drops sooner)' },
+      { value: 'inverse', label: 'Inverse (drops soonest)' },
+    ],
+    start: 'linear',
+    source: "The sandbox's pick of shapes, in the spirit of Unreal's attenuation functions; the formulas are in the Export (constants, vision).",
+  },
+  {
+    kind: 'toggle',
+    key: 'soundPan',
+    group: 'sounds',
+    label: 'Pan left and right by where the sound is on screen',
+    exportKey: 'pan_by_screen_side',
+    start: true,
+    source: "The sandbox's pick: a sound to the left of your soldier on screen comes from the left speaker.",
   },
 ];
 
