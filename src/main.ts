@@ -153,7 +153,8 @@ function placeTestDummies() {
     d.best = Infinity;
     d.stalled = 0;
     targets[i].health = store.num('dummyHealth');
-    targets[i].downFor = 0;
+    // Put away it counts as down for good, so no shot, blast or push reaches it; back, it stands.
+    targets[i].downFor = on ? 0 : Infinity;
     stepAcc[i] = 0;
   }
 }
@@ -439,8 +440,9 @@ function simStep(dt: number) {
     // A footstep every so many metres walked on the ground, heard as the dummies' sounds are (hidden or not).
     if (t.downFor <= 0 && d.state.grounded) {
       stepAcc[i] += Math.hypot(d.state.x - d.prev.x, d.state.z - d.prev.z);
-      if (stepAcc[i] >= TEST_DUMMY_RULES.footstep_every_m) {
-        stepAcc[i] %= TEST_DUMMY_RULES.footstep_every_m;
+      const every = store.num('stepEvery');
+      if (stepAcc[i] >= every) {
+        stepAcc[i] %= every;
         dummySound('step', d.state.x, d.state.y, d.state.z);
       }
     }
@@ -448,7 +450,7 @@ function simStep(dt: number) {
   stepShooter(dt);
   softPush(
     [cur, ...dummies.map((d) => d.state)],
-    [true, ...targets.map((t) => t.downFor <= 0)],
+    [true, ...targets.map((t, i) => present[i] && t.downFor <= 0)],
     store.num('pushRadius'),
     store.num('pushStrength'),
     dt,
@@ -476,8 +478,9 @@ function updateVision(alpha: number) {
     widthDeg: store.num('visionWidth'),
   };
   lastEye = eye;
-  const hb = hornet.body;
-  const B = sightBlockers(riding ? null : { x: hb.x, y: hb.y, z: hb.z, r: store.num('hornetRadius') });
+  // (The Hornet as drawn this frame.)
+  const hp = hornetModel.root.position;
+  const B = sightBlockers(riding ? null : { x: hp.x, y: hp.y, z: hp.z, r: store.num('hornetRadius') });
   lastBlockers = B;
   packVision(B, eye, on, store.num('visionWhite'));
   dummies.forEach((d, i) => {
@@ -489,7 +492,8 @@ function updateVision(alpha: number) {
       seen[i] = true;
       return;
     }
-    seen[i] = dummySeen(B, eye, d.prev.x + (d.state.x - d.prev.x) * alpha, d.prev.y + (d.state.y - d.prev.y) * alpha, d.prev.z + (d.state.z - d.prev.z) * alpha);
+    // (A dummy down on the ground is looked at low.)
+    seen[i] = dummySeen(B, eye, d.prev.x + (d.state.x - d.prev.x) * alpha, d.prev.y + (d.state.y - d.prev.y) * alpha, d.prev.z + (d.state.z - d.prev.z) * alpha, targets[i].downFor > 0);
   });
 }
 
@@ -510,6 +514,7 @@ function stepShooter(dt: number) {
   const gy = s.y + R.shooter_gun_height_m;
   const gz = s.z;
   const chestY = cur.y + (riding ? HORNET.footplate_height_m : 0) + R.shooter_aims_at_height_m;
+  shooterClock += dt;
   if (burstLeft > 0) {
     burstGap -= dt;
     if (burstGap > 0) return;
@@ -534,12 +539,11 @@ function stepShooter(dt: number) {
     lastShooterShot = { from: { x: gx, y: gy, z: gz }, to: { x: to.x, y: to.y, z: to.z }, hit, hidden: !seen[SHOOTER] };
     return;
   }
-  shooterClock += dt;
   if (shooterClock < R.shooter_period_s) return;
-  shooterClock = 0;
-  // Only with a clear line of fire: no block between its gun and your chest.
+  shooterClock -= R.shooter_period_s;
+  // Only within its range and with a clear line of fire: no block between its gun and your chest.
   const len = Math.hypot(cur.x - gx, chestY - gy, cur.z - gz);
-  if (len < 1e-6) return;
+  if (len < 1e-6 || len > R.shooter_range_m) return;
   const w = rayWorld(gx, gy, gz, (cur.x - gx) / len, (chestY - gy) / len, (cur.z - gz) / len);
   if (w && Math.hypot(w.x - gx, w.y - gy, w.z - gz) < len - 0.3) return;
   burstLeft = R.shooter_burst;
@@ -801,7 +805,6 @@ function frame(now: number) {
     const dz = (facePoint ? facePoint.z : aimPoint.z) - renderPos.z;
     if (dx * dx + dz * dz > AIM_DEAD_ZONE * AIM_DEAD_ZONE) aimYaw = Math.atan2(dx, dz);
   }
-  updateVision(alpha);
 
   // Effects age first; then this frame's shots start theirs, so they are drawn at full strength. The tracer
   // leaves the gun's muzzle as drawn; the hit marker shows on a confirmed hit.
@@ -903,6 +906,7 @@ function frame(now: number) {
     sprintTarget > sprintBlend ? Math.min(1, sprintBlend + dt / 0.15) : Math.max(0, sprintBlend - dt / back);
 
   hornetModel.update(hornet, alpha);
+  updateVision(alpha);
   if (riding) {
     // On the footplates, facing the way the Hornet faces, leaning with it.
     soldier.root.position.set(0, 0, 0);
@@ -1055,6 +1059,8 @@ requestAnimationFrame(frame);
       speed: Math.hypot(d.state.vx, d.state.vz),
       health: targets[i].health,
       down: targets[i].downFor > 0,
+      /** False for a vision test dummy put away. */
+      present: present[i],
     })),
   /** The camera as drawn: its position and its angle below the horizon, in degrees. */
   cam: () => {

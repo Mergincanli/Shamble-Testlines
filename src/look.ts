@@ -146,7 +146,7 @@ if (uGridOn > 0.5) {
 `;
 
 /** How many boxes and upright cylinders the vision rule's sight test can take on a surface (see sight.ts). */
-export const VISION_MAX_BOXES = 64;
+export const VISION_MAX_BOXES = 48;
 export const VISION_MAX_CYLS = 4;
 /**
  * The vision rule's cone, shared by every gridded surface: on or off, how white, the eyes, the facing on the ground,
@@ -160,10 +160,10 @@ export const VISION = {
   cosHalf: { value: -2 },
   margin: { value: 0.02 },
   near: { value: 0.3 },
-  boxMin: { value: Array.from({ length: VISION_MAX_BOXES }, () => new THREE.Vector3()) },
-  boxMax: { value: Array.from({ length: VISION_MAX_BOXES }, () => new THREE.Vector3()) },
-  /** x: 0 a box, 1 a ramp along x, 2 a ramp along z; y: low; z: high; w: top. */
-  boxRamp: { value: Array.from({ length: VISION_MAX_BOXES }, () => new THREE.Vector4()) },
+  /** The box's low corner, and (w) its ramp: 0 none, 1 along x, 2 along z, negative when rising toward the low end. */
+  boxMin: { value: Array.from({ length: VISION_MAX_BOXES }, () => new THREE.Vector4()) },
+  /** The box's high corner (w unused). */
+  boxMax: { value: Array.from({ length: VISION_MAX_BOXES }, () => new THREE.Vector4()) },
   boxCount: { value: 0 },
   /** x, z, radius, and (cylY) bottom and top. */
   cyl: { value: Array.from({ length: VISION_MAX_CYLS }, () => new THREE.Vector3()) },
@@ -178,14 +178,14 @@ uniform vec2 uVisAim;
 uniform float uVisCosHalf;
 uniform float uVisMargin;
 uniform float uVisNear;
-uniform vec3 uVisBoxMin[${VISION_MAX_BOXES}];
-uniform vec3 uVisBoxMax[${VISION_MAX_BOXES}];
-uniform vec4 uVisBoxRamp[${VISION_MAX_BOXES}];
+uniform vec4 uVisBoxMin[${VISION_MAX_BOXES}];
+uniform vec4 uVisBoxMax[${VISION_MAX_BOXES}];
 uniform int uVisBoxCount;
 uniform vec3 uVisCyl[${VISION_MAX_CYLS}];
 uniform vec2 uVisCylY[${VISION_MAX_CYLS}];
 uniform int uVisCylCount;
-// The same sight test as sight.ts, from this surface point p toward the eyes (cut short at the surface).
+// The same sight test as sight.ts, from this surface point p toward the eyes (cut short at the surface); something
+// the eyes are inside does not count.
 bool visBlocked(vec3 p, vec3 e) {
   vec3 d = e - p;
   float len = length(d);
@@ -200,24 +200,32 @@ bool visBlocked(vec3 p, vec3 e) {
   vec3 inv = 1.0 / dd;
   for (int i = 0; i < ${VISION_MAX_BOXES}; i++) {
     if (i >= uVisBoxCount) break;
-    vec3 ta = (uVisBoxMin[i] - p) * inv;
-    vec3 tb = (uVisBoxMax[i] - p) * inv;
+    vec3 bmin = uVisBoxMin[i].xyz;
+    vec3 bmax = uVisBoxMax[i].xyz;
+    if (all(greaterThan(e, bmin)) && all(lessThan(e, bmax))) continue;
+    vec3 ta = (bmin - p) * inv;
+    vec3 tb = (bmax - p) * inv;
     vec3 tlo = min(ta, tb);
     vec3 thi = max(ta, tb);
     float lo = max(max(tlo.x, tlo.y), max(tlo.z, t0));
     float hi = min(min(thi.x, thi.y), min(thi.z, t1));
     if (lo >= hi) continue;
-    vec4 r = uVisBoxRamp[i];
-    if (r.x < 0.5) return true;
-    float ca = r.x < 1.5 ? p.x + dd.x * lo : p.z + dd.z * lo;
-    float cb = r.x < 1.5 ? p.x + dd.x * hi : p.z + dd.z * hi;
-    float ha = r.w * clamp((ca - r.y) / (r.z - r.y), 0.0, 1.0);
-    float hb = r.w * clamp((cb - r.y) / (r.z - r.y), 0.0, 1.0);
+    float code = uVisBoxMin[i].w;
+    if (abs(code) < 0.5) return true;
+    bool alongX = abs(code) < 1.5;
+    float lowC = alongX ? (code > 0.0 ? bmin.x : bmax.x) : (code > 0.0 ? bmin.z : bmax.z);
+    float highC = alongX ? (code > 0.0 ? bmax.x : bmin.x) : (code > 0.0 ? bmax.z : bmin.z);
+    float ca = alongX ? p.x + dd.x * lo : p.z + dd.z * lo;
+    float cb = alongX ? p.x + dd.x * hi : p.z + dd.z * hi;
+    float ha = bmax.y * clamp((ca - lowC) / (highC - lowC), 0.0, 1.0);
+    float hb = bmax.y * clamp((cb - lowC) / (highC - lowC), 0.0, 1.0);
     if (min(p.y + dd.y * lo - ha, p.y + dd.y * hi - hb) < 0.0) return true;
   }
   for (int i = 0; i < ${VISION_MAX_CYLS}; i++) {
     if (i >= uVisCylCount) break;
     vec3 c = uVisCyl[i];
+    vec2 ef = e.xz - c.xy;
+    if (dot(ef, ef) < c.z * c.z && e.y > uVisCylY[i].x && e.y < uVisCylY[i].y) continue;
     vec2 f = p.xz - c.xy;
     float a = dot(d.xz, d.xz);
     float lo = t0;
@@ -286,7 +294,6 @@ export function gridToon(hex: string, group: GridGroup): THREE.MeshToonMaterial 
     sh.uniforms.uVisNear = VISION.near;
     sh.uniforms.uVisBoxMin = VISION.boxMin;
     sh.uniforms.uVisBoxMax = VISION.boxMax;
-    sh.uniforms.uVisBoxRamp = VISION.boxRamp;
     sh.uniforms.uVisBoxCount = VISION.boxCount;
     sh.uniforms.uVisCyl = VISION.cyl;
     sh.uniforms.uVisCylY = VISION.cylY;

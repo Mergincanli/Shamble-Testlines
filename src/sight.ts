@@ -9,6 +9,7 @@
 // comes from the old game or Shamble VFX; nothing here is decided for the game.
 import { BLOCKS, bottomOf } from './yard';
 import { HEDGES, SMOKE } from './standins';
+import { STAIR_STEP_BLOCKS } from './metrics';
 import { HIT_RADIUS } from './weapons';
 import { buildVisionIntoShaders, VISION, VISION_MAX_BOXES, VISION_MAX_CYLS } from './look';
 
@@ -50,13 +51,16 @@ export const BODY_POINTS = {
   middle_heights_m: [0.1, 0.5, 0.9, 1.3, 1.7],
   side_heights_m: [0.9, 1.3],
   side_offset_m: HIT_RADIUS,
+  /** A dummy down on the ground is looked at low: up its middle, and each side. */
+  lying_middle_heights_m: [0.1, 0.25, 0.4],
+  lying_side_heights_m: [0.25],
 };
 
 /** Everything that blocks sight now; the Hornet given (as a cylinder) unless you ride it. */
 export function sightBlockers(hornet: { x: number; y: number; z: number; r: number } | null): Blockers {
   const boxes: SightBox[] = [];
-  for (const b of BLOCKS) {
-    // (The slope a stair is walked on is not drawn: its steps block instead.)
+  // The metrics room's stair: its drawn steps block (the hidden slope it is walked on does not).
+  for (const b of [...BLOCKS, ...STAIR_STEP_BLOCKS]) {
     if (b.hidden) continue;
     const box: SightBox = { minX: b.minX, maxX: b.maxX, minY: bottomOf(b), maxY: b.top, minZ: b.minZ, maxZ: b.maxZ };
     if (b.ramp) box.ramp = { axis: b.ramp.axis, low: b.ramp.low, high: b.ramp.high, top: b.top };
@@ -123,7 +127,18 @@ function hitsCyl(c: SightCyl, ax: number, ay: number, az: number, dx: number, dy
   return Math.max(ya, yb) > c.y0 && Math.min(ya, yb) < c.y1;
 }
 
-/** Whether something solid stands between a (the eyes) and b (a point looked at). */
+/** Whether a point is inside a box (strictly): the eyes inside something are not blocked by it. */
+function insideBox(b: SightBox, x: number, y: number, z: number): boolean {
+  return x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ;
+}
+function insideCyl(c: SightCyl, x: number, y: number, z: number): boolean {
+  return (x - c.cx) ** 2 + (z - c.cz) ** 2 < c.r * c.r && y > c.y0 && y < c.y1;
+}
+
+/**
+ * Whether something solid stands between a (the eyes) and b (a point looked at). Something the eyes are inside does
+ * not count (the parked Hornet you walk through, a lintel your raised eyes reach into), or it would blind them.
+ */
 export function sightBlocked(B: Blockers, ax: number, ay: number, az: number, bx: number, by: number, bz: number): boolean {
   const dx = bx - ax;
   const dy = by - ay;
@@ -133,8 +148,8 @@ export function sightBlocked(B: Blockers, ax: number, ay: number, az: number, bx
   const t0 = 1e-4;
   const t1 = 1 - SIGHT_END_MARGIN_M / len;
   if (t1 <= t0) return false;
-  for (const b of B.boxes) if (hitsBox(b, ax, ay, az, dx, dy, dz, t0, t1)) return true;
-  for (const c of B.cyls) if (hitsCyl(c, ax, ay, az, dx, dy, dz, t0, t1)) return true;
+  for (const b of B.boxes) if (!insideBox(b, ax, ay, az) && hitsBox(b, ax, ay, az, dx, dy, dz, t0, t1)) return true;
+  for (const c of B.cyls) if (!insideCyl(c, ax, ay, az) && hitsCyl(c, ax, ay, az, dx, dy, dz, t0, t1)) return true;
   return false;
 }
 
@@ -157,8 +172,8 @@ export function inCone(e: Eye, px: number, pz: number): boolean {
   return (vx * Math.sin(e.aim) + vz * Math.cos(e.aim)) / l >= Math.cos(((e.widthDeg / 2) * Math.PI) / 180);
 }
 
-/** Whether a dummy standing at (x, y, z) is seen: any point of its body inside the cone with a clear line. */
-export function dummySeen(B: Blockers, e: Eye, x: number, y: number, z: number): boolean {
+/** Whether a dummy at (x, y, z) is seen: any point of its body inside the cone with a clear line (looked at low when down). */
+export function dummySeen(B: Blockers, e: Eye, x: number, y: number, z: number, lying = false): boolean {
   const vx = x - e.x;
   const vz = z - e.z;
   const l = Math.hypot(vx, vz) || 1;
@@ -166,14 +181,15 @@ export function dummySeen(B: Blockers, e: Eye, x: number, y: number, z: number):
   const sx = (-vz / l) * BODY_POINTS.side_offset_m;
   const sz = (vx / l) * BODY_POINTS.side_offset_m;
   const look = (px: number, py: number, pz: number) => inCone(e, px, pz) && !sightBlocked(B, e.x, e.y, e.z, px, py, pz);
-  for (const h of BODY_POINTS.middle_heights_m) if (look(x, y + h, z)) return true;
-  for (const h of BODY_POINTS.side_heights_m) {
+  for (const h of lying ? BODY_POINTS.lying_middle_heights_m : BODY_POINTS.middle_heights_m) if (look(x, y + h, z)) return true;
+  for (const h of lying ? BODY_POINTS.lying_side_heights_m : BODY_POINTS.side_heights_m) {
     if (look(x + sx, y + h, z + sz)) return true;
     if (look(x - sx, y + h, z - sz)) return true;
   }
   return false;
 }
 
+let warnedBoxes = false;
 /** Hand the eyes, the cone and what blocks sight to the grid shader, so the white is the very same test. */
 export function packVision(B: Blockers, e: Eye, on: boolean, white: number) {
   buildVisionIntoShaders(on);
@@ -185,13 +201,23 @@ export function packVision(B: Blockers, e: Eye, on: boolean, white: number) {
   VISION.cosHalf.value = e.widthDeg >= 360 ? -2 : Math.cos(((e.widthDeg / 2) * Math.PI) / 180);
   VISION.margin.value = SIGHT_END_MARGIN_M;
   VISION.near.value = CONE_NEAR_M;
+  if (B.boxes.length > VISION_MAX_BOXES && !warnedBoxes) {
+    warnedBoxes = true;
+    console.warn(`Vision rule: ${B.boxes.length} boxes block sight, the cone's white shows only the first ${VISION_MAX_BOXES}.`);
+  }
   const nb = Math.min(B.boxes.length, VISION_MAX_BOXES);
   for (let i = 0; i < nb; i++) {
     const b = B.boxes[i];
-    VISION.boxMin.value[i].set(b.minX, b.minY, b.minZ);
-    VISION.boxMax.value[i].set(b.maxX, b.maxY, b.maxZ);
+    // A ramp's slope in the spare place: 1 along x, 2 along z, negative when it rises toward the low end of the box
+    // (its height runs from 0 at one end of the box to its top at the other).
     const r = b.ramp;
-    VISION.boxRamp.value[i].set(r ? (r.axis === 'x' ? 1 : 2) : 0, r ? r.low : 0, r ? r.high : 1, r ? r.top : 0);
+    let code = 0;
+    if (r) {
+      const lowEnd = r.axis === 'x' ? b.minX : b.minZ;
+      code = (r.axis === 'x' ? 1 : 2) * (Math.abs(r.low - lowEnd) < 1e-9 ? 1 : -1);
+    }
+    VISION.boxMin.value[i].set(b.minX, b.minY, b.minZ, code);
+    VISION.boxMax.value[i].set(b.maxX, b.maxY, b.maxZ, 0);
   }
   VISION.boxCount.value = nb;
   const nc = Math.min(B.cyls.length, VISION_MAX_CYLS);

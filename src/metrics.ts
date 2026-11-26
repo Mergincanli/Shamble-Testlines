@@ -86,6 +86,9 @@ function stairSteps(P: Store): { a: number; b: number; top: number }[] {
   return out;
 }
 
+/** The stair's drawn steps as boxes, for the vision rule's sight test (kept up to date as the room is rebuilt). */
+export const STAIR_STEP_BLOCKS: Block[] = [];
+
 export class MetricsRoom {
   private group = new THREE.Group();
   private blocks: Block[] = [];
@@ -125,8 +128,11 @@ export class MetricsRoom {
       this.group.add(m, new THREE.Mesh(hullOf([m.geometry]), INK_BLOCK));
     }
     const sw = this.store.num('stairWidth');
+    STAIR_STEP_BLOCKS.length = 0;
     for (const s of stairSteps(this.store)) {
-      const m = blockMesh({ minX: s.a, maxX: s.b, minZ: STAIR_Z - sw / 2, maxZ: STAIR_Z + sw / 2, top: s.top }, lowMat);
+      const step: Block = { minX: s.a, maxX: s.b, minZ: STAIR_Z - sw / 2, maxZ: STAIR_Z + sw / 2, top: s.top };
+      STAIR_STEP_BLOCKS.push(step);
+      const m = blockMesh(step, lowMat);
       this.group.add(m, new THREE.Mesh(hullOf([m.geometry]), INK_BLOCK));
     }
   }

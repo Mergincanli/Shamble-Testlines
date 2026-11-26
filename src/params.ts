@@ -699,7 +699,7 @@ export const PARAMS: Param[] = [
     label: 'Dummies walk their loops',
     exportKey: 'dummies_walk',
     start: true,
-    source: 'Off: the eleven dummies stand still (handy for pushing and, later, shooting).',
+    source: 'Off: the dummies stand still (handy for pushing and, later, shooting).',
   },
   {
     kind: 'range',
@@ -1218,6 +1218,7 @@ export const PARAMS: Param[] = [
 
   // The dummies' sounds: footsteps and the shooter's shots, heard from your soldier, as Unreal's attenuation settings.
   { kind: 'range', key: 'stepVolume', group: 'sounds', label: 'Footsteps volume', exportKey: 'footsteps_volume', unit: '', min: 0, max: 2, step: 0.05, start: 0.3, digits: 2, source: "The sandbox's pick, on the owner's ask (26 November). 1 is as loud as your own shot's click, at or inside the inner radius." },
+  { kind: 'range', key: 'stepEvery', group: 'sounds', label: 'A footstep every', exportKey: 'footstep_every_m', unit: 'm', min: 0.3, max: 5, step: 0.1, start: 1.5, digits: 1, source: "The sandbox's pick: one footstep per this many metres walked (at the dummies' 6.3 m/s, 1.5 m is about 4 a second each)." },
   { kind: 'range', key: 'gunVolume', group: 'sounds', label: "The shooter's shots volume", exportKey: 'gunfire_volume', unit: '', min: 0, max: 2, step: 0.05, start: 1, digits: 2, source: "The sandbox's pick. 1 is as loud as your own shot's click, at or inside the inner radius." },
   { kind: 'range', key: 'soundInner', group: 'sounds', label: 'Inner radius (full volume inside it)', exportKey: 'inner_radius_m', unit: 'm', min: 0, max: 50, step: 0.5, start: 3, digits: 1, source: "The sandbox's pick, like Unreal's inner radius: full volume up to this distance from your soldier." },
   { kind: 'range', key: 'soundOuter', group: 'sounds', label: 'Outer radius (silent beyond it)', exportKey: 'outer_radius_m', unit: 'm', min: 1, max: 150, step: 1, start: 40, digits: 0, source: "The sandbox's pick, like the end of Unreal's falloff distance: silent from here on." },
@@ -1233,7 +1234,7 @@ export const PARAMS: Param[] = [
       { value: 'inverse', label: 'Inverse (drops soonest)' },
     ],
     start: 'linear',
-    source: "The sandbox's pick of shapes, in the spirit of Unreal's attenuation functions; the formulas are in the Export (constants, vision).",
+    source: "The sandbox's pick of shapes, in the spirit of Unreal's attenuation functions; the formulas are in the Export (constants, dummy_sounds).",
   },
   {
     kind: 'toggle',

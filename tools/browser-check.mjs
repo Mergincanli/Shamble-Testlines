@@ -223,8 +223,10 @@ async function run(browserName) {
     const d0 = await T(() => window.__testlines.dummies());
     await sleep(1000);
     const d1 = await T(() => window.__testlines.dummies());
-    const walked = d0.filter((p, i) => Math.hypot(p.x - d1[i].x, p.z - d1[i].z) > 1).length;
-    ok('eleven dummies walk their loops', d0.length === 11 && walked >= 10, `${d0.length} dummies, ${walked} moved more than 1 m in 1 s`);
+    const walked = d0.slice(0, 11).filter((p, i) => Math.hypot(p.x - d1[i].x, p.z - d1[i].z) > 1).length;
+    // (The vision rule's two test dummies are put away here: far outside the yard, where nothing pushes them back in.)
+    const away = d1.slice(11).every((p) => !p.present && p.x === 500 && p.z === 500);
+    ok('eleven dummies walk their loops; the two vision test dummies, put away, stay put far outside the yard', d0.length === 13 && d0.filter((p) => p.present).length === 11 && walked >= 10 && away, `${d0.length} dummies, ${d0.filter((p) => p.present).length} here, ${walked} moved more than 1 m in 1 s, put away ${away}`);
     await T(() => window.__testlines.set('dummiesWalk', false));
     await sleep(500);
     const d2 = await T(() => window.__testlines.dummies());
@@ -1269,7 +1271,8 @@ async function run(browserName) {
       const put = async (i, x, z, y = 0) => T((a, b, c, d) => window.__testlines.placeDummy(a, b, c, d), i, x, z, y);
       const faceToward = async (x, z) => {
         for (let k = 0; k < 3; k++) {
-          const sp = await T((a, b) => window.__testlines.screenOf(a, 0, b), x, z);
+          // (At gun height: the soldier faces where the cursor's ray crosses it, as the shots fly level here.)
+          const sp = await T((a, b) => window.__testlines.screenOf(a, 1.36, b), x, z);
           const view = await page.$eval('#view', (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; });
           await page.mouse.move(Math.max(view.l + 5, Math.min(view.l + view.w - 5, sp.x)), Math.max(view.t + 5, Math.min(view.t + view.h - 5, sp.y)));
           await frames();
@@ -1305,7 +1308,7 @@ async function run(browserName) {
       await T(() => window.__testlines.place(-28, 16));
       await put(0, -28, 21.5);
       await put(1, -36, 23);
-      await put(2, -32.5, 28);
+      await put(2, -33.3, 24);
       await frames();
       v = await V();
       ok('in the test corner: drawn over the 1.4 m hedge, not behind the 2.0 m hedge, not in the smoke, drawn beside it', v.drawn[0] && !v.drawn[12] && !v.drawn[1] && v.drawn[2], `low hedge ${v.drawn[0]}, tall hedge (the shooter) ${v.drawn[12]}, in the smoke ${v.drawn[1]}, beside it ${v.drawn[2]}`);
@@ -1410,6 +1413,23 @@ async function run(browserName) {
       await page.mouse.up({ button: 'right' });
       await T(() => window.__testlines.set('visionOn', true));
       ok('the sight line passes a hidden dummy (no stop, no colour); with the rule off it stops on it', hiddenNow && lineHidden.visible && !lineHidden.onDummy && lineShown.onDummy, `hidden ${hiddenNow}; rule on: on a dummy ${lineHidden.onDummy}; rule off: ${lineShown.onDummy}`);
+      // The cursor's aim point passes a hidden dummy too (on its chest: off the body with the rule on, on it with it off).
+      {
+        for (let k = 0; k < 2; k++) {
+          const sp = await T(() => window.__testlines.screenOf(-36, 1.2, 21.8));
+          await page.mouse.move(sp.x, sp.y);
+          await frames();
+        }
+        const onBody = (c) => !!c && Math.hypot(c.x + 36, c.z - 21.8) < 0.35 && c.y > 0.05;
+        const cpOn = await T(() => window.__testlines.cursorPoint());
+        await T(() => window.__testlines.set('visionOn', false));
+        await frames();
+        await frames();
+        const cpOff = await T(() => window.__testlines.cursorPoint());
+        await T(() => window.__testlines.set('visionOn', true));
+        await frames();
+        ok("the cursor's aim point passes a hidden dummy (it lands on it only with the rule off)", !onBody(cpOn) && onBody(cpOff), `rule on: ${cpOn ? `${cpOn.x.toFixed(2)}, ${cpOn.y.toFixed(2)}, ${cpOn.z.toFixed(2)}` : 'none'}; rule off: ${cpOff ? `${cpOff.x.toFixed(2)}, ${cpOff.y.toFixed(2)}, ${cpOff.z.toFixed(2)}` : 'none'}`);
+      }
       // The shooter: behind the tall hedge, firing at you while you face away; its tracers are drawn and its shots heard.
       await T(() => window.__testlines.place(-28, 18));
       await frames();
@@ -1424,6 +1444,17 @@ async function run(browserName) {
       }
       await T(() => window.__testlines.set('shooterOn', false));
       const snd1 = await T(() => window.__testlines.sounds());
+      // With the ledges between you and it (its line meets the 2.5 m ledge), it holds its fire (the rule off here, for speed).
+      await T(() => window.__testlines.set('visionOn', false));
+      await T(() => window.__testlines.place(-12.9, -10.8));
+      await frames();
+      const h0 = await T(() => window.__testlines.shooter());
+      await T(() => window.__testlines.set('shooterOn', true));
+      await sleep(6000);
+      await T(() => window.__testlines.set('shooterOn', false));
+      const h1 = await T(() => window.__testlines.shooter());
+      await T(() => window.__testlines.set('visionOn', true));
+      ok('with a ledge between you and the shooter, it holds its fire', h1.shots === h0.shots, `${h1.shots - h0.shots} shots in 6 s`);
       ok('the shooter fires at you from behind the tall hedge while hidden; its tracers are drawn and its shots heard', s1.shots >= s0.shots + 2 && s1.last?.hidden === true && s1.tracersStarted >= s0.tracersStarted + 2 && snd1.gun >= snd0.gun + 2 && snd1.clicks === snd0.clicks, `${s1.shots - s0.shots} shots, last hidden ${s1.last?.hidden}, tracers ${s1.tracersStarted - s0.tracersStarted}, heard ${snd1.gun - snd0.gun}, your clicks +${snd1.clicks - snd0.clicks}`);
       // Footsteps: walking dummies are heard (hidden or not), softer with distance as the settings say.
       await T(() => window.__testlines.set('stepVolume', 0.3));

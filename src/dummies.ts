@@ -70,7 +70,6 @@ export const TEST_DUMMY_RULES = {
   shooter_aims_at_height_m: 1.2,
   shooter_spread_m: 0.6,
   shooter_range_m: 60,
-  footstep_every_m: 1.0,
 };
 /** Where the test dummies are put away while switched off: far outside the yard and out of every reach. */
 export const PARKED: [number, number] = [500, 500];
@@ -139,6 +138,8 @@ export function otherFactions(mine: Faction): [Faction, Faction] {
   return [o[0], o[1]];
 }
 
+/** A dummy on a post (a one-point loop) stands still within this distance of it. */
+export const POST_RADIUS = 0.3;
 /** A dummy that has not come closer to its next point for this long goes back onto its loop. */
 const STALL_TIME = 2;
 
@@ -155,6 +156,14 @@ export function steerDummy(d: Dummy, walking: boolean, dt: number) {
   let [tx, tz] = d.loop[d.next];
   let dx = tx - d.state.x;
   let dz = tz - d.state.z;
+  // A one-point loop is a post: stand still on it (steering at full strength would jitter about it for ever).
+  if (n === 1 && dx * dx + dz * dz < POST_RADIUS * POST_RADIUS) {
+    d.input.wishX = 0;
+    d.input.wishZ = 0;
+    d.best = Infinity;
+    d.stalled = 0;
+    return;
+  }
   if (dx * dx + dz * dz < 0.6 * 0.6) {
     d.next = (d.next + d.dir + n) % n;
     [tx, tz] = d.loop[d.next];

@@ -192,27 +192,33 @@ eyes; otherwise it is not drawn at all, also in the open behind your back. It ap
   1.4 m hedge, while what stands right behind them is hidden from the feet up (the closer and higher the cover,
   the deeper that hidden ground). A thing higher than your eyes hides everything behind it. From higher up you see
   over more; a dummy at a ledge's edge is seen from below, and hidden once it steps back.
-- What blocks sight: every block of the yard and the metrics room (walls, ledges, steps, posts, the ramp under its
-  slope, the pieces over the door and window), the two hedges, the smoke column, and the Hornet (an upright
-  cylinder 1.4 m tall) unless you ride it. Soldiers and dummies do not block. The ground, walls and buildings always
-  show; only dummies are hidden.
-- The white: every surface the eyes see inside the cone (the ground, and the faces of blocks turned to you) is
-  lightened toward white, by the same test run per pixel, so the white and the dummies always agree. A dummy can
-  show while the ground it stands on is not white: its head is in view while that ground is hidden behind cover.
+- What blocks sight: every block of the yard and the metrics room (walls, ledges, steps, posts, the stair's steps,
+  the ramp under its slope, the pieces over the door and window), the two hedges, the smoke column, and the Hornet
+  (an upright cylinder 1.4 m tall) unless you ride it. Soldiers and dummies do not block, and something your eyes are
+  inside does not either (the parked Hornet you walk through, a lintel your raised eyes reach into). A dummy down
+  on the ground is looked at low (up to 0.4 m). The ground, walls and buildings always show; only dummies are
+  hidden.
+- The white: every gridded surface the eyes see inside the cone (the ground, and the faces of the yard's blocks and
+  the room turned to you) is lightened toward white, by the same test run per pixel, so the white and the dummies
+  always agree. The hedges, the smoke and the Hornet do not take the white. A dummy can show while the ground it
+  stands on is not white: its head is in view while that ground is hidden behind cover. The white is worked out per
+  pixel on the graphics card while the rule is on (with the rule off it costs nothing).
 - Hidden means: its body, ink line, shadow and health bar are not drawn; the cursor's aim point and the sight line
   pass it (the line does not stop on it or take its colour). Your shots still hit it, the hit marker still shows,
-  and soft pushing still works. It is decided each drawn frame from the drawn positions.
+  your tracer stops where it hits it (which shows where it is), and soft pushing still works. It is decided each
+  drawn frame from the drawn positions (the cursor uses the frame before).
 - Projectiles are always drawn (tracers, grenades), and sounds are heard, whoever made them.
 - Stand-ins, in a test corner past the lane (x -22 to -38, z 18 to 32): a 1.4 m hedge (you see over it), a 2.0 m
   hedge (it hides) and a smoke column (3 m across, 3.5 m tall). They block sight only: they are walked through and
   shot through. Test dummies (a switch, on at the start): a walker whose loop runs behind the 3.07 m ledge and
   steps out between the ledges, and a shooter at its post behind the 2.0 m hedge. The shooter (its own switch, off
-  at the start) fires a burst of three at your chest every 2.5 s when no block stands between them; its shots pass
-  hedges and smoke, stop at blocks, do no damage, and their tracers are drawn whether it is seen or not.
+  at the start) fires a burst of three at your chest every 2.5 s when you are within 60 m and no block stands
+  between them; its shots pass hedges and smoke, stop at blocks, do no damage, and their tracers are drawn whether it
+  is seen or not. It stands still on its post.
 - The panel: the rule on or off, the cone's width, the eyes' height, how white the cone is, outlines of hidden
   dummies (for explaining only, off at the start), the test dummies and the shooter.
 
-The dummies' sounds (the owner's ask): each walking dummy's footstep (one per metre walked, a soft thud) and the
+The dummies' sounds (the owner's ask): each walking dummy's footstep (one per 1.5 m walked, a slider; a soft thud) and the
 shooter's shots (a click like yours) are heard from your soldier, hidden dummies as well. Their volume follows the
 distance as Unreal's attenuation settings do: full inside the inner radius (3 m), nothing beyond the outer radius
 (40 m), and between them a linear, logarithmic or inverse falloff; a sound to the left of your soldier on screen comes
